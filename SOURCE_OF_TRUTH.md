@@ -633,13 +633,23 @@ Follow this step-by-step roadmap when developing your custom manager on your dev
    - **Replaced `HttpListener` with Socket `TcpListener` (`0.0.0.0:8088`)**: Completely eliminated `HTTP Error 400. The request hostname is invalid.`. `TcpListener` binds to all IPv4 socket interfaces, bypassing Windows HTTP.sys URLACL strict hostname restrictions and non-Admin permission blocks. Accepts connections from any IP, hostname, or domain without configuration.
    - **Remote Connection LED & Diagnostic Indicator (`LedRemoteConnection` / `TxtRemoteStatusText`)**: Added a live connection status LED light and text indicator to Column 0. Displays green `ONLINE (CONNECTED to HostName)` when reachable and red `UNREACHABLE (Error / Timeout)` with explicit connection diagnostic feedback when disconnected.
 
-14. **GitHub Auto-Updater & Semantic Versioning (v1.0.0 -> v1.0.2)**:
-   - **Semantic Versioning**: Centralized in `<Version>1.0.2</Version>` in `ConanServerManager.csproj` and `ServerEngine.CurrentAppVersion`. Displayed prominently in the desktop header, log outputs, and web dashboard with an active `✨ v1.0.2` version badge.
+14. **GitHub Auto-Updater & Semantic Versioning (v1.0.0 -> v1.0.3)**:
+   - **Semantic Versioning**: Centralized in `<Version>1.0.3</Version>` in `ConanServerManager.csproj` and `ServerEngine.CurrentAppVersion`. Displayed prominently in the desktop header, log outputs, and web dashboard with an active `✨ v1.0.3` version badge.
    - **Zero-Downtime Process Adoption & Duplicate Prevention (`DetectAndAdoptRunningServerProcess`)**: Solved game server conflict during manager updates and restarts. When `ConanServerManager.exe` starts or updates, it scans for running `ConanSandboxServer-Win64-Shipping` or `ConanSandboxServer` processes. If found, it automatically adopts the active process, hooks monitoring, sets `ServerStatus` to `RUNNING`, and blocks duplicate launches in `RunFullUpdateAndStartAsync()` and `StartServerProcess()`. The game server remains online with 0 seconds of player downtime while the manager updates and re-attaches seamlessly.
+   - **Continuous 4-Hour Background Check & Deferred Updates**: Added recurring 4-hour background timer (`_appUpdateTimer`) with initial 10s delay. If `AutoInstallAppUpdates` is ticked, downloads and installs updates headlessly with zero dialog prompts. Defers update if game server is actively updating mods (`UPDATING`).
    - **GitHub Releases REST API Integration**: Queries `https://api.github.com/repos/Nakrom75/ConanEnhancedServerManager/releases/latest` to parse tag versions, asset packages, release notes, and download links.
    - **Desktop Notification Banner & Action Controls**: Added `PnlAppUpdateBanner` with **📥 Download & Update Now**, dismiss button, and Action Bar button **🔄 Check App Updates**. Configurable checkboxes `ChkAutoCheckAppUpdates` and `ChkAutoInstallAppUpdates` control automatic checking and background installation.
    - **Self-Updating Trampoline (`update_helper.bat`) with Config Protection**: Solves Windows OS file locks on running `.exe` files. Downloads the update zip asset, extracts to `Updates/staged/`, strips any incoming `manager_config.json` to guarantee local server credentials/passwords are never overwritten, spawns `update_helper.bat` with PID monitoring, terminates the app, replaces binaries via `xcopy`, relaunches `ConanServerManager.exe`, and cleans up all temporary staged files.
    - **Remote & Web API Endpoints**: Added `/api/control/check-update` and `/api/control/apply-update` for headless remote updating over LAN/WAN.
+
+15. **Steam Master Server Visibility & A2S_INFO Query Protocol (`SteamQueryHelper`)**:
+   - **Standard Valve A2S_INFO Protocol**: Implemented non-blocking UDP client (`SteamQueryHelper.cs`) targeting `QueryPort` (default `27015`). Handles Steam challenge handshake tokens (`0x41`), parses server name, active map, live connected player count, maximum player capacity, and ping latency in milliseconds.
+   - **Multi-State Visual Indicator (`BadgeSteamVisibility` & `LedSteamVisibility`)**:
+     - `STEAM: OFFLINE` (Gray `#64748B`): Server process is stopped.
+     - `STEAM: STARTING UP...` (Amber `#F59E0B`): Process is running, but game engine is compiling shaders, mounting mods, or initializing `game.db`.
+     - `STEAM: ONLINE (X/Y Players)` (Bright Green `#10B981`): Game server has bound UDP 27015, registered with Steam Master Server, and is confirmed ready for player connections.
+     - `STEAM: UNRESPONSIVE` (Red `#EF4444`): Process is alive for 4+ minutes without answering Steam queries (detects mod compile freezes, infinite loops, and database deadlocks).
+   - **Web API & Remote Management**: Exposed via `/api/status` (`steamOnline`, `steamPlayers`, `steamMaxPlayers`, `steamPing`, `steamError`) and rendered in real-time in Remote Mode.
 
 ---
 

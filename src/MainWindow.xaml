@@ -115,15 +115,24 @@
 
                     <StackPanel Orientation="Vertical">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.0.2" Style="{StaticResource HeaderTitle}"/>
+                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.0.3" Style="{StaticResource HeaderTitle}"/>
                             <Border CornerRadius="8" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" Margin="10,0,0,0" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock Text="✨ v1.0.2" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock Text="✨ v1.0.3" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="TxtServerPathInfo" Text="Mode: Local Server Host | Embedded Web Console: http://0.0.0.0:8088" Foreground="#94A3B8" FontSize="11"/>
                     </StackPanel>
 
-                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- Steam Master Server Visibility LED & Status -->
+                        <Border x:Name="BadgeSteamVisibility" CornerRadius="12" Padding="10,3" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" Margin="0,0,8,0" VerticalAlignment="Center" ToolTip="Steam Visibility: Live check via Steam A2S Query protocol on Query Port (27015).">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Ellipse x:Name="LedSteamVisibility" Width="8" Height="8" Fill="#64748B" Margin="0,0,6,0"/>
+                                <TextBlock x:Name="TxtSteamVisibility" Text="STEAM: OFFLINE" Foreground="#94A3B8" FontWeight="Bold" FontSize="11"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Process Status Badge -->
                         <Border x:Name="StatusBadge" CornerRadius="12" Padding="10,3" Background="#26EF4444" BorderBrush="#4DEF4444" BorderThickness="1" VerticalAlignment="Center">
                             <TextBlock x:Name="StatusText" Text="STOPPED" Foreground="#F87171" FontWeight="Bold" FontSize="11"/>
                         </Border>

@@ -31,6 +31,7 @@ namespace ConanServerManager
             _engine.OnStatusChanged += UpdateStatusUi;
             _engine.OnDownloadProgress += UpdateDownloadProgressUi;
             _engine.OnAppUpdateDiscovered += ShowAppUpdateBanner;
+            _engine.OnSteamStatusChanged += UpdateSteamVisibilityUi;
 
             _remoteTimer.Interval = TimeSpan.FromSeconds(3);
             _remoteTimer.Tick += async (s, e) =>
@@ -158,6 +159,23 @@ namespace ConanServerManager
                     string uptime = doc.RootElement.GetProperty("uptimeString").GetString() ?? "00:00:00";
                     string srvName = doc.RootElement.GetProperty("serverName").GetString() ?? "";
 
+                    bool steamOnline = doc.RootElement.TryGetProperty("steamOnline", out var soProp) && soProp.GetBoolean();
+                    int steamPlayers = doc.RootElement.TryGetProperty("steamPlayers", out var spProp) ? spProp.GetInt32() : 0;
+                    int steamMaxPlayers = doc.RootElement.TryGetProperty("steamMaxPlayers", out var smpProp) ? smpProp.GetInt32() : 0;
+                    int steamPing = doc.RootElement.TryGetProperty("steamPing", out var pingProp) ? pingProp.GetInt32() : 0;
+                    string steamErr = doc.RootElement.TryGetProperty("steamError", out var seProp) ? seProp.GetString() ?? "" : "";
+
+                    var remoteSteam = new SteamServerInfo
+                    {
+                        IsOnline = steamOnline,
+                        ServerName = srvName,
+                        Players = steamPlayers,
+                        MaxPlayers = steamMaxPlayers,
+                        PingMs = steamPing,
+                        ErrorMessage = steamErr
+                    };
+                    UpdateSteamVisibilityUi(remoteSteam);
+
                     UpdateStatusUi(status);
                     if (TxtServerPathInfo != null)
                         TxtServerPathInfo.Text = $"Remote Host: {srvName} ({status}) | Uptime: {uptime} | URL: {baseUrl}";
@@ -175,6 +193,7 @@ namespace ConanServerManager
             }
             catch (Exception ex)
             {
+                UpdateSteamVisibilityUi(new SteamServerInfo { IsOnline = false, ErrorMessage = "Remote server unreachable" });
                 UpdateStatusUi("OFFLINE");
                 string errorMsg = ex is TaskCanceledException ? "Connection timed out (4s limit)" : ex.Message;
                 if (TxtServerPathInfo != null)
@@ -460,6 +479,77 @@ namespace ConanServerManager
                         StatusBadge.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#26EF4444"));
                         StatusBadge.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4DEF4444"));
                         if (StatusText != null) StatusText.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F87171"));
+                    }
+                }
+                UpdateSteamVisibilityUi(_engine.SteamStatus);
+            });
+        }
+
+        private void UpdateSteamVisibilityUi(SteamServerInfo info)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                if (BadgeSteamVisibility == null || LedSteamVisibility == null || TxtSteamVisibility == null) return;
+
+                string currentStatus = IsRemoteMode ? (StatusText?.Text ?? "STOPPED") : _engine.ServerStatus;
+
+                if (currentStatus == "STOPPED" || currentStatus == "OFFLINE")
+                {
+                    LedSteamVisibility.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#64748B"));
+                    TxtSteamVisibility.Text = "STEAM: OFFLINE";
+                    TxtSteamVisibility.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#94A3B8"));
+                    BadgeSteamVisibility.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E293B"));
+                    BadgeSteamVisibility.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#334155"));
+                    BadgeSteamVisibility.ToolTip = "Server is stopped / offline.";
+                }
+                else if (currentStatus == "UPDATING")
+                {
+                    LedSteamVisibility.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#38BDF8"));
+                    TxtSteamVisibility.Text = "STEAM: UPDATING...";
+                    TxtSteamVisibility.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#38BDF8"));
+                    BadgeSteamVisibility.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2638BDF8"));
+                    BadgeSteamVisibility.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#38BDF8"));
+                    BadgeSteamVisibility.ToolTip = "Server manager is currently downloading updates or mods via SteamCMD.";
+                }
+                else // RUNNING
+                {
+                    if (info != null && info.IsOnline)
+                    {
+                        // GREEN LIGHT: Server is visibly responding on Steam!
+                        LedSteamVisibility.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#10B981"));
+                        string playersText = info.MaxPlayers > 0 ? $"{info.Players}/{info.MaxPlayers}" : $"{info.Players}";
+                        TxtSteamVisibility.Text = $"STEAM: ONLINE ({playersText})";
+                        TxtSteamVisibility.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#34D399"));
+                        BadgeSteamVisibility.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2610B981"));
+                        BadgeSteamVisibility.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#10B981"));
+                        BadgeSteamVisibility.ToolTip = $"Server is VERIFIED ONLINE and actively responding on Steam Query Port!\n\nName: {info.ServerName}\nMap: {info.Map}\nPlayers: {playersText}\nPing: {info.PingMs}ms";
+                    }
+                    else
+                    {
+                        DateTime startTime = _engine.ServerStartTime;
+                        bool isLongStartup = startTime > DateTime.MinValue && (DateTime.Now - startTime).TotalMinutes >= 4;
+
+                        if (isLongStartup)
+                        {
+                            // RED: Server running for 4+ mins without answering Steam queries
+                            LedSteamVisibility.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EF4444"));
+                            TxtSteamVisibility.Text = "STEAM: UNRESPONSIVE";
+                            TxtSteamVisibility.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F87171"));
+                            BadgeSteamVisibility.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#26EF4444"));
+                            BadgeSteamVisibility.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EF4444"));
+                            string note = info?.ErrorMessage ?? "Connection timed out";
+                            BadgeSteamVisibility.ToolTip = $"Warning: Server process is running, but has failed to answer Steam queries for over 4 minutes.\nNote: {note}\nThe server may be frozen in a loop or locked database.";
+                        }
+                        else
+                        {
+                            // AMBER / YELLOW: Normal loading pipeline
+                            LedSteamVisibility.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B"));
+                            TxtSteamVisibility.Text = "STEAM: STARTING UP...";
+                            TxtSteamVisibility.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FBBF24"));
+                            BadgeSteamVisibility.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#26F59E0B"));
+                            BadgeSteamVisibility.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B"));
+                            BadgeSteamVisibility.ToolTip = "Conan Dedicated Server process is active. Game engine is initializing mods and database. Waiting for Steam Query Port to come online...";
+                        }
                     }
                 }
             });

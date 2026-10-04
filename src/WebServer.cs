@@ -182,7 +182,14 @@ namespace ConanServerManager
                     appVersion = ServerEngine.CurrentAppVersion,
                     latestAppVersion = _engine.LatestAppUpdate?.TagName ?? "",
                     updateAvailable = _engine.LatestAppUpdate?.IsNewer ?? false,
-                    updateNotes = _engine.LatestAppUpdate?.ReleaseNotes ?? ""
+                    updateNotes = _engine.LatestAppUpdate?.ReleaseNotes ?? "",
+                    steamOnline = _engine.SteamStatus.IsOnline,
+                    steamServerName = _engine.SteamStatus.ServerName,
+                    steamMap = _engine.SteamStatus.Map,
+                    steamPlayers = _engine.SteamStatus.Players,
+                    steamMaxPlayers = _engine.SteamStatus.MaxPlayers,
+                    steamPing = _engine.SteamStatus.PingMs,
+                    steamError = _engine.SteamStatus.ErrorMessage
                 };
                 await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(statusObj));
             }

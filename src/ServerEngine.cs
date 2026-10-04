@@ -199,10 +199,15 @@ namespace ConanServerManager
         private int _rconConsecutiveFailures = 0;
         private System.Threading.Timer? _watchdogTimer;
         private System.Threading.Timer? _appUpdateTimer;
+        private System.Threading.Timer? _steamQueryTimer;
 
         public const string WorkshopAppId = "440900";
         public const string ServerAppId = "443030";
-        public const string CurrentAppVersion = "1.0.2";
+        public const string CurrentAppVersion = "1.0.3";
+
+        public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
+        public SteamServerInfo SteamStatus { get; private set; } = new SteamServerInfo();
+        public event Action<SteamServerInfo>? OnSteamStatusChanged;
 
         public AppUpdateInfo? LatestAppUpdate { get; private set; }
         public event Action<AppUpdateInfo>? OnAppUpdateDiscovered;
@@ -220,6 +225,7 @@ namespace ConanServerManager
             SafeFireAndForget(async () => await DetectExternalIpAsync(), "Detect External IP");
             StartWatchdogTimer();
             StartAppUpdateTimer();
+            StartSteamQueryTimer();
         }
 
         public bool DetectAndAdoptRunningServerProcess()
@@ -240,6 +246,7 @@ namespace ConanServerManager
 
                     var primaryProc = procs[0];
                     ServerProcess = primaryProc;
+                    if (ServerStartTime == DateTime.MinValue) ServerStartTime = DateTime.Now;
                     SetStatus("RUNNING");
                     Log($"[Process Monitor] Attached to running Conan Dedicated Server process (PID {primaryProc.Id}). Status: RUNNING.");
                     return true;
@@ -284,6 +291,32 @@ namespace ConanServerManager
                     }
                 }
             }, null, TimeSpan.FromSeconds(10), TimeSpan.FromHours(4));
+        }
+
+        private void StartSteamQueryTimer()
+        {
+            _steamQueryTimer = new System.Threading.Timer(async _ =>
+            {
+                if (ServerStatus == "RUNNING")
+                {
+                    try
+                    {
+                        var info = await SteamQueryHelper.QueryA2sInfoAsync("127.0.0.1", Config.QueryPort, 2000);
+                        SteamStatus = info;
+                        OnSteamStatusChanged?.Invoke(info);
+                    }
+                    catch (Exception ex)
+                    {
+                        SteamStatus = new SteamServerInfo { IsOnline = false, ErrorMessage = ex.Message };
+                        OnSteamStatusChanged?.Invoke(SteamStatus);
+                    }
+                }
+                else if (SteamStatus.IsOnline || SteamStatus.ErrorMessage != "Server is stopped.")
+                {
+                    SteamStatus = new SteamServerInfo { IsOnline = false, ErrorMessage = "Server is stopped." };
+                    OnSteamStatusChanged?.Invoke(SteamStatus);
+                }
+            }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5));
         }
 
         private async Task CheckWatchdogAsync()
@@ -900,6 +933,7 @@ namespace ConanServerManager
                         Log($"Priority/Affinity assignment note: {exPriority.Message}");
                     }
 
+                    ServerStartTime = DateTime.Now;
                     SetStatus("RUNNING");
                     Log($"Server launched successfully! Process PID: {ServerProcess.Id}");
                     Log($"Launch Command: {ExecutablePath} {arguments}");
@@ -1178,6 +1212,10 @@ namespace ConanServerManager
 
             // Step 3: Failsafe search and kill for any lingering server processes in Windows Task Manager
             KillAllConanServerProcesses();
+
+            ServerStartTime = DateTime.MinValue;
+            SteamStatus = new SteamServerInfo { IsOnline = false, ErrorMessage = "Server stopped." };
+            OnSteamStatusChanged?.Invoke(SteamStatus);
 
             SetStatus("STOPPED");
             ServerProcess = null;
