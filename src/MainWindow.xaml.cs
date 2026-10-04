@@ -50,8 +50,13 @@ namespace ConanServerManager
                 LoadUiFromConfig();
                 LoadIniFilesToTabs();
                 await UpdatePortStatusLedsAsync();
+                UpdateStatusUi(_engine.ServerStatus);
 
-                if (_engine.Config.AutoStartOnAppLaunch && _engine.ServerStatus == "STOPPED")
+                if (_engine.ServerStatus == "RUNNING")
+                {
+                    _engine.Log($"[Process Monitor] Dedicated Server is currently RUNNING (PID {_engine.ServerProcess?.Id}). Re-attached.");
+                }
+                else if (_engine.Config.AutoStartOnAppLaunch && _engine.ServerStatus == "STOPPED")
                 {
                     _engine.Log("[Auto-Start] AutoStartOnAppLaunch enabled. Launching Conan Dedicated Server...");
                     _ = Task.Run(async () => await _engine.RunFullUpdateAndStartAsync());

@@ -201,7 +201,7 @@ namespace ConanServerManager
 
         public const string WorkshopAppId = "440900";
         public const string ServerAppId = "443030";
-        public const string CurrentAppVersion = "1.0.1";
+        public const string CurrentAppVersion = "1.0.2";
 
         public AppUpdateInfo? LatestAppUpdate { get; private set; }
         public event Action<AppUpdateInfo>? OnAppUpdateDiscovered;
@@ -212,6 +212,8 @@ namespace ConanServerManager
             AutoDetectAndImportIniSettings();
             RefreshNetworkAdapters();
 
+            DetectAndAdoptRunningServerProcess();
+
             WebApi = new WebServer(this);
             SafeFireAndForget(async () => await WebApi.StartAsync(Config.WebPagePort), "Start WebApi");
             SafeFireAndForget(async () => await DetectExternalIpAsync(), "Detect External IP");
@@ -221,6 +223,36 @@ namespace ConanServerManager
             {
                 SafeFireAndForget(async () => await CheckForAppUpdateAsync(), "Check App Updates");
             }
+        }
+
+        public bool DetectAndAdoptRunningServerProcess()
+        {
+            try
+            {
+                var procs = Process.GetProcessesByName("ConanSandboxServer-Win64-Shipping")
+                    .Concat(Process.GetProcessesByName("ConanSandboxServer"))
+                    .Where(p => !p.HasExited)
+                    .ToArray();
+
+                if (procs.Length > 0)
+                {
+                    if (procs.Length > 1)
+                    {
+                        Log($"[Process Monitor] WARNING: {procs.Length} Conan Dedicated Server instances detected running simultaneously!");
+                    }
+
+                    var primaryProc = procs[0];
+                    ServerProcess = primaryProc;
+                    SetStatus("RUNNING");
+                    Log($"[Process Monitor] Attached to running Conan Dedicated Server process (PID {primaryProc.Id}). Status: RUNNING.");
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[Process Monitor] Note checking server process: {ex.Message}");
+            }
+            return false;
         }
 
         private void StartWatchdogTimer()
@@ -268,6 +300,11 @@ namespace ConanServerManager
                 }
                 else
                 {
+                    if (DetectAndAdoptRunningServerProcess())
+                    {
+                        return;
+                    }
+
                     Log("[Watchdog] WARNING: Server process reference missing while status was RUNNING. Auto-restarting...");
                     SetStatus("STOPPED");
                     _ = Task.Run(async () => await RunFullUpdateAndStartAsync());
@@ -767,9 +804,9 @@ namespace ConanServerManager
 
         public async Task RunFullUpdateAndStartAsync()
         {
-            if (ServerStatus == "RUNNING" || ServerStatus == "UPDATING")
+            if (DetectAndAdoptRunningServerProcess() || ServerStatus == "RUNNING" || ServerStatus == "UPDATING")
             {
-                Log("Server is already running or updating.");
+                Log("[Server Control] Dedicated Server is already running or updating. Duplicate launch blocked.");
                 return;
             }
 
@@ -819,6 +856,12 @@ namespace ConanServerManager
                 WorkingDirectory = Path.GetDirectoryName(ExecutablePath),
                 UseShellExecute = false
             };
+
+            if (DetectAndAdoptRunningServerProcess())
+            {
+                Log($"[Server Control] Existing server instance detected (PID {ServerProcess?.Id}). Aborting duplicate launch.");
+                return;
+            }
 
             try
             {
