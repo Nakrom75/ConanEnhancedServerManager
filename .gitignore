@@ -1,0 +1,46 @@
+# Game server data & large installations
+ConanSandbox/
+DedicatedServerLauncher/
+steamapps/
+Backups/
+Errors/
+Updates/
+ServerManager/
+ConanServerManager_DeployPackage/
+ConanServerManager_DeployPackage.zip
+
+# Large utilities & SteamCMD files
+SteamCMD.exe
+steamcmd.zip
+steamcmd/
+appcache/
+depotcache/
+package/
+public/
+userdata/
+config/
+logs/
+siteserverui/
+ConanExilesDedicatedServer/
+*.old
+*.delete
+*.vdf
+Screenshot*.png
+
+# Build artifacts & temporary outputs
+**/bin/
+**/obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.log
+*.tmp
+*.pdb
+*.exe
+*.dll
+*.deps.json
+*.runtimeconfig.json
+
+# Local credentials & sensitive config (use manager_config.example.json instead)
+manager_config.json
