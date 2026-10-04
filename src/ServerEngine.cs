@@ -198,6 +198,7 @@ namespace ConanServerManager
         private int _totalDownloadCount = 0;
         private int _rconConsecutiveFailures = 0;
         private System.Threading.Timer? _watchdogTimer;
+        private System.Threading.Timer? _appUpdateTimer;
 
         public const string WorkshopAppId = "440900";
         public const string ServerAppId = "443030";
@@ -218,11 +219,7 @@ namespace ConanServerManager
             SafeFireAndForget(async () => await WebApi.StartAsync(Config.WebPagePort), "Start WebApi");
             SafeFireAndForget(async () => await DetectExternalIpAsync(), "Detect External IP");
             StartWatchdogTimer();
-
-            if (Config.AutoCheckAppUpdates)
-            {
-                SafeFireAndForget(async () => await CheckForAppUpdateAsync(), "Check App Updates");
-            }
+            StartAppUpdateTimer();
         }
 
         public bool DetectAndAdoptRunningServerProcess()
@@ -268,6 +265,25 @@ namespace ConanServerManager
                     System.Diagnostics.Debug.WriteLine($"[Watchdog Exception]: {ex.Message}");
                 }
             }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+        }
+
+        private void StartAppUpdateTimer()
+        {
+            // Initial check 10 seconds after launch, then recurring every 4 hours
+            _appUpdateTimer = new System.Threading.Timer(async _ =>
+            {
+                if (Config.AutoCheckAppUpdates)
+                {
+                    try
+                    {
+                        await CheckForAppUpdateAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"[Auto-Update Timer Error]: {ex.Message}");
+                    }
+                }
+            }, null, TimeSpan.FromSeconds(10), TimeSpan.FromHours(4));
         }
 
         private async Task CheckWatchdogAsync()
@@ -1344,8 +1360,15 @@ namespace ConanServerManager
 
                     if (Config.AutoInstallAppUpdates && !string.IsNullOrEmpty(downloadUrl))
                     {
-                        Log("AutoInstallAppUpdates is enabled. Downloading and applying update automatically...");
-                        _ = Task.Run(async () => await DownloadAndApplyAppUpdateAsync(updateInfo));
+                        if (ServerStatus == "UPDATING")
+                        {
+                            Log("[Auto-Updater] Game server is currently downloading updates. Deferring application auto-update...");
+                        }
+                        else
+                        {
+                            Log("[Auto-Updater] AutoInstallAppUpdates is enabled. Downloading and applying update automatically in background...");
+                            _ = Task.Run(async () => await DownloadAndApplyAppUpdateAsync(updateInfo));
+                        }
                     }
                 }
                 else
