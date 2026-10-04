@@ -7,7 +7,7 @@ Errors/
 Updates/
 ServerManager/
 ConanServerManager_DeployPackage/
-ConanServerManager_DeployPackage.zip
+ConanServerManager*.zip
 
 # Large utilities & SteamCMD files
 SteamCMD.exe

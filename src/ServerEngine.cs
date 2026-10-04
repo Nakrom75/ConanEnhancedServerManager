@@ -201,7 +201,7 @@ namespace ConanServerManager
 
         public const string WorkshopAppId = "440900";
         public const string ServerAppId = "443030";
-        public const string CurrentAppVersion = "1.0.0";
+        public const string CurrentAppVersion = "1.0.1";
 
         public AppUpdateInfo? LatestAppUpdate { get; private set; }
         public event Action<AppUpdateInfo>? OnAppUpdateDiscovered;
@@ -1394,6 +1394,12 @@ namespace ConanServerManager
                     }
                 }
 
+                string stagedConfig = Path.Combine(stagedDir, "manager_config.json");
+                if (File.Exists(stagedConfig))
+                {
+                    try { File.Delete(stagedConfig); } catch { }
+                }
+
                 Log("Preparing update helper trampoline script...");
                 string helperBat = Path.Combine(AppWorkingDir, "update_helper.bat");
                 int currentPid = Process.GetCurrentProcess().Id;
@@ -1403,7 +1409,9 @@ title Conan Server Manager Updater
 echo ========================================================
 echo   Updating Conan Enhanced Server Manager to {updateInfo.TagName}
 echo ========================================================
-echo Target Directory: ""%~1""
+set ""TARGET=%~1""
+if ""%TARGET:~-1%""==""\"" set ""TARGET=%TARGET:~0,-1%""
+echo Target Directory: ""%TARGET%""
 echo Waiting for running application process PID %~2 to exit...
 timeout /t 2 /nobreak > nul
 
@@ -1415,10 +1423,10 @@ if not errorlevel 1 (
 )
 
 echo Applying updated binaries...
-xcopy ""%~dp0Updates\staged\*"" ""%~1\"" /E /Y /I /Q > nul
+xcopy ""%~dp0Updates\staged\*"" ""%TARGET%\"" /E /Y /I /Q > nul
 
 echo Restarting ConanServerManager.exe...
-start """" ""%~1\ConanServerManager.exe""
+start """" ""%TARGET%\ConanServerManager.exe""
 
 echo Cleaning temporary update files...
 timeout /t 2 /nobreak > nul
