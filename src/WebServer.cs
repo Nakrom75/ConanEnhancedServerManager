@@ -514,10 +514,21 @@ namespace ConanServerManager
             }
             else if ((path == "/api/download/apk" || path == "/conan.apk" || path == "/app.apk") && method == "GET")
             {
-                string apkPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ConanServerManager-v1.0.8.apk");
+                string apkPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ConanServerManager-v1.1.0.apk");
                 if (!File.Exists(apkPath))
                 {
-                    apkPath = Path.Combine(Directory.GetCurrentDirectory(), "ConanServerManager-v1.0.8.apk");
+                    apkPath = Path.Combine(Directory.GetCurrentDirectory(), "ConanServerManager-v1.1.0.apk");
+                }
+                if (!File.Exists(apkPath))
+                {
+                    // Fallback to find any ConanServerManager-*.apk in current or base dir
+                    var found = Directory.GetFiles(AppDomain.CurrentDomain.BaseDirectory, "ConanServerManager-*.apk");
+                    if (found.Length > 0) apkPath = found[0];
+                    else
+                    {
+                        found = Directory.GetFiles(Directory.GetCurrentDirectory(), "ConanServerManager-*.apk");
+                        if (found.Length > 0) apkPath = found[0];
+                    }
                 }
 
                 if (File.Exists(apkPath))
@@ -527,7 +538,7 @@ namespace ConanServerManager
                     sb.AppendLine("HTTP/1.1 200 OK");
                     sb.AppendLine("Content-Type: application/vnd.android.package-archive");
                     sb.AppendLine($"Content-Length: {apkBytes.Length}");
-                    sb.AppendLine("Content-Disposition: attachment; filename=\"ConanServerManager-v1.0.8.apk\"");
+                    sb.AppendLine($"Content-Disposition: attachment; filename=\"{Path.GetFileName(apkPath)}\"");
                     sb.AppendLine("Access-Control-Allow-Origin: *");
                     sb.AppendLine("Connection: close");
                     sb.AppendLine();
@@ -577,7 +588,7 @@ namespace ConanServerManager
 <head>
     <meta charset=""UTF-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
-    <title>Conan Exiles Server Remote Console (v1.0.8)</title>
+    <title>Conan Exiles Server Remote Console (v1.1.0)</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; }
         body { background: #0f172a; color: #f8fafc; padding: 16px; max-width: 900px; margin: 0 auto; }
@@ -619,7 +630,7 @@ namespace ConanServerManager
                 <div class=""title"" id=""srvName"">Conan Exiles Server</div>
                 <div class=""subtitle"">
                     <span>Remote Mobile &amp; Web Control Console</span>
-                    <span id=""appVerBadge"" class=""badge-ver"">v1.0.8</span>
+                    <span id=""appVerBadge"" class=""badge-ver"">v1.1.0</span>
                     <a href=""/conan.apk"" class=""btn-apk"">📱 Download Android App (.apk)</a>
                 </div>
             </div>

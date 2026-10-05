@@ -793,8 +793,10 @@ Follow this step-by-step roadmap when developing your custom manager on your dev
   - Fully compatible with `GET /api/config` and two-way remote configuration editing.
 - **Version Bump**: Centralized version `1.0.8` across project configurations, UI badges, `ServerEngine.CurrentAppVersion`, and deployment packages.
 
-### 21. Android Mobile Remote Client App (`.apk`), Steam Workshop Live Mod Browser & Remote Management, and In-App Auto-Updates (v1.0.8)
-- **Standalone Android APK (`ConanServerManager-v1.0.8.apk`)**:
+### 21. Android Mobile Remote Client App (`.apk`), Steam Workshop Live Mod Browser & Remote Management, and In-App Auto-Updates (v1.1.0)
+- **Major Feature Milestone (Version 1.1.0)**:
+  - Upgraded semantic version to `v1.1.0` reflecting the major expansion into cross-platform mobile server administration and live Steam Workshop integration.
+- **Standalone Android APK (`ConanServerManager-v1.1.0.apk`)**:
   - Created a dedicated, standalone Android client application (`android/`) targeting Android 14 (API 34) with backward compatibility to Android 7.0 (API 24).
   - Built with Gradle 8.5, Android Gradle Plugin 8.2.2, and OpenJDK 17.
   - Packaged and pre-signed with APK Signature Scheme v2 via `android/conan-release.keystore` (4.62 MB release APK).
@@ -821,7 +823,7 @@ Follow this step-by-step roadmap when developing your custom manager on your dev
   - Changes are validated, saved to `manager_config.json`, and written directly to `DefaultServerSettings.ini` / `ServerSettings.ini`.
 
 - **Direct APK Distribution & In-App Auto-Update System**:
-  - Embedded `WebServer.cs` serves the compiled Android APK directly at `GET /conan.apk` and `GET /api/download/apk` with proper `application/vnd.android.package-archive` MIME type and `Content-Disposition: attachment; filename="ConanServerManager-v1.0.8.apk"`.
+  - Embedded `WebServer.cs` serves the compiled Android APK directly at `GET /conan.apk` and `GET /api/download/apk` with proper `application/vnd.android.package-archive` MIME type and `Content-Disposition: attachment; filename="ConanServerManager-v1.1.0.apk"`.
   - Android app includes built-in update checker that compares the running app version with the latest GitHub release.
   - 1-tap in-app update: `MainActivity.java` initiates Android `DownloadManager` to fetch the new release `.apk`, stores it in the app's external files directory, and launches Android's native package installer via `FileProvider` (`com.conan.servermanager.fileprovider`) and `Intent.ACTION_VIEW` (`FLAG_GRANT_READ_URI_PERMISSION`).
 
@@ -838,7 +840,7 @@ Follow this step-by-step roadmap when developing your custom manager on your dev
     - **✨ Update Checker**: Status badge indicating whether the app is up to date, with 1-tap APK update button.
 
 - **Deployment Packages Updated**:
-  - Re-packaged and verified `ConanServerManager_v1.0.8.zip` and `ConanServerManager_DeployPackage.zip` containing the updated Windows server manager binaries and the pre-signed `ConanServerManager-v1.0.8.apk`.
+  - Packaged and verified `ConanServerManager_v1.1.0.zip` and `ConanServerManager_DeployPackage.zip` containing the updated Windows server manager binaries and the pre-signed `ConanServerManager-v1.1.0.apk`.
 
 ---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*

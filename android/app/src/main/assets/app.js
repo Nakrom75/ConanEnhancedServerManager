@@ -6,7 +6,7 @@ let installedMods = [];
 let savedServers = [];
 let latestApkUrl = "";
 let latestApkVersion = "";
-const APP_VERSION = "1.0.8";
+const APP_VERSION = "1.1.0";
 
 // Initialization
 document.addEventListener("DOMContentLoaded", () => {

@@ -208,7 +208,7 @@ namespace ConanServerManager
 
         public const string WorkshopAppId = "440900";
         public const string ServerAppId = "443030";
-        public const string CurrentAppVersion = "1.0.8";
+        public const string CurrentAppVersion = "1.1.0";
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
         public SteamServerInfo SteamStatus { get; private set; } = new SteamServerInfo();
