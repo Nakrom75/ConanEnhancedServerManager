@@ -842,25 +842,31 @@ Follow this step-by-step roadmap when developing your custom manager on your dev
 - **Deployment Packages Updated**:
   - Packaged and verified `ConanServerManager_v1.1.0.zip` and `ConanServerManager_DeployPackage.zip` containing the updated Windows server manager binaries and the pre-signed `ConanServerManager-v1.1.0.apk`.
 
-### 22. Unified Cross-Platform Version Synchronization System (`sync-version.ps1`)
-- **Problem**:
-  - Previously, version numbers were hardcoded in multiple disconnected files (C# csproj, ServerEngine.cs, MainWindow.xaml, WebServer.cs, Android build.gradle, app.js, index.html), causing desynchronization risks during releases.
+### 22. Full-Screen Mobile Server Selection & Unified Versioning (v1.1.1)
+- **Version Bump to `v1.1.1`**:
+  - Incremented version to `v1.1.1` across Windows Server Manager, Embedded Web Console, and Android Companion App.
+- **Full-Screen Mobile Server Selection & Management Window**:
+  - Replaced the cramped 80vh bottom sheet modal in the Android app with a dedicated full-screen interface (`.modal-fullscreen`: `100vw x 100vh`, fixed viewport).
+  - Designed for smooth touchscreen navigation that adapts dynamically when the virtual keyboard pops up without obscuring buttons or content.
+  - Safe area inset support (`padding-top: env(safe-area-inset-top)` / `padding-bottom: env(safe-area-inset-bottom)`) for modern notch and gesture displays.
+  - Added dedicated navigation bar with `← Back` and top-right `✕` buttons, fully integrated with Android's physical and gesture back button.
+  - **Currently Active Server Banner**: Displays active server name, URL, and live `ONLINE` / `OFFLINE` status.
+  - **Quick-Fill Shortcut Chips**: 1-tap helper pills for `🏠 Localhost`, `➕ :8088`, `🌐 http://`, `📶 192.168.1.`, and `✕ Clear`.
+  - **Server Nicknames**: Added support for naming connections (e.g., *"Home Server"*, *"Living Room PC"*, *"Cloud VM"*).
+  - **Saved Servers Manager**: Spacious cards displaying server nicknames, endpoints, `ACTIVE` indicator, 1-tap `▶ Connect`, and `🗑️ Delete`.
+  - **Local Network (LAN) Discovery**: Added on-demand subnet scanning button (`🔍 Scan LAN`) that automatically detects active Conan Dedicated Server Managers on local subnets.
 - **Single Source of Truth (`version.txt`)**:
-  - The root file [`version.txt`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/version.txt) now serves as the single canonical source of truth for the application version.
-- **Dynamic C# MSBuild & Assembly Metadata Integration**:
-  - [`src/ConanServerManager.csproj`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/src/ConanServerManager.csproj): Evaluates `version.txt` dynamically at build time via MSBuild property functions:
-    `<VersionPrefix>$([System.IO.File]::ReadAllText('$([System.IO.Path]::Combine($(MSBuildProjectDirectory), '..', 'version.txt'))').Trim())</VersionPrefix>`
-  - [`src/ServerEngine.cs`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/src/ServerEngine.cs): `ServerEngine.CurrentAppVersion` dynamically extracts `AssemblyInformationalVersionAttribute` at runtime from the executing assembly.
-  - [`src/MainWindow.xaml.cs`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/src/MainWindow.xaml.cs): Sets `TxtAppHeaderTitle` and `TxtAppHeaderVersionBadge` at runtime directly from `ServerEngine.CurrentAppVersion`.
-  - [`src/WebServer.cs`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/src/WebServer.cs): Dynamically injects `ServerEngine.CurrentAppVersion` into the web dashboard HTML and automatically serves `ConanServerManager-v{version}.apk`.
-- **Dynamic Android Gradle & Native Bridge Integration**:
-  - [`android/app/build.gradle`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/android/app/build.gradle): Reads `version.txt` via `rootProject.file('../version.txt')`, automatically computes `versionCode` (SemVer `major * 10000 + minor * 100 + patch`), sets `versionName`, and configures `outputFileName = "ConanServerManager-v${appVerName}.apk"`.
-  - [`MainActivity.java`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/android/app/src/main/java/com/conan/servermanager/MainActivity.java): Exposes `@JavascriptInterface public String getAppVersion()` querying Android `PackageManager` directly.
-  - [`app.js`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/android/app/src/main/assets/app.js) & [`index.html`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/android/app/src/main/assets/index.html): Populates `appInstalledVersion` dynamically from `Android.getAppVersion()` on mobile or `/api/status` in browser.
-- **One-Command Release Synchronization (`sync-version.ps1`)**:
-  - Created [`sync-version.ps1`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/sync-version.ps1) to manage the entire release cycle in a single command:
-    `.\sync-version.ps1 -NewVersion "1.2.0"`
-  - Automatically updates `version.txt`, publishes C# win-x64 binaries, builds signed Android release APK, deploys the APK across root and package directories, removes obsolete APK versions, and packages `ConanServerManager_v<version>.zip` and `ConanServerManager_DeployPackage.zip`.
+  - Root [`version.txt`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/version.txt) serves as the canonical source of truth for all projects.
+  - [`src/ConanServerManager.csproj`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/src/ConanServerManager.csproj) evaluates `version.txt` dynamically at build time via MSBuild property functions.
+  - [`src/ServerEngine.cs`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/src/ServerEngine.cs) extracts assembly informational version dynamically at runtime.
+  - [`src/MainWindow.xaml.cs`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/src/MainWindow.xaml.cs) sets window title and version badge at launch.
+  - [`src/WebServer.cs`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/src/WebServer.cs) injects the current version into the web console HTML and serves `ConanServerManager-v{version}.apk`.
+  - [`android/app/build.gradle`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/android/app/build.gradle) reads `version.txt`, sets `versionName`, computes `versionCode`, and outputs `ConanServerManager-v${appVerName}.apk`.
+  - [`MainActivity.java`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/android/app/src/main/java/com/conan/servermanager/MainActivity.java) exposes native `getAppVersion()` via `PackageManager`.
+- **Release Packages Updated**:
+  - **Android APK**: [`ConanServerManager-v1.1.1.apk`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/ConanServerManager-v1.1.1.apk) (4.41 MB).
+  - **Windows Release Zip**: [`ConanServerManager_v1.1.1.zip`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/ConanServerManager_v1.1.1.zip).
+  - **Deployment Package Zip**: [`ConanServerManager_DeployPackage.zip`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/ConanServerManager_DeployPackage.zip).
 
 ---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
