@@ -1,8 +1,8 @@
 # SOURCE OF TRUTH: Conan Exiles Dedicated Server & Manager Architecture
 
-> **Document Version:** 1.0.0  
+> **Document Version:** 1.1.11  
 > **Target Application:** Conan Exiles Dedicated Server (AppID `443030`)  
-> **Date:** September 2026  
+> **Date:** October 2026  
 > **Purpose:** Complete reverse-engineered architectural blueprint, specifications, protocol details, and engineering roadmap to build a custom, modern, highly reliable Conan Exiles Dedicated Server Manager.
 
 ---
@@ -31,6 +31,24 @@
    - 7.2 [Module Specifications](#72-module-specifications)
    - 7.3 [Reference Implementations & Code Templates](#73-reference-implementations--code-templates)
 8. [Implementation Roadmap](#8-implementation-roadmap)
+9. [Progress Log & Implementation Status](#9-progress-log--implementation-status)
+10. [Official Funcom DedicatedServerLauncher Specifications & Reference Manual](#10-official-funcom-dedicatedserverlauncher-specifications--reference-manual)
+...
+16. [Remote Client Persistence, Full Remote Sync & Steam Visibility Fixes (v1.0.4)](#16-remote-client-persistence-full-remote-sync--steam-visibility-fixes-v104)
+17. [Hotfix: XAML Startup Lifecycle & Initialization Guards (v1.0.5)](#17-hotfix-xaml-startup-lifecycle--initialization-guards-v105)
+18. [Application Icon Integration & Visual Polish (v1.0.6)](#18-application-icon-integration--visual-polish-v106)
+19. [Permanent Players Sidebar & Web Interface Live Players (v1.0.7)](#19-permanent-players-sidebar--web-interface-live-players-v107)
+20. [Remote Server Dropdown, Network & VM Discovery, and Custom Server Selection (v1.0.8)](#20-remote-server-dropdown-network--vm-discovery-and-custom-server-selection-v108)
+21. [Android Mobile Remote Client App, Steam Workshop Live Mod Browser & Remote Management (v1.1.0)](#21-android-mobile-remote-client-app-apk-steam-workshop-live-mod-browser--remote-management-and-in-app-auto-updates-v110)
+22. [Full-Screen Mobile Server Selection & Unified Versioning (v1.1.1)](#22-full-screen-mobile-server-selection--unified-versioning-v111)
+23. [Windows In-App Self-Update Engine & Trampoline Orchestration (v1.1.2 - v1.1.4)](#23-windows-in-app-self-update-engine--trampoline-orchestration-v112---v114)
+24. [SteamCMD Automated Deployment & Error Resilience (v1.1.5)](#24-steamcmd-automated-deployment--error-resilience-v115)
+25. [Steam Workshop Mod Title Resolution & Local Cache (v1.1.6)](#25-steam-workshop-mod-title-resolution--local-cache-v116)
+26. [Mod Steam Workshop Webpage Context Actions (v1.1.7)](#26-mod-steam-workshop-webpage-context-actions-v117)
+27. [XAML Style Hierarchy & Startup Crash Elimination (v1.1.8)](#27-xaml-style-hierarchy--startup-crash-elimination-v118)
+28. [Steam Master Server Announcement, FLS Registration & RCON Mapping Architecture (v1.1.9)](#28-steam-master-server-announcement-fls-registration--rcon-mapping-architecture-v119)
+29. [Self-Contained Deployment & .NET Runtime Independence (v1.1.10)](#29-self-contained-deployment--net-runtime-independence-v1110)
+30. [Zero-Data-Loss Architecture: Configuration Ingestion, Packaging Isolation & INI Integrity (v1.1.11)](#30-zero-data-loss-architecture-configuration-ingestion-packaging-isolation--ini-integrity-v1111)
 
 ---
 
@@ -867,6 +885,149 @@ Follow this step-by-step roadmap when developing your custom manager on your dev
   - **Android APK**: [`ConanServerManager-v1.1.1.apk`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/ConanServerManager-v1.1.1.apk) (4.41 MB).
   - **Windows Release Zip**: [`ConanServerManager_v1.1.1.zip`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/ConanServerManager_v1.1.1.zip).
   - **Deployment Package Zip**: [`ConanServerManager_DeployPackage.zip`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/ConanServerManager_DeployPackage.zip).
+
+---
+
+### 23. Windows In-App Self-Update Engine & Trampoline Orchestration (v1.1.2 - v1.1.4)
+- **Automated Update Polling**:
+  - Implemented `CheckForAppUpdateAsync()` in [`src/ServerEngine.cs`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/src/ServerEngine.cs) executing asynchronous GitHub Releases API calls to `https://api.github.com/repos/Nakrom75/ConanEnhancedServerManager/releases/latest`.
+  - Parses semver release tags (e.g. `v1.1.4`) and matches against `ServerEngine.CurrentAppVersion`.
+  - Configurable update options in `manager_config.json`: `AutoCheckAppUpdates` (periodic hourly check) and `AutoInstallAppUpdates`.
+- **Streaming Package Downloader**:
+  - `DownloadAndApplyAppUpdateAsync(AppUpdateInfo)` fetches release asset ZIPs with streaming `HttpClient` and invokes real-time percentage progress delegates.
+- **Trampoline Process Architecture (`update_helper.bat`)**:
+  - Windows file locks prevent overwriting running executables and loaded assemblies (`ConanServerManager.exe`, `System.Private.CoreLib.dll`).
+  - Implemented an out-of-process batch trampoline (`update_helper.bat`):
+    1. Receives target install path and caller process PID as arguments.
+    2. Polls `tasklist /fi "PID eq <PID>"` in a non-blocking loop until the manager process terminates cleanly.
+    3. Executes `xcopy "%~dp0Updates\staged\*" "<TARGET>\" /E /Y /I /Q`.
+    4. Automatically launches the updated `ConanServerManager.exe`.
+    5. Cleans up temporary staging artifacts and self-deletes via `rd /s /q Updates` and `(goto) 2>nul & del "%~f0"`.
+- **WPF UI Update Banner**:
+  - Added modern animated update notification bar in [`src/MainWindow.xaml`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/src/MainWindow.xaml) featuring update notes, download progress bar, and 1-click **"⚡ Update & Restart"** action.
+
+---
+
+### 24. SteamCMD Automated Deployment & Error Resilience (v1.1.5)
+- **Problem & Official Launcher Bottleneck**:
+  - If `SteamCMD.exe` was missing, corrupt, or running in an unprivileged subdirectory, server startup stalled indefinitely without descriptive diagnostics.
+- **Valve CDN Direct Bootstrapping**:
+  - In [`src/ServerEngine.cs`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/src/ServerEngine.cs), implemented `EnsureSteamCmdDownloadedAsync()`: downloads `https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip` directly to disk and unpacks `SteamCMD.exe`.
+- **Multi-Path Discovery Chain**:
+  - Implemented `FindSteamCmdExe()` scanning ordered candidate directories:
+    1. Local app working directory (`AppWorkingDir\SteamCMD.exe`)
+    2. Legacy launcher directory (`AppWorkingDir\DedicatedServerLauncher\SteamCMD.exe`)
+    3. Server root directory (`ServerRootDir\SteamCMD.exe`)
+    4. Application base directory (`BaseDir\SteamCMD.exe`)
+- **Process Orchestration & Exit Code Trapping**:
+  - Traps and parses SteamCMD standard error, standard output, and process return codes (0 = Success, 7 = Fatal Error, 8 = Out of Memory).
+  - Routes real-time stdout streams to both `OnSteamCmdLog` and main UI diagnostics tab.
+
+---
+
+### 25. Steam Workshop Mod Title Resolution & Local Cache (v1.1.6)
+- **Problem**:
+  - Dedicated server configuration and Unreal Engine `modlist.txt` identify mods exclusively by Steam PublishedFileId numbers (e.g., `3722388367`, `3803465771`).
+  - Server administrators were forced to cross-reference web URLs or memorize 10-digit IDs.
+- **Valve Remote Storage Batch API**:
+  - Implemented [`src/SteamWorkshopHelper.cs`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/src/SteamWorkshopHelper.cs) utilizing Valve's official API:
+    `POST https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/`
+  - Encodes multi-item form payloads (`itemcount=N`, `publishedfileids[0]=...`) to resolve up to 100 mods in a single HTTP request.
+- **Resilient Fallback Web Scraping**:
+  - When Steam Web API endpoints are rate-limited or unauthenticated, falls back to parsing embedded OpenGraph metadata and JSON structures on `https://steamcommunity.com/sharedfiles/filedetails/?id=<ID>`.
+- **Thread-Safe Local Metadata Cache (`workshop_cache.json`)**:
+  - Persists resolved mod titles, author names, preview URLs, and file sizes to `workshop_cache.json`.
+  - Employs cache-aside pattern: instant offline retrieval upon application launch without stalling the UI.
+- **Two-Line Rich Mod Presentation Model (`ModDisplayItem`)**:
+  - WPF and Android Web UI render items with Mod Title in bold primary text and Mod ID in secondary muted styling.
+
+---
+
+### 26. Safe Mod Webpage Navigation via Context Menu & Long-Press (v1.1.7)
+- **Problem**:
+  - Admins needed quick access to mod documentation, update histories, and Steam Workshop pages without risking accidental browser launches while clicking or scrolling.
+- **Desktop WPF Context Menu**:
+  - Implemented contextual right-click menu on mod list items:
+    - **"🌐 Open Mod Page on Steam Workshop"**: Launches default web browser directly to `https://steamcommunity.com/sharedfiles/filedetails/?id={modId}` via `ProcessStartInfo { UseShellExecute = true }`.
+    - **"📋 Copy Mod ID"**: Copies raw numeric ID to the Windows clipboard.
+- **Mobile Android Long-Press Gesture**:
+  - In `android/app/src/main/assets/app.js`, implemented deliberate long-press touch handler with a 500ms duration threshold:
+    - Normal clicks/taps select the item for reordering or deletion without opening links.
+    - Sustained long press triggers a modal popup displaying mod thumbnail, title, ID, and explicit buttons:
+      - *"🌐 Open Steam Workshop Page"* (delegates to external Android browser).
+      - *"📋 Copy Mod ID"* (copies to Android clipboard with haptic feedback).
+      - *"✕ Cancel"*.
+
+---
+
+### 27. XAML Style Hierarchy & Startup Crash Elimination (v1.1.8)
+- **Startup Crash Root Cause**:
+  - Immediately following mod context menu integration, applications experienced `XamlParseException` / `InvalidOperationException` crashes on startup (`crash.log`).
+  - In WPF, declaring a `ContextMenu` directly inside `ListView.ItemContainerStyle` `Style.Setters` causes parser conflicts with the element's visual parent when using custom `ItemTemplate` hierarchies.
+- **Architectural Fix**:
+  - Declared `ContextMenu` as an independent named resource within `<Window.Resources>` or directly on the container.
+  - Attached event triggers programmatically in code-behind [`src/MainWindow.xaml.cs`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/src/MainWindow.xaml.cs).
+  - Integrated global exception handling in `App.xaml.cs` trapping `DispatcherUnhandledException`, writing comprehensive diagnostic logs, inner exceptions, and stack traces to `crash.log`.
+
+---
+
+### 28. Steam Master Server Announcement, FLS Registration & RCON Mapping Architecture (v1.1.9)
+- **Problem & Root Cause**:
+  - Dedicated server processes started successfully, but remained invisible in the in-game server browser, failed to register with Steam Master Server, output red diagnostic errors, and dropped RCON connections.
+- **Unreal Engine 4 & Funcom Live Services (FLS) Multi-INI Hierarchy**:
+  - Unlike standalone engines where settings reside in a single file, Conan Exiles strictly partitions server parameters across three separate INI files in `Saved\Config\WindowsServer\`:
+    1. **`ServerSettings.ini` (`[ServerSettings]`)**:
+       - Primary gameplay mechanics: Harvest multipliers, XP rates, PvP schedules, NPC damage, nudity, and mod lists (`DedicatedServerLauncherModList`).
+       - Region code (`serverRegion`).
+    2. **`Engine.ini` (`[OnlineSubsystem]`, `[OnlineSubsystemSteam]`, `[URL]`)**:
+       - Master server identity: `[OnlineSubsystem] ServerName` and `ServerPassword`.
+       - Port bindings: `[URL] Port=7777` (game traffic).
+       - Steam Master Server Query Port: `[OnlineSubsystemSteam] GameServerQueryPort=27015`. If omitted, the engine fails to announce to Valve's Master Server list.
+       - Network tick rate: `[/Script/OnlineSubsystemUtils.IpNetDriver] NetServerMaxTickRate=30`.
+       - Multihome IP bindings (`DedicatedServerLauncherMultihomeEnabled`, `DedicatedServerLauncherMultihomeIP`).
+    3. **`Game.ini` (`[/Script/Engine.GameSession]`, `[RconPlugin]`)**:
+       - Max player limits: `[/Script/Engine.GameSession] MaxPlayers=40`. (Writing `MaxPlayers` to `ServerSettings.ini` is ignored by Unreal Engine!).
+       - RCON configuration: `[RconPlugin] RconEnabled=True`, `RconPort=25575`, `RconPassword=...`. (Writing RCON settings to `ServerSettings.ini` causes RCON to remain disabled!).
+- **Multi-File INI Synchronization Engine**:
+  - Upgraded `SyncIniSettings()` in [`src/ServerEngine.cs`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/src/ServerEngine.cs) to synchronize each parameter to its authentic Unreal Engine INI destination.
+  - Upgraded `AutoDetectAndImportIniSettings()` to inspect all three files on launch.
+
+---
+
+### 29. Self-Contained Deployment & .NET Runtime Independence (v1.1.10)
+- **Problem**:
+  - Launching the server manager on clean host machines or Windows Server VMs triggered a Windows modal error: *"You must install .NET Desktop Runtime to run this application"*, even when partial or newer .NET runtimes existed.
+- **Self-Contained Deployment (`win-x64`)**:
+  - Added `<RollForward>Major</RollForward>` to [`src/ConanServerManager.csproj`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/src/ConanServerManager.csproj).
+  - Configured publication pipeline for standalone execution:
+    `dotnet publish src/ConanServerManager.csproj -c Release -r win-x64 --self-contained true -o ServerManager/`
+  - Embeds the .NET CoreCLR, WPF presentation frameworks, and native graphics libraries (`wpfgfx_cor3.dll`, `vcruntime140_cor3.dll`).
+  - Zero runtime dependencies: the application launches out-of-the-box on clean installations of Windows 10, 11, and Windows Server 2016/2019/2022.
+
+---
+
+### 30. Zero-Data-Loss Architecture: Configuration Ingestion, Packaging Isolation & INI Integrity (v1.1.11)
+- **Problem**:
+  - Users reported that updates repeatedly wiped out `ServerSettings.ini`, resetting it to a minimal 8–9 line skeleton and removing hundreds of custom gameplay multipliers.
+  - Server names and passwords were continually reset to generic test strings ("Test Server v1.1.5", "Antigravity Conan Server", "AdminPassword456").
+- **Root Cause Analysis**:
+  1. *Packaging Contamination*: The build routine executed `Compress-Archive -Path "ServerManager\*"` without filtering. Local runtime files created during development testing (`manager_config.json` containing test credentials, and a 418-byte dummy `ServerSettings.ini` inside `ServerManager\ConanExilesDedicatedServer`) were packaged directly into `ConanServerManager_v1.1.X.zip`. Extracting an update unzipped these files over the user's real configs.
+  2. *Class Defaults*: `ManagerConfig` initialized properties with dummy strings (`"Antigravity Conan Server"`, `"SuperSecretAdminPassword123!"`).
+  3. *Unchecked Skeleton Generation*: When `UpdateIniKey()` could not find `ServerSettings.ini`, it created a brand-new file containing only the 8 keys managed by the launcher, stripping the 220+ default gameplay settings.
+- **Architectural Solution & Safeguards**:
+  - **Zero-Config Packaging Isolation**:
+    - Build process strictly purges `manager_config.json`, `workshop_cache.json`, `ConanExilesDedicatedServer/`, and all `*.ini` files from `ServerManager/` and `ConanServerManager_DeployPackage/` prior to archiving.
+    - Only [`manager_config.example.json`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/manager_config.example.json) is distributed in release archives.
+  - **Neutral Defaults & Legacy Placeholder Purging**:
+    - Property defaults in `ManagerConfig` initialized to empty strings (`""`).
+    - Implemented `IsPlaceholderServerName()` and `IsPlaceholderPassword()` to automatically detect, sanitize, and discard legacy test strings.
+  - **Server INIs as the Source of Truth**:
+    - When `ServerSettings.ini` or `Engine.ini` exist, their non-empty values are treated as the definitive source of truth.
+    - `AutoDetectAndImportIniSettings()` populates `Config` before any sync operation. Startup never overwrites existing non-empty values with blank or placeholder strings.
+  - **Skeleton File Prohibition**:
+    - `UpdateIniKey()` explicitly checks `Path.GetFileName(filePath).Equals("ServerSettings.ini")`. If the file does not exist, it aborts write operations, ensuring Conan Sandbox Server can generate its full 220+ default settings on first boot without premature truncation.
+  - **Updater Trampoline Scrubbing**:
+    - `DownloadAndApplyAppUpdateAsync()` aggressively scrubs any staged `manager_config.json`, `ConanExilesDedicatedServer`, `workshop_cache.json`, `Backups`, or `*.ini` files from `stagedDir` before spawning the updater trampoline script.
 
 ---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*

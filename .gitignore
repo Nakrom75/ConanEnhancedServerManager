@@ -8,6 +8,10 @@ Updates/
 /ServerManager/
 /ConanServerManager_DeployPackage/
 ConanServerManager*.zip
+conan.apk
+ConanServerManager-v1.1.*.apk
+!ConanServerManager-v1.1.11.apk
+app.png
 
 # Large utilities & SteamCMD files
 SteamCMD.exe
@@ -45,3 +49,5 @@ Screenshot*.png
 # Local credentials & sensitive config (use manager_config.example.json instead)
 manager_config.json
 *.bak
+workshop_cache.json
+runtimes/
