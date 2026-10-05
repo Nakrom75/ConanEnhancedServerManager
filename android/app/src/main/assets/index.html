@@ -202,7 +202,7 @@
             <div class="card">
                 <div class="card-title">✨ Application Updates</div>
                 <div style="font-size:0.85rem;color:#cbd5e1;margin-bottom:12px;">
-                    <div>App Version: <strong class="badge badge-ver" id="appInstalledVersion">v1.1.2</strong></div>
+                    <div>App Version: <strong class="badge badge-ver" id="appInstalledVersion">v1.1.3</strong></div>
                     <div style="margin-top:6px;">Server Manager Version: <strong id="serverInstalledVersion" style="color:#38bdf8;">--</strong></div>
                 </div>
 
@@ -210,8 +210,16 @@
 
                 <div id="updateBannerCard" style="display:none;margin-top:14px;background:#0f172a;border:1px solid #38bdf8;border-radius:10px;padding:12px;">
                     <div style="font-size:0.95rem;font-weight:bold;color:#38bdf8;" id="updateBannerTitle">New Update Available!</div>
-                    <div style="font-size:0.75rem;color:#94a3b8;margin-top:4px;" id="updateBannerNotes"></div>
+                    <div style="font-size:0.75rem;color:#94a3b8;margin-top:4px;white-space:pre-wrap;" id="updateBannerNotes"></div>
                     <button class="btn-success" style="width:100%;margin-top:10px;" id="btnInstallUpdate" onclick="installUpdate()">📥 Download &amp; Install APK Update</button>
+                </div>
+
+                <div style="margin-top:16px;border-top:1px solid #334155;padding-top:12px;">
+                    <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:8px;font-weight:bold;text-transform:uppercase;">Direct APK Download Links:</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                        <button class="btn-secondary" style="font-size:0.75rem;padding:8px;" onclick="downloadFromServerDirect()">🏠 From Server</button>
+                        <button class="btn-secondary" style="font-size:0.75rem;padding:8px;" onclick="downloadFromGithubDirect()">🌐 From GitHub</button>
+                    </div>
                 </div>
             </div>
         </section>

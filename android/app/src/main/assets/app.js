@@ -5,7 +5,7 @@ let pollTimer = null;
 let installedMods = [];
 let savedServers = [];
 let latestApkUrl = "";
-let APP_VERSION = "1.1.2";
+let APP_VERSION = "1.1.3";
 if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
 }
@@ -458,40 +458,111 @@ async function saveServerConfig() {
     }
 }
 
-// IN-APP UPDATE CHECKER
+// IN-APP SMART DUAL-SOURCE UPDATE CHECKER
 async function checkAppUpdates() {
+    let updateFound = false;
+    let foundVersion = "";
+    let downloadUrl = "";
+    let releaseNotes = "";
+    let sourceLabel = "";
+
+    const currentClean = APP_VERSION.replace(/^v/i, "").trim();
+    showToast("Checking for updates...");
+
+    // 1. Try GitHub Releases & Raw Repo Fallback
     try {
-        const res = await fetch("https://api.github.com/repos/Nakrom75/ConanEnhancedServerManager/releases/latest");
-        if (!res.ok) return;
-        const release = await res.json();
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4500);
+        const res = await fetch("https://api.github.com/repos/Nakrom75/ConanEnhancedServerManager/releases/latest", {
+            cache: "no-store",
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
 
-        const latestTag = (release.tag_name || "").replace(/^v/i, "");
-        const currentClean = APP_VERSION.replace(/^v/i, "");
+        if (res.ok) {
+            const release = await res.json();
+            const latestTag = (release.tag_name || "").replace(/^v/i, "").trim();
 
-        if (latestTag && isNewerVersion(latestTag, currentClean)) {
-            // Find APK asset
-            const apkAsset = (release.assets || []).find(a => a.name && a.name.endsWith(".apk"));
-            if (apkAsset) {
-                latestApkUrl = apkAsset.browser_download_url;
-                latestApkVersion = latestTag;
+            if (latestTag && isNewerVersion(latestTag, currentClean)) {
+                foundVersion = latestTag;
+                releaseNotes = release.name || release.body?.substring(0, 160) || "Latest release improvements & fixes";
+                sourceLabel = "GitHub";
 
-                document.getElementById("updateBannerCard").style.display = "block";
-                document.getElementById("updateBannerTitle").innerText = `New Update: v${latestTag} Available!`;
-                document.getElementById("updateBannerNotes").innerText = release.name || release.body?.substring(0, 150) || "Bug fixes & new features";
-                showToast(`New update v${latestTag} is available!`);
-            }
-        } else {
-            document.getElementById("updateBannerCard").style.display = "none";
-            if (currentTab === "updates") {
-                showToast("Application is up to date (v" + APP_VERSION + ")");
+                // Check for attached APK in release assets
+                const apkAsset = (release.assets || []).find(a => a.name && a.name.endsWith(".apk"));
+                if (apkAsset && apkAsset.browser_download_url) {
+                    downloadUrl = apkAsset.browser_download_url;
+                } else {
+                    // Fallback to direct raw repo APK
+                    downloadUrl = `https://raw.githubusercontent.com/Nakrom75/ConanEnhancedServerManager/main/ConanServerManager-v${latestTag}.apk`;
+                }
+                updateFound = true;
             }
         }
-    } catch {}
+    } catch (e) {
+        console.warn("GitHub release check failed, checking server host fallback:", e);
+    }
+
+    // 2. Check connected Conan Server Host (/api/status & /conan.apk)
+    try {
+        const srvController = new AbortController();
+        const srvTimeoutId = setTimeout(() => srvController.abort(), 3500);
+        const srvRes = await fetch(`${currentServerUrl}/api/status`, {
+            cache: "no-store",
+            signal: srvController.signal
+        });
+        clearTimeout(srvTimeoutId);
+
+        if (srvRes.ok) {
+            const srvData = await srvRes.json();
+            const srvVer = (srvData.appVersion || "").replace(/^v/i, "").trim();
+
+            if (srvVer) {
+                const srvBadge = document.getElementById("serverInstalledVersion");
+                if (srvBadge) srvBadge.innerText = "v" + srvVer;
+            }
+
+            // If server is newer than current app version and either GitHub wasn't newer or failed
+            if (srvVer && isNewerVersion(srvVer, currentClean)) {
+                if (!updateFound || isNewerVersion(srvVer, foundVersion)) {
+                    foundVersion = srvVer;
+                    downloadUrl = `${currentServerUrl}/conan.apk`;
+                    releaseNotes = `Direct update from your Conan Server host (${srvData.serverName || currentServerUrl})`;
+                    sourceLabel = "Server Host";
+                    updateFound = true;
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("Server host update check warning:", e);
+    }
+
+    // 3. Update UI Banner
+    const banner = document.getElementById("updateBannerCard");
+    const bannerTitle = document.getElementById("updateBannerTitle");
+    const bannerNotes = document.getElementById("updateBannerNotes");
+    const installBtn = document.getElementById("btnInstallUpdate");
+
+    if (updateFound && downloadUrl) {
+        latestApkUrl = downloadUrl;
+        latestApkVersion = foundVersion;
+
+        if (banner) banner.style.display = "block";
+        if (bannerTitle) bannerTitle.innerText = `New Update: v${foundVersion} Available!`;
+        if (bannerNotes) bannerNotes.innerText = `${releaseNotes}\n(Download Source: ${sourceLabel})`;
+        if (installBtn) installBtn.innerText = `📥 Download & Install v${foundVersion} (${sourceLabel})`;
+
+        showToast(`Update v${foundVersion} found from ${sourceLabel}!`);
+    } else {
+        if (banner) banner.style.display = "none";
+        showToast(`Application is up to date (v${APP_VERSION})`);
+    }
 }
 
 function isNewerVersion(remote, local) {
-    const rParts = remote.split(".").map(Number);
-    const lParts = local.split(".").map(Number);
+    if (!remote || !local) return false;
+    const rParts = remote.split(".").map(s => parseInt(s, 10) || 0);
+    const lParts = local.split(".").map(s => parseInt(s, 10) || 0);
     for (let i = 0; i < Math.max(rParts.length, lParts.length); i++) {
         const r = rParts[i] || 0;
         const l = lParts[i] || 0;
@@ -501,18 +572,34 @@ function isNewerVersion(remote, local) {
     return false;
 }
 
-function installUpdate() {
+function installUpdate(customUrl = null) {
     vibrate(40);
-    if (!latestApkUrl) {
+    const targetUrl = customUrl || latestApkUrl;
+    if (!targetUrl) {
         showToast("No APK download link found.");
         return;
     }
 
+    const ver = latestApkVersion || APP_VERSION;
     if (window.Android && typeof Android.downloadAndInstallApk === "function") {
-        Android.downloadAndInstallApk(latestApkUrl, latestApkVersion);
+        Android.downloadAndInstallApk(targetUrl, ver);
     } else {
-        window.open(latestApkUrl, "_system");
+        window.open(targetUrl, "_system");
     }
+}
+
+function downloadFromServerDirect() {
+    vibrate(30);
+    const url = `${currentServerUrl}/conan.apk`;
+    showToast("Downloading APK from server...");
+    installUpdate(url);
+}
+
+function downloadFromGithubDirect() {
+    vibrate(30);
+    const url = `https://raw.githubusercontent.com/Nakrom75/ConanEnhancedServerManager/main/ConanServerManager-v${APP_VERSION}.apk`;
+    showToast("Downloading APK from GitHub...");
+    installUpdate(url);
 }
 
 // SERVER CONNECTION FULL-SCREEN MODAL
@@ -926,3 +1013,5 @@ window.saveServerConfig = saveServerConfig;
 window.sendRcon = sendRcon;
 window.checkAppUpdates = checkAppUpdates;
 window.installUpdate = installUpdate;
+window.downloadFromServerDirect = downloadFromServerDirect;
+window.downloadFromGithubDirect = downloadFromGithubDirect;
