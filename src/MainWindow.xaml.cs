@@ -17,6 +17,8 @@ namespace ConanServerManager
         private readonly ServerEngine _engine;
         private readonly HttpClient _httpClient = new HttpClient();
         private readonly DispatcherTimer _remoteTimer = new DispatcherTimer();
+        private bool _hasSyncedRemoteConfig = false;
+        private int _remoteUptimeSeconds = 0;
 
         public bool IsRemoteMode => RadRemoteMode != null && RadRemoteMode.IsChecked == true;
 
@@ -49,18 +51,22 @@ namespace ConanServerManager
                 TxtAppHeaderTitle.Text = $"Conan Enhanced Server Manager v{ServerEngine.CurrentAppVersion}";
                 _engine.Log($"[System] Conan Enhanced Server Manager v{ServerEngine.CurrentAppVersion} initialized successfully.");
                 LoadUiFromConfig();
-                LoadIniFilesToTabs();
-                await UpdatePortStatusLedsAsync();
-                UpdateStatusUi(_engine.ServerStatus);
 
-                if (_engine.ServerStatus == "RUNNING")
+                if (!IsRemoteMode)
                 {
-                    _engine.Log($"[Process Monitor] Dedicated Server is currently RUNNING (PID {_engine.ServerProcess?.Id}). Re-attached.");
-                }
-                else if (_engine.Config.AutoStartOnAppLaunch && _engine.ServerStatus == "STOPPED")
-                {
-                    _engine.Log("[Auto-Start] AutoStartOnAppLaunch enabled. Launching Conan Dedicated Server...");
-                    _ = Task.Run(async () => await _engine.RunFullUpdateAndStartAsync());
+                    LoadIniFilesToTabs();
+                    await UpdatePortStatusLedsAsync();
+                    UpdateStatusUi(_engine.ServerStatus);
+
+                    if (_engine.ServerStatus == "RUNNING")
+                    {
+                        _engine.Log($"[Process Monitor] Dedicated Server is currently RUNNING (PID {_engine.ServerProcess?.Id}). Re-attached.");
+                    }
+                    else if (_engine.Config.AutoStartOnAppLaunch && _engine.ServerStatus == "STOPPED")
+                    {
+                        _engine.Log("[Auto-Start] AutoStartOnAppLaunch enabled. Launching Conan Dedicated Server...");
+                        _ = Task.Run(async () => await _engine.RunFullUpdateAndStartAsync());
+                    }
                 }
             };
         }
@@ -117,8 +123,16 @@ namespace ConanServerManager
 
             if (IsRemoteMode)
             {
+                _hasSyncedRemoteConfig = false;
                 if (PnlRemoteStatusIndicator != null) PnlRemoteStatusIndicator.Visibility = Visibility.Visible;
-                TxtServerPathInfo.Text = $"Mode: Remote Client | Target: {TxtRemoteUrl?.Text}";
+                string targetUrl = TxtRemoteUrl?.Text?.Trim() ?? "";
+                TxtServerPathInfo.Text = $"Mode: Remote Client | Target: {targetUrl}";
+                _engine.Config.IsRemoteClientMode = true;
+                if (!string.IsNullOrWhiteSpace(targetUrl))
+                {
+                    _engine.Config.RemoteServerUrl = targetUrl;
+                }
+                _engine.SaveConfig();
                 _remoteTimer.Start();
                 _ = PollRemoteServerAsync();
             }
@@ -126,15 +140,36 @@ namespace ConanServerManager
             {
                 _remoteTimer.Stop();
                 if (PnlRemoteStatusIndicator != null) PnlRemoteStatusIndicator.Visibility = Visibility.Collapsed;
-                int webPort = _engine?.Config?.WebPagePort ?? 8088;
-                TxtServerPathInfo.Text = $"Mode: Local Server Host | Embedded Web Console: http://0.0.0.0:{webPort} (http://localhost:{webPort})";
+                _engine.Config.IsRemoteClientMode = false;
+                _engine.SaveConfig();
+                int webPort = _engine.Config.WebPagePort;
+                if (TxtServerPathInfo != null)
+                {
+                    TxtServerPathInfo.Text = $"Mode: Local Server Host | Embedded Web Console: http://0.0.0.0:{webPort} (http://localhost:{webPort})";
+                }
+                PopulateUiFromConfig(_engine.Config);
+                LoadIniFilesToTabs();
+                UpdateStatusUi(_engine.ServerStatus);
             }
         }
 
         private async void BtnConnectRemote_Click(object sender, RoutedEventArgs e)
         {
-            if (RadRemoteMode != null) RadRemoteMode.IsChecked = true;
-            _engine.Log($"[Remote Client] Connecting to remote manager at {TxtRemoteUrl.Text}...");
+            string url = TxtRemoteUrl?.Text?.Trim() ?? "";
+            if (!string.IsNullOrWhiteSpace(url))
+            {
+                _engine.Config.RemoteServerUrl = url;
+            }
+            _engine.Config.IsRemoteClientMode = true;
+            _engine.SaveConfig();
+
+            if (RadRemoteMode != null && RadRemoteMode.IsChecked != true)
+            {
+                RadRemoteMode.IsChecked = true;
+            }
+
+            _hasSyncedRemoteConfig = false;
+            _engine.Log($"[Remote Client] Connecting to remote manager at {url}...");
             await PollRemoteServerAsync();
         }
 
@@ -164,6 +199,7 @@ namespace ConanServerManager
                     int steamMaxPlayers = doc.RootElement.TryGetProperty("steamMaxPlayers", out var smpProp) ? smpProp.GetInt32() : 0;
                     int steamPing = doc.RootElement.TryGetProperty("steamPing", out var pingProp) ? pingProp.GetInt32() : 0;
                     string steamErr = doc.RootElement.TryGetProperty("steamError", out var seProp) ? seProp.GetString() ?? "" : "";
+                    int uptimeSec = doc.RootElement.TryGetProperty("uptimeSeconds", out var upProp) ? upProp.GetInt32() : 0;
 
                     var remoteSteam = new SteamServerInfo
                     {
@@ -174,13 +210,21 @@ namespace ConanServerManager
                         PingMs = steamPing,
                         ErrorMessage = steamErr
                     };
+
+                    _remoteUptimeSeconds = uptimeSec;
+                    UpdateStatusUi(status);
                     UpdateSteamVisibilityUi(remoteSteam);
 
-                    UpdateStatusUi(status);
                     if (TxtServerPathInfo != null)
                         TxtServerPathInfo.Text = $"Remote Host: {srvName} ({status}) | Uptime: {uptime} | URL: {baseUrl}";
 
                     SetRemoteConnectionStatus(true, $"CONNECTED to {srvName} ({status})");
+
+                    if (!_hasSyncedRemoteConfig)
+                    {
+                        _hasSyncedRemoteConfig = true;
+                        _ = FetchAndPopulateRemoteConfigAsync(baseUrl);
+                    }
                 }
 
                 string logsJson = await _httpClient.GetStringAsync($"{baseUrl}/api/logs", cts.Token);
@@ -193,8 +237,8 @@ namespace ConanServerManager
             }
             catch (Exception ex)
             {
-                UpdateSteamVisibilityUi(new SteamServerInfo { IsOnline = false, ErrorMessage = "Remote server unreachable" });
                 UpdateStatusUi("OFFLINE");
+                UpdateSteamVisibilityUi(new SteamServerInfo { IsOnline = false, ErrorMessage = "Remote server unreachable" });
                 string errorMsg = ex is TaskCanceledException ? "Connection timed out (4s limit)" : ex.Message;
                 if (TxtServerPathInfo != null)
                     TxtServerPathInfo.Text = $"Remote Connection Error: Cannot reach {baseUrl} ({errorMsg})";
@@ -224,22 +268,50 @@ namespace ConanServerManager
 
         private void LoadUiFromConfig()
         {
+            if (TxtRemoteUrl != null && !string.IsNullOrWhiteSpace(_engine.Config.RemoteServerUrl))
+            {
+                TxtRemoteUrl.Text = _engine.Config.RemoteServerUrl;
+            }
+
+            if (_engine.Config.IsRemoteClientMode)
+            {
+                if (RadRemoteMode != null && RadRemoteMode.IsChecked != true)
+                    RadRemoteMode.IsChecked = true;
+            }
+            else
+            {
+                if (RadLocalMode != null && RadLocalMode.IsChecked != true)
+                    RadLocalMode.IsChecked = true;
+            }
+
             if (TxtServerPathInfo != null)
-                TxtServerPathInfo.Text = $"Mode: Local Server Host | Web API: http://localhost:{_engine.Config.WebPagePort}";
+            {
+                if (IsRemoteMode)
+                    TxtServerPathInfo.Text = $"Mode: Remote Client | Target: {TxtRemoteUrl?.Text}";
+                else
+                    TxtServerPathInfo.Text = $"Mode: Local Server Host | Web API: http://localhost:{_engine.Config.WebPagePort}";
+            }
 
-            TxtServerName.Text = _engine.Config.ServerName;
-            TxtServerPass.Text = _engine.Config.ServerPassword;
-            TxtAdminPass.Text = _engine.Config.AdminPassword;
-            TxtRconPass.Text = _engine.Config.RconPassword;
+            PopulateUiFromConfig(_engine.Config);
+        }
 
-            TxtGamePort.Text = _engine.Config.GamePort.ToString();
-            TxtRawPort.Text = _engine.Config.RawUdpPort.ToString();
-            TxtQueryPort.Text = _engine.Config.QueryPort.ToString();
-            TxtRconPort.Text = _engine.Config.RconPort.ToString();
-            TxtWebPort.Text = _engine.Config.WebPagePort.ToString();
+        private void PopulateUiFromConfig(ManagerConfig cfg)
+        {
+            if (cfg == null) return;
 
-            TxtMaxPlayers.Text = _engine.Config.MaxPlayers.ToString();
-            TxtMaxTickRate.Text = _engine.Config.MaxTickRate.ToString();
+            TxtServerName.Text = cfg.ServerName;
+            TxtServerPass.Text = cfg.ServerPassword;
+            TxtAdminPass.Text = cfg.AdminPassword;
+            TxtRconPass.Text = cfg.RconPassword;
+
+            TxtGamePort.Text = cfg.GamePort.ToString();
+            TxtRawPort.Text = cfg.RawUdpPort.ToString();
+            TxtQueryPort.Text = cfg.QueryPort.ToString();
+            TxtRconPort.Text = cfg.RconPort.ToString();
+            TxtWebPort.Text = cfg.WebPagePort.ToString();
+
+            TxtMaxPlayers.Text = cfg.MaxPlayers.ToString();
+            TxtMaxTickRate.Text = cfg.MaxTickRate.ToString();
 
             // Populate Network Adapter dropdown
             CmbNetworkAdapter.Items.Clear();
@@ -251,106 +323,279 @@ namespace ConanServerManager
             if (adapters.Count > 0)
             {
                 CmbNetworkAdapter.SelectedIndex = 0;
+            }
+
+            if (!string.IsNullOrEmpty(cfg.MacAddress))
+            {
+                TxtMacAddress.Text = cfg.MacAddress;
+            }
+            else if (adapters.Count > 0)
+            {
                 TxtMacAddress.Text = adapters[0].MacAddress;
             }
-            TxtExternalIp.Text = string.IsNullOrEmpty(_engine.Config.ExternalIp) ? "127.0.0.1" : _engine.Config.ExternalIp;
 
-            ChkUseMultihome.IsChecked = _engine.Config.UseMultihome;
-            TxtMultihomeIp.Text = _engine.Config.MultihomeIp;
+            TxtExternalIp.Text = string.IsNullOrEmpty(cfg.ExternalIp) ? "127.0.0.1" : cfg.ExternalIp;
 
-            ChkValidateFiles.IsChecked = _engine.Config.ValidateFiles;
-            ChkStartIfNotRunning.IsChecked = _engine.Config.StartServerIfNotRunning;
-            ChkAutoStartOnAppLaunch.IsChecked = _engine.Config.AutoStartOnAppLaunch;
-            ChkZombieWatch.IsChecked = _engine.Config.ZombieCheckEnabled;
-            ChkAutoCheckAppUpdates.IsChecked = _engine.Config.AutoCheckAppUpdates;
-            ChkAutoInstallAppUpdates.IsChecked = _engine.Config.AutoInstallAppUpdates;
+            ChkUseMultihome.IsChecked = cfg.UseMultihome;
+            TxtMultihomeIp.Text = cfg.MultihomeIp;
 
-            ChkRconEnable.IsChecked = _engine.Config.RconEnabled;
-            ChkBattlEye.IsChecked = _engine.Config.EnableBattlEye;
-            ChkVAC.IsChecked = _engine.Config.EnableVAC;
+            // Region
+            if (!string.IsNullOrWhiteSpace(cfg.Region))
+            {
+                for (int i = 0; i < CmbRegion.Items.Count; i++)
+                {
+                    if (CmbRegion.Items[i] is ComboBoxItem item && (item.Content?.ToString() ?? "").Equals(cfg.Region, StringComparison.OrdinalIgnoreCase))
+                    {
+                        CmbRegion.SelectedIndex = i;
+                        break;
+                    }
+                }
+            }
 
-            ChkDailyRestart.IsChecked = _engine.Config.EnableDailyRestart;
-            TxtDailyRestartTime.Text = _engine.Config.DailyRestartTime;
-            TxtMinUptime.Text = _engine.Config.MinimumUptime;
-            TxtRestartsPerDay.Text = _engine.Config.RestartsPerDay.ToString();
+            // Auto-Update Mode
+            if (!string.IsNullOrWhiteSpace(cfg.AutoUpdateRestartMode))
+            {
+                for (int i = 0; i < CmbAutoUpdate.Items.Count; i++)
+                {
+                    if (CmbAutoUpdate.Items[i] is ComboBoxItem item && (item.Content?.ToString() ?? "").Equals(cfg.AutoUpdateRestartMode, StringComparison.OrdinalIgnoreCase))
+                    {
+                        CmbAutoUpdate.SelectedIndex = i;
+                        break;
+                    }
+                }
+            }
 
-            TxtWarn1Time.Text = _engine.Config.FirstWarningTime;
-            TxtWarn1Msg.Text = _engine.Config.FirstWarningMsg;
-            TxtWarn2Time.Text = _engine.Config.SecondWarningTime;
-            TxtWarn2Msg.Text = _engine.Config.SecondWarningMsg;
-            TxtWarn3Time.Text = _engine.Config.ThirdWarningTime;
-            TxtWarn3Msg.Text = _engine.Config.ThirdWarningMsg;
-            ChkFastRestartZeroPlayers.IsChecked = _engine.Config.FastRestartZeroPlayers;
+            ChkValidateFiles.IsChecked = cfg.ValidateFiles;
+            ChkStartIfNotRunning.IsChecked = cfg.StartServerIfNotRunning;
+            ChkAutoStartOnAppLaunch.IsChecked = cfg.AutoStartOnAppLaunch;
+            ChkZombieWatch.IsChecked = cfg.ZombieCheckEnabled;
+            ChkAutoCheckAppUpdates.IsChecked = cfg.AutoCheckAppUpdates;
+            ChkAutoInstallAppUpdates.IsChecked = cfg.AutoInstallAppUpdates;
 
-            ChkShutdownBackup.IsChecked = _engine.Config.OnShutdownBackup;
-            TxtBackupDays.Text = _engine.Config.BackupLimitDays.ToString();
+            ChkRconEnable.IsChecked = cfg.RconEnabled;
+            ChkBattlEye.IsChecked = cfg.EnableBattlEye;
+            ChkVAC.IsChecked = cfg.EnableVAC;
 
-            ChkDiscordEnable.IsChecked = _engine.Config.DiscordEnabled;
-            ChkDiscordTime.IsChecked = _engine.Config.DiscordIncludeTime;
-            TxtDiscordWebhook.Text = _engine.Config.DiscordWebhookUrl;
+            // Priority
+            if (!string.IsNullOrWhiteSpace(cfg.PriorityClass))
+            {
+                for (int i = 0; i < CmbPriorityClass.Items.Count; i++)
+                {
+                    if (CmbPriorityClass.Items[i] is ComboBoxItem item && (item.Content?.ToString() ?? "").Equals(cfg.PriorityClass, StringComparison.OrdinalIgnoreCase))
+                    {
+                        CmbPriorityClass.SelectedIndex = i;
+                        break;
+                    }
+                }
+            }
 
-            ChkUseAllCores.IsChecked = _engine.Config.UseAllAvailableCores;
+            ChkDailyRestart.IsChecked = cfg.EnableDailyRestart;
+            TxtDailyRestartTime.Text = cfg.DailyRestartTime;
+            TxtMinUptime.Text = cfg.MinimumUptime;
+            TxtRestartsPerDay.Text = cfg.RestartsPerDay.ToString();
 
-            RefreshModListUi();
+            TxtWarn1Time.Text = cfg.FirstWarningTime;
+            TxtWarn1Msg.Text = cfg.FirstWarningMsg;
+            TxtWarn2Time.Text = cfg.SecondWarningTime;
+            TxtWarn2Msg.Text = cfg.SecondWarningMsg;
+            TxtWarn3Time.Text = cfg.ThirdWarningTime;
+            TxtWarn3Msg.Text = cfg.ThirdWarningMsg;
+            ChkFastRestartZeroPlayers.IsChecked = cfg.FastRestartZeroPlayers;
+
+            ChkShutdownBackup.IsChecked = cfg.OnShutdownBackup;
+            TxtBackupDays.Text = cfg.BackupLimitDays.ToString();
+
+            // Backup Script Mode
+            if (!string.IsNullOrWhiteSpace(cfg.BackupScriptMode))
+            {
+                for (int i = 0; i < CmbBackupScriptMode.Items.Count; i++)
+                {
+                    if (CmbBackupScriptMode.Items[i] is ComboBoxItem item && (item.Content?.ToString() ?? "").Equals(cfg.BackupScriptMode, StringComparison.OrdinalIgnoreCase))
+                    {
+                        CmbBackupScriptMode.SelectedIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            ChkDiscordEnable.IsChecked = cfg.DiscordEnabled;
+            ChkDiscordTime.IsChecked = cfg.DiscordIncludeTime;
+            TxtDiscordWebhook.Text = cfg.DiscordWebhookUrl;
+
+            ChkUseAllCores.IsChecked = cfg.UseAllAvailableCores;
+
+            LstMods.Items.Clear();
+            if (cfg.Mods != null)
+            {
+                foreach (var mod in cfg.Mods)
+                {
+                    LstMods.Items.Add(mod);
+                }
+            }
+        }
+
+        private ManagerConfig GetConfigFromUi()
+        {
+            var cfg = new ManagerConfig();
+
+            cfg.ServerName = TxtServerName.Text;
+            cfg.ServerPassword = TxtServerPass.Text;
+            cfg.AdminPassword = TxtAdminPass.Text;
+            cfg.RconPassword = TxtRconPass.Text;
+
+            if (int.TryParse(TxtGamePort.Text, out int gp)) cfg.GamePort = gp;
+            if (int.TryParse(TxtRawPort.Text, out int rp)) cfg.RawUdpPort = rp;
+            if (int.TryParse(TxtQueryPort.Text, out int qp)) cfg.QueryPort = qp;
+            if (int.TryParse(TxtRconPort.Text, out int rcp)) cfg.RconPort = rcp;
+            if (int.TryParse(TxtWebPort.Text, out int wp)) cfg.WebPagePort = wp;
+
+            if (int.TryParse(TxtMaxPlayers.Text, out int mp)) cfg.MaxPlayers = mp;
+            if (int.TryParse(TxtMaxTickRate.Text, out int mtr)) cfg.MaxTickRate = mtr;
+
+            if (CmbRegion.SelectedItem is ComboBoxItem regItem && regItem.Content != null)
+                cfg.Region = regItem.Content.ToString() ?? "0 - Europe";
+
+            cfg.ExternalIp = TxtExternalIp.Text.Trim();
+            cfg.MacAddress = TxtMacAddress.Text.Trim();
+            cfg.UseMultihome = ChkUseMultihome.IsChecked == true;
+            cfg.MultihomeIp = TxtMultihomeIp.Text.Trim();
+
+            if (CmbAutoUpdate.SelectedItem is ComboBoxItem updItem && updItem.Content != null)
+                cfg.AutoUpdateRestartMode = updItem.Content.ToString() ?? "Auto-Update On Restart";
+
+            cfg.ValidateFiles = ChkValidateFiles.IsChecked == true;
+            cfg.StartServerIfNotRunning = ChkStartIfNotRunning.IsChecked == true;
+            cfg.AutoStartOnAppLaunch = ChkAutoStartOnAppLaunch.IsChecked == true;
+            cfg.ZombieCheckEnabled = ChkZombieWatch.IsChecked == true;
+            cfg.AutoCheckAppUpdates = ChkAutoCheckAppUpdates.IsChecked == true;
+            cfg.AutoInstallAppUpdates = ChkAutoInstallAppUpdates.IsChecked == true;
+
+            cfg.RconEnabled = ChkRconEnable.IsChecked == true;
+            cfg.EnableBattlEye = ChkBattlEye.IsChecked == true;
+            cfg.EnableVAC = ChkVAC.IsChecked == true;
+
+            if (CmbPriorityClass.SelectedItem is ComboBoxItem prioItem && prioItem.Content != null)
+                cfg.PriorityClass = prioItem.Content.ToString() ?? "Unmanaged";
+
+            cfg.UseAllAvailableCores = ChkUseAllCores.IsChecked == true;
+
+            cfg.EnableDailyRestart = ChkDailyRestart.IsChecked == true;
+            cfg.DailyRestartTime = TxtDailyRestartTime.Text;
+            cfg.MinimumUptime = TxtMinUptime.Text;
+            if (int.TryParse(TxtRestartsPerDay.Text, out int rpd)) cfg.RestartsPerDay = rpd;
+
+            cfg.FirstWarningTime = TxtWarn1Time.Text;
+            cfg.FirstWarningMsg = TxtWarn1Msg.Text;
+            cfg.SecondWarningTime = TxtWarn2Time.Text;
+            cfg.SecondWarningMsg = TxtWarn2Msg.Text;
+            cfg.ThirdWarningTime = TxtWarn3Time.Text;
+            cfg.ThirdWarningMsg = TxtWarn3Msg.Text;
+            cfg.FastRestartZeroPlayers = ChkFastRestartZeroPlayers.IsChecked == true;
+
+            cfg.OnShutdownBackup = ChkShutdownBackup.IsChecked == true;
+            if (int.TryParse(TxtBackupDays.Text, out int bd)) cfg.BackupLimitDays = bd;
+
+            if (CmbBackupScriptMode.SelectedItem is ComboBoxItem scriptItem && scriptItem.Content != null)
+                cfg.BackupScriptMode = scriptItem.Content.ToString() ?? "Don't Run Scripts";
+
+            cfg.DiscordEnabled = ChkDiscordEnable.IsChecked == true;
+            cfg.DiscordIncludeTime = ChkDiscordTime.IsChecked == true;
+            cfg.DiscordWebhookUrl = TxtDiscordWebhook.Text.Trim();
+
+            cfg.Mods = LstMods.Items.Cast<string>().ToList();
+
+            cfg.IsRemoteClientMode = RadRemoteMode.IsChecked == true;
+            cfg.RemoteServerUrl = TxtRemoteUrl.Text.Trim();
+
+            return cfg;
         }
 
         private void SaveConfigFromUi()
         {
-            _engine.Config.ServerName = TxtServerName.Text;
-            _engine.Config.ServerPassword = TxtServerPass.Text;
-            _engine.Config.AdminPassword = TxtAdminPass.Text;
-            _engine.Config.RconPassword = TxtRconPass.Text;
-
-            if (int.TryParse(TxtGamePort.Text, out int gp)) _engine.Config.GamePort = gp;
-            if (int.TryParse(TxtRawPort.Text, out int rp)) _engine.Config.RawUdpPort = rp;
-            if (int.TryParse(TxtQueryPort.Text, out int qp)) _engine.Config.QueryPort = qp;
-            if (int.TryParse(TxtRconPort.Text, out int rcp)) _engine.Config.RconPort = rcp;
-            if (int.TryParse(TxtWebPort.Text, out int wp)) _engine.Config.WebPagePort = wp;
-
-            if (int.TryParse(TxtMaxPlayers.Text, out int mp)) _engine.Config.MaxPlayers = mp;
-            if (int.TryParse(TxtMaxTickRate.Text, out int mtr)) _engine.Config.MaxTickRate = mtr;
-
-            _engine.Config.UseMultihome = ChkUseMultihome.IsChecked == true;
-            _engine.Config.MultihomeIp = TxtMultihomeIp.Text;
-
-            _engine.Config.ValidateFiles = ChkValidateFiles.IsChecked == true;
-            _engine.Config.StartServerIfNotRunning = ChkStartIfNotRunning.IsChecked == true;
-            _engine.Config.AutoStartOnAppLaunch = ChkAutoStartOnAppLaunch.IsChecked == true;
-            _engine.Config.ZombieCheckEnabled = ChkZombieWatch.IsChecked == true;
-            _engine.Config.AutoCheckAppUpdates = ChkAutoCheckAppUpdates.IsChecked == true;
-            _engine.Config.AutoInstallAppUpdates = ChkAutoInstallAppUpdates.IsChecked == true;
-
-            _engine.Config.RconEnabled = ChkRconEnable.IsChecked == true;
-            _engine.Config.EnableBattlEye = ChkBattlEye.IsChecked == true;
-            _engine.Config.EnableVAC = ChkVAC.IsChecked == true;
-
-            _engine.Config.EnableDailyRestart = ChkDailyRestart.IsChecked == true;
-            _engine.Config.DailyRestartTime = TxtDailyRestartTime.Text;
-            _engine.Config.MinimumUptime = TxtMinUptime.Text;
-            if (int.TryParse(TxtRestartsPerDay.Text, out int rpd)) _engine.Config.RestartsPerDay = rpd;
-
-            _engine.Config.FirstWarningTime = TxtWarn1Time.Text;
-            _engine.Config.FirstWarningMsg = TxtWarn1Msg.Text;
-            _engine.Config.SecondWarningTime = TxtWarn2Time.Text;
-            _engine.Config.SecondWarningMsg = TxtWarn2Msg.Text;
-            _engine.Config.ThirdWarningTime = TxtWarn3Time.Text;
-            _engine.Config.ThirdWarningMsg = TxtWarn3Msg.Text;
-            _engine.Config.FastRestartZeroPlayers = ChkFastRestartZeroPlayers.IsChecked == true;
-
-            _engine.Config.OnShutdownBackup = ChkShutdownBackup.IsChecked == true;
-            if (int.TryParse(TxtBackupDays.Text, out int bd)) _engine.Config.BackupLimitDays = bd;
-
-            _engine.Config.DiscordEnabled = ChkDiscordEnable.IsChecked == true;
-            _engine.Config.DiscordIncludeTime = ChkDiscordTime.IsChecked == true;
-            _engine.Config.DiscordWebhookUrl = TxtDiscordWebhook.Text;
-
-            _engine.Config.UseAllAvailableCores = ChkUseAllCores.IsChecked == true;
-
-            _engine.Config.Mods = LstMods.Items.Cast<string>().ToList();
-
-            _engine.SaveConfig();
+            var cfg = GetConfigFromUi();
+            _engine.UpdateConfig(cfg);
             _engine.Log($"Configuration saved cleanly to manager_config.json. Web API Port: {_engine.Config.WebPagePort}");
             LoadIniFilesToTabs();
+        }
+
+        private async Task FetchAndPopulateRemoteConfigAsync(string baseUrl)
+        {
+            try
+            {
+                using var cts = new System.Threading.CancellationTokenSource(5000);
+                string configJson = await _httpClient.GetStringAsync($"{baseUrl}/api/config", cts.Token);
+                var remoteCfg = JsonSerializer.Deserialize<ManagerConfig>(configJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (remoteCfg != null)
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        PopulateUiFromConfig(remoteCfg);
+                    });
+                    _engine.Log($"[Remote Client] Synchronized configuration from remote server {baseUrl}.");
+                }
+
+                await FetchRemoteIniFileAsync(baseUrl, "ServerSettings.ini", TxtServerSettingsIni);
+                await FetchRemoteIniFileAsync(baseUrl, "Engine.ini", TxtEngineIni);
+                await FetchRemoteIniFileAsync(baseUrl, "Game.ini", TxtGameIni);
+            }
+            catch (Exception ex)
+            {
+                _engine.Log($"[Remote Client] Note fetching remote config/INIs: {ex.Message}");
+            }
+        }
+
+        private async Task FetchRemoteIniFileAsync(string baseUrl, string fileName, TextBox? targetBox)
+        {
+            if (targetBox == null) return;
+            try
+            {
+                using var cts = new System.Threading.CancellationTokenSource(5000);
+                string iniJson = await _httpClient.GetStringAsync($"{baseUrl}/api/ini?file={fileName}", cts.Token);
+                using var doc = JsonDocument.Parse(iniJson);
+                if (doc.RootElement.TryGetProperty("content", out var cProp))
+                {
+                    string text = cProp.GetString() ?? "";
+                    Dispatcher.Invoke(() =>
+                    {
+                        targetBox.Text = text;
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _engine.Log($"[Remote Client] Could not fetch remote {fileName}: {ex.Message}");
+            }
+        }
+
+        private async Task SaveRemoteIniFileAsync(string fileName, string content)
+        {
+            string baseUrl = TxtRemoteUrl.Text.Trim().TrimEnd('/');
+            if (!baseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !baseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                baseUrl = "http://" + baseUrl;
+            }
+
+            try
+            {
+                var payload = new { file = fileName, content = content };
+                string json = JsonSerializer.Serialize(payload);
+                var res = await _httpClient.PostAsync($"{baseUrl}/api/ini", new StringContent(json, Encoding.UTF8, "application/json"));
+                if (res.IsSuccessStatusCode)
+                {
+                    MessageBox.Show($"Remote {fileName} saved successfully.", "Remote INI Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+                    _engine.Log($"[Remote Client] Saved {fileName} remotely.");
+                    await FetchAndPopulateRemoteConfigAsync(baseUrl);
+                }
+                else
+                {
+                    string err = await res.Content.ReadAsStringAsync();
+                    MessageBox.Show($"Remote INI save error:\n{err}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to save {fileName} remotely:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void CmbNetworkAdapter_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -402,6 +647,7 @@ namespace ConanServerManager
 
         private void LoadIniFilesToTabs()
         {
+            if (IsRemoteMode) return;
             try
             {
                 TxtServerSettingsIni.Text = _engine.GetIniText(_engine.ServerSettingsIni);
@@ -481,7 +727,10 @@ namespace ConanServerManager
                         if (StatusText != null) StatusText.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F87171"));
                     }
                 }
-                UpdateSteamVisibilityUi(_engine.SteamStatus);
+                if (!IsRemoteMode)
+                {
+                    UpdateSteamVisibilityUi(_engine.SteamStatus);
+                }
             });
         }
 
@@ -526,8 +775,16 @@ namespace ConanServerManager
                     }
                     else
                     {
-                        DateTime startTime = _engine.ServerStartTime;
-                        bool isLongStartup = startTime > DateTime.MinValue && (DateTime.Now - startTime).TotalMinutes >= 4;
+                        bool isLongStartup = false;
+                        if (IsRemoteMode)
+                        {
+                            isLongStartup = _remoteUptimeSeconds >= 240;
+                        }
+                        else
+                        {
+                            DateTime startTime = _engine.ServerStartTime;
+                            isLongStartup = startTime > DateTime.MinValue && (DateTime.Now - startTime).TotalMinutes >= 4;
+                        }
 
                         if (isLongStartup)
                         {
@@ -608,8 +865,44 @@ namespace ConanServerManager
             }
         }
 
-        private void BtnSaveConfig_Click(object sender, RoutedEventArgs e)
+        private async void BtnSaveConfig_Click(object sender, RoutedEventArgs e)
         {
+            if (IsRemoteMode)
+            {
+                string baseUrl = TxtRemoteUrl.Text.Trim().TrimEnd('/');
+                if (!baseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !baseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                {
+                    baseUrl = "http://" + baseUrl;
+                }
+
+                try
+                {
+                    var cfg = GetConfigFromUi();
+                    string json = JsonSerializer.Serialize(cfg, new JsonSerializerOptions { WriteIndented = true });
+                    var content = new StringContent(json, Encoding.UTF8, "application/json");
+                    var res = await _httpClient.PostAsync($"{baseUrl}/api/config", content);
+                    if (res.IsSuccessStatusCode)
+                    {
+                        _engine.Config.IsRemoteClientMode = true;
+                        _engine.Config.RemoteServerUrl = baseUrl;
+                        _engine.SaveConfig();
+
+                        MessageBox.Show($"Configuration saved successfully to remote server at {baseUrl}.", "Remote Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+                        _engine.Log($"[Remote Client] Configuration saved to remote server {baseUrl}.");
+                    }
+                    else
+                    {
+                        string err = await res.Content.ReadAsStringAsync();
+                        MessageBox.Show($"Remote save returned error:\n{err}", "Remote Save Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Failed to save config remotely:\n{ex.Message}", "Remote Save Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                return;
+            }
+
             SaveConfigFromUi();
             MessageBox.Show($"Configuration updated successfully.\nWeb API running on port {_engine.Config.WebPagePort}.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -657,8 +950,14 @@ namespace ConanServerManager
             }
         }
 
-        private void BtnSaveEngineIni_Click(object sender, RoutedEventArgs e)
+        private async void BtnSaveEngineIni_Click(object sender, RoutedEventArgs e)
         {
+            if (IsRemoteMode)
+            {
+                await SaveRemoteIniFileAsync("Engine.ini", TxtEngineIni.Text);
+                return;
+            }
+
             _engine.SaveIniText(_engine.EngineIni, TxtEngineIni.Text);
             _engine.AutoDetectAndImportIniSettings();
             LoadUiFromConfig();
@@ -666,8 +965,14 @@ namespace ConanServerManager
             MessageBox.Show("Engine.ini saved successfully and re-synced to Manager controls.", "INI Saved", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
-        private void BtnSaveServerSettingsIni_Click(object sender, RoutedEventArgs e)
+        private async void BtnSaveServerSettingsIni_Click(object sender, RoutedEventArgs e)
         {
+            if (IsRemoteMode)
+            {
+                await SaveRemoteIniFileAsync("ServerSettings.ini", TxtServerSettingsIni.Text);
+                return;
+            }
+
             _engine.SaveIniText(_engine.ServerSettingsIni, TxtServerSettingsIni.Text);
             _engine.AutoDetectAndImportIniSettings();
             LoadUiFromConfig();
@@ -675,8 +980,14 @@ namespace ConanServerManager
             MessageBox.Show("ServerSettings.ini saved successfully and re-synced to Manager controls.", "INI Saved", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
-        private void BtnSaveGameIni_Click(object sender, RoutedEventArgs e)
+        private async void BtnSaveGameIni_Click(object sender, RoutedEventArgs e)
         {
+            if (IsRemoteMode)
+            {
+                await SaveRemoteIniFileAsync("Game.ini", TxtGameIni.Text);
+                return;
+            }
+
             _engine.SaveIniText(_engine.GameIni, TxtGameIni.Text);
             LoadIniFilesToTabs();
             MessageBox.Show("Game.ini saved successfully.", "INI Saved", MessageBoxButton.OK, MessageBoxImage.Information);

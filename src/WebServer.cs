@@ -284,20 +284,10 @@ namespace ConanServerManager
             {
                 try
                 {
-                    var cfg = JsonSerializer.Deserialize<ManagerConfig>(body);
+                    var cfg = JsonSerializer.Deserialize<ManagerConfig>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                     if (cfg != null)
                     {
-                        _engine.Config.ServerName = cfg.ServerName;
-                        _engine.Config.ServerPassword = cfg.ServerPassword;
-                        _engine.Config.AdminPassword = cfg.AdminPassword;
-                        _engine.Config.RconPassword = cfg.RconPassword;
-                        _engine.Config.GamePort = cfg.GamePort;
-                        _engine.Config.RawUdpPort = cfg.RawUdpPort;
-                        _engine.Config.QueryPort = cfg.QueryPort;
-                        _engine.Config.RconPort = cfg.RconPort;
-                        _engine.Config.MaxPlayers = cfg.MaxPlayers;
-                        _engine.Config.Mods = cfg.Mods;
-                        _engine.SaveConfig();
+                        _engine.UpdateConfig(cfg);
                     }
                     await SendHttpResponseAsync(stream, 200, "application/json", "{\"success\": true, \"message\": \"Manager config updated remotely.\"}");
                 }

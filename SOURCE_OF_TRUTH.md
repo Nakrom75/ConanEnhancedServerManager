@@ -708,6 +708,32 @@ Follow this step-by-step roadmap when developing your custom manager on your dev
 - **CPU Thread Affinity Grid**: 64-bit affinity mask (`0` to `63`) mapping process threads to dedicated CPU cores.
 - **`-useallavailablecores`**: UE4 command-line argument for multi-core scaling.
 
+
+#### 7. issues found (added by Nakrom) - RESOLVED in v1.0.4
+
+1. **Remote client connection does not save the address and defaults back to localhost on application restart or startup.**
+   - *Status: Resolved in v1.0.4.* `RemoteServerUrl` and `IsRemoteClientMode` are now saved to `manager_config.json`. On application launch or restart, `LoadUiFromConfig()` automatically restores the remote server URL and activates Remote Client mode.
+2. **Information of the various fields do not get populated with the remote servers information.**
+   - *Status: Resolved in v1.0.4.* Implemented full two-way synchronization via `FetchAndPopulateRemoteConfigAsync()`. When connecting to a remote server, the application automatically pulls and populates all fields (Server Name, Passwords, Ports, Max Players, Tick Rate, Region, BattlEye, VAC, Restart Timers, Discord, Mods) from `GET /api/config`, and fetches the contents of `ServerSettings.ini`, `Engine.ini`, and `Game.ini` from `GET /api/ini`. Clicking **Save Configuration** or any of the INI tab save buttons while in Remote Mode cleanly posts the updates back to the remote server over `POST /api/config` and `POST /api/ini`.
+3. **The STEAM: badge does not update or refresh correctly to reflect the actual server's state.**
+   - *Status: Resolved in v1.0.4.* Fixed the race condition in `MainWindow.xaml.cs` where `UpdateStatusUi()` was unconditionally overwriting the remote server's Steam status with the local client machine's offline status. In addition, `ServerEngine.StartSteamQueryTimer()` now automatically targets `MultihomeIp` whenever multihome is enabled, ensuring the A2S_INFO query always hits the active network adapter.
+
+---
+
+### 16. Remote Client Persistence, Full Remote Sync & Steam Visibility Fixes (v1.0.4)
+- **Settings Persistence**: Added `RemoteServerUrl` and `IsRemoteClientMode` properties to `ManagerConfig`. Whenever a remote connection is initiated or mode is toggled, these values are written to `manager_config.json`.
+- **Full Remote GUI Population**:
+  - `FetchAndPopulateRemoteConfigAsync(baseUrl)` queries `GET /api/config` and `GET /api/ini?file=...` upon initial connection or clicking **Connect**.
+  - All form controls, checkboxes, comboboxes, and `LstMods` are populated with the remote server's actual running parameters.
+  - All 3 INI editors (`ServerSettings.ini`, `Engine.ini`, `Game.ini`) are populated with the remote server's INI files.
+- **Two-Way Remote Management**:
+  - Clicking **Save Configuration** in Remote Mode posts the updated configuration to `POST /api/config` on the remote host, where `_engine.UpdateConfig()` persists the settings and syncs the INIs.
+  - Clicking **Save ServerSettings.ini**, **Save Engine.ini**, or **Save Game.ini** in Remote Mode posts the editor text to `POST /api/ini`, updates the remote file, and triggers remote INI re-import.
+- **Steam Badge Overwrite & Multihome Fix**:
+  - Guarded local Steam status update in `UpdateStatusUi` with `if (!IsRemoteMode)`. In Remote Mode, only the remote server's query response controls the badge.
+  - In `ServerEngine.cs`, `StartSteamQueryTimer` queries `MultihomeIp` when `UseMultihome` is enabled, resolving UDP packet drops on multi-NIC setups.
+  - Remote uptime (`uptimeSeconds`) is parsed in `PollRemoteServerAsync` to correctly distinguish between active server startup and unresponsive hangs.
+
 ---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
 

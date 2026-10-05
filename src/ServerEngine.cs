@@ -110,6 +110,10 @@ namespace ConanServerManager
         public bool AutoInstallAppUpdates { get; set; } = false;
         public string LastCheckedAppVersion { get; set; } = "";
 
+        // Remote Client Connection
+        public bool IsRemoteClientMode { get; set; } = false;
+        public string RemoteServerUrl { get; set; } = "http://127.0.0.1:8088";
+
         public List<string> Mods { get; set; } = new List<string>
         {
             "3722388367", "3803465771", "3723073788", "3722270581", "3723975720",
@@ -203,7 +207,7 @@ namespace ConanServerManager
 
         public const string WorkshopAppId = "440900";
         public const string ServerAppId = "443030";
-        public const string CurrentAppVersion = "1.0.3";
+        public const string CurrentAppVersion = "1.0.4";
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
         public SteamServerInfo SteamStatus { get; private set; } = new SteamServerInfo();
@@ -301,7 +305,10 @@ namespace ConanServerManager
                 {
                     try
                     {
-                        var info = await SteamQueryHelper.QueryA2sInfoAsync("127.0.0.1", Config.QueryPort, 2000);
+                        string host = (Config.UseMultihome && !string.IsNullOrWhiteSpace(Config.MultihomeIp))
+                            ? Config.MultihomeIp.Trim()
+                            : "127.0.0.1";
+                        var info = await SteamQueryHelper.QueryA2sInfoAsync(host, Config.QueryPort, 2000);
                         SteamStatus = info;
                         OnSteamStatusChanged?.Invoke(info);
                     }
@@ -734,6 +741,22 @@ namespace ConanServerManager
             string json = JsonSerializer.Serialize(Config, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(ConfigJsonPath, json);
             SyncIniSettings();
+        }
+
+        public void UpdateConfig(ManagerConfig newConfig)
+        {
+            if (newConfig == null) return;
+            bool localRemoteMode = Config.IsRemoteClientMode;
+            string localRemoteUrl = Config.RemoteServerUrl;
+
+            Config = newConfig;
+            Config.IsRemoteClientMode = localRemoteMode;
+            if (!string.IsNullOrEmpty(localRemoteUrl))
+            {
+                Config.RemoteServerUrl = localRemoteUrl;
+            }
+
+            SaveConfig();
         }
 
         public void Log(string message)
