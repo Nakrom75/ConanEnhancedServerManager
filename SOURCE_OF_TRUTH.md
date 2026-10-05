@@ -742,6 +742,17 @@ Follow this step-by-step roadmap when developing your custom manager on your dev
 - **Verification**: Verified launch and stability with zero errors and zero warnings.
 
 ---
+
+### 18. Application Icon Integration & Visual Polish (v1.0.6)
+- **Lossless Icon Extraction**: Extracted the authentic multi-resolution Conan Exiles icon group (9 frames ranging from 16x16 up to 256x256) directly from the PE resource tables of `DedicatedServerLauncher1904.exe`.
+- **Executable Icon**: Configured `<ApplicationIcon>app.ico</ApplicationIcon>` in `src/ConanServerManager.csproj` so the Windows binary `.exe` displays the Conan icon in Windows Explorer, taskbar, desktop shortcuts, and Alt-Tab switcher.
+- **WPF Window Icon & UI Branding**:
+  - Embedded `app.ico` and `app.png` as assembly resources.
+  - Configured `Icon="app.ico"` on `<Window>` in `MainWindow.xaml` for native title bar icon and taskbar grouping.
+  - Added Conan brand badge icon to the application title bar in `MainWindow.xaml`.
+- **Version Bump**: Bumped to version `v1.0.6` across project files, `ServerEngine.CurrentAppVersion`, and UI badges.
+
+---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
 
 
