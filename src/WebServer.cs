@@ -43,6 +43,12 @@ namespace ConanServerManager
                     _isListening = true;
                     _engine.Log($"Embedded Web Server & Remote API active on http://0.0.0.0:{port} (All hostnames & IPs allowed)");
 
+                    DiscoveryHelper.StartDiscoveryListener(
+                        () => _engine.Config.ServerName,
+                        () => _engine.Config.WebPagePort,
+                        () => _engine.Config.GamePort
+                    );
+
                     _ = Task.Run(ListenLoop);
                 }
                 catch (Exception ex)
@@ -55,6 +61,7 @@ namespace ConanServerManager
         public void Stop()
         {
             _isListening = false;
+            DiscoveryHelper.StopDiscoveryListener();
             try { _tcpListener?.Stop(); } catch { }
             _tcpListener = null;
         }

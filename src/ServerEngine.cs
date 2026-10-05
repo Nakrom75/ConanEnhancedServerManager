@@ -113,6 +113,7 @@ namespace ConanServerManager
         // Remote Client Connection
         public bool IsRemoteClientMode { get; set; } = false;
         public string RemoteServerUrl { get; set; } = "http://127.0.0.1:8088";
+        public List<string> RecentRemoteServers { get; set; } = new List<string>();
 
         public List<string> Mods { get; set; } = new List<string>
         {
@@ -207,7 +208,7 @@ namespace ConanServerManager
 
         public const string WorkshopAppId = "440900";
         public const string ServerAppId = "443030";
-        public const string CurrentAppVersion = "1.0.7";
+        public const string CurrentAppVersion = "1.0.8";
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
         public SteamServerInfo SteamStatus { get; private set; } = new SteamServerInfo();

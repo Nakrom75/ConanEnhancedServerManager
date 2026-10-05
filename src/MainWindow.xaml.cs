@@ -19,6 +19,7 @@ namespace ConanServerManager
         private readonly DispatcherTimer _remoteTimer = new DispatcherTimer();
         private bool _isInitialized = false;
         private bool _hasSyncedRemoteConfig = false;
+        private bool _isPopulatingRemoteDropdown = false;
         private int _remoteUptimeSeconds = 0;
 
         public bool IsRemoteMode => RadRemoteMode != null && RadRemoteMode.IsChecked == true;
@@ -128,6 +129,10 @@ namespace ConanServerManager
             {
                 _hasSyncedRemoteConfig = false;
                 if (PnlRemoteStatusIndicator != null) PnlRemoteStatusIndicator.Visibility = Visibility.Visible;
+                if (CmbRemoteServers != null && (CmbRemoteServers.ItemsSource == null || CmbRemoteServers.Items.Count == 0))
+                {
+                    PopulateRemoteServerDropdown();
+                }
                 string targetUrl = TxtRemoteUrl?.Text?.Trim() ?? "";
                 TxtServerPathInfo.Text = $"Mode: Remote Client | Target: {targetUrl}";
                 _engine.Config.IsRemoteClientMode = true;
@@ -156,11 +161,168 @@ namespace ConanServerManager
             }
         }
 
+        private void PopulateRemoteServerDropdown(List<DiscoveredServer>? extraDiscovered = null)
+        {
+            if (CmbRemoteServers == null) return;
+
+            _isPopulatingRemoteDropdown = true;
+            try
+            {
+                string currentUrl = TxtRemoteUrl?.Text?.Trim() ?? _engine.Config.RemoteServerUrl ?? "";
+                if (!string.IsNullOrWhiteSpace(currentUrl) && !currentUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !currentUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                {
+                    currentUrl = "http://" + currentUrl;
+                }
+
+                var items = new List<DiscoveredServer>();
+
+                // 1. Localhost
+                int localWebPort = _engine.Config.WebPagePort > 0 ? _engine.Config.WebPagePort : 8088;
+                string localUrl = $"http://127.0.0.1:{localWebPort}";
+                items.Add(new DiscoveredServer
+                {
+                    ServerName = "Local Host",
+                    Url = localUrl,
+                    IpAddress = "127.0.0.1",
+                    WebPort = localWebPort,
+                    Source = "Local"
+                });
+
+                // 2. Extra Discovered Servers (from network UDP scan or initial probe)
+                if (extraDiscovered != null)
+                {
+                    foreach (var s in extraDiscovered)
+                    {
+                        if (s.Source == "Local") continue;
+                        if (!items.Any(x => x.Url.Equals(s.Url, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            items.Add(s);
+                        }
+                    }
+                }
+
+                // 3. Saved / Recent servers from config
+                if (_engine.Config.RecentRemoteServers != null)
+                {
+                    foreach (var savedUrl in _engine.Config.RecentRemoteServers)
+                    {
+                        if (string.IsNullOrWhiteSpace(savedUrl)) continue;
+                        if (!items.Any(x => x.Url.Equals(savedUrl, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            items.Add(new DiscoveredServer
+                            {
+                                ServerName = "Saved Server",
+                                Url = savedUrl,
+                                Source = "Recent"
+                            });
+                        }
+                    }
+                }
+
+                // 4. Custom entry at bottom
+                items.Add(new DiscoveredServer
+                {
+                    ServerName = "Custom Server",
+                    Url = "",
+                    Source = "Custom"
+                });
+
+                CmbRemoteServers.ItemsSource = items;
+
+                // Match selection
+                int selectedIndex = 0;
+                if (!string.IsNullOrWhiteSpace(currentUrl))
+                {
+                    int matched = items.FindIndex(x => x.Url.Equals(currentUrl, StringComparison.OrdinalIgnoreCase));
+                    if (matched >= 0)
+                    {
+                        selectedIndex = matched;
+                    }
+                    else
+                    {
+                        selectedIndex = items.Count - 1; // Custom
+                    }
+                }
+
+                CmbRemoteServers.SelectedIndex = selectedIndex;
+            }
+            finally
+            {
+                _isPopulatingRemoteDropdown = false;
+            }
+        }
+
+        private void CmbRemoteServers_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isPopulatingRemoteDropdown || TxtRemoteUrl == null) return;
+
+            if (CmbRemoteServers.SelectedItem is DiscoveredServer selected)
+            {
+                if (selected.Source == "Custom")
+                {
+                    TxtRemoteUrl.Focus();
+                    TxtRemoteUrl.SelectAll();
+                }
+                else if (!string.IsNullOrWhiteSpace(selected.Url))
+                {
+                    TxtRemoteUrl.Text = selected.Url;
+                    _engine.Config.RemoteServerUrl = selected.Url;
+                    if (IsRemoteMode)
+                    {
+                        _hasSyncedRemoteConfig = false;
+                        _ = PollRemoteServerAsync();
+                    }
+                }
+            }
+        }
+
+        private async void BtnDiscoverServers_Click(object sender, RoutedEventArgs e)
+        {
+            if (BtnDiscoverServers == null) return;
+
+            BtnDiscoverServers.IsEnabled = false;
+            BtnDiscoverServers.Content = "⏳ Scanning...";
+
+            try
+            {
+                _engine.Log("[Discovery] Scanning local network, subnets, and VMs for active Conan Server Managers (UDP 8089)...");
+                var discovered = await DiscoveryHelper.DiscoverServersAsync(1500);
+
+                int nonLocalCount = discovered.Count(x => x.Source != "Local");
+                _engine.Log($"[Discovery] Scan complete. Found {nonLocalCount} remote server(s) on network/VMs.");
+
+                PopulateRemoteServerDropdown(discovered);
+
+                if (nonLocalCount > 0 && CmbRemoteServers.SelectedItem is DiscoveredServer curr && curr.Source == "Local")
+                {
+                    var firstRemote = CmbRemoteServers.Items.OfType<DiscoveredServer>().FirstOrDefault(x => x.Source != "Local" && x.Source != "Custom");
+                    if (firstRemote != null)
+                    {
+                        CmbRemoteServers.SelectedItem = firstRemote;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _engine.Log($"[Discovery Error] Failed during network scan: {ex.Message}");
+            }
+            finally
+            {
+                BtnDiscoverServers.IsEnabled = true;
+                BtnDiscoverServers.Content = "🔍 Scan";
+            }
+        }
+
         private async void BtnConnectRemote_Click(object sender, RoutedEventArgs e)
         {
             string url = TxtRemoteUrl?.Text?.Trim() ?? "";
             if (!string.IsNullOrWhiteSpace(url))
             {
+                if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                {
+                    url = "http://" + url;
+                    if (TxtRemoteUrl != null) TxtRemoteUrl.Text = url;
+                }
                 _engine.Config.RemoteServerUrl = url;
             }
             _engine.Config.IsRemoteClientMode = true;
@@ -255,6 +417,22 @@ namespace ConanServerManager
                         _hasSyncedRemoteConfig = true;
                         _ = FetchAndPopulateRemoteConfigAsync(baseUrl);
                     }
+
+                    if (!string.IsNullOrWhiteSpace(baseUrl) &&
+                        !baseUrl.Contains("127.0.0.1") &&
+                        !baseUrl.Contains("localhost"))
+                    {
+                        if (_engine.Config.RecentRemoteServers == null)
+                            _engine.Config.RecentRemoteServers = new List<string>();
+
+                        if (!_engine.Config.RecentRemoteServers.Contains(baseUrl, StringComparer.OrdinalIgnoreCase))
+                        {
+                            _engine.Config.RecentRemoteServers.Insert(0, baseUrl);
+                            if (_engine.Config.RecentRemoteServers.Count > 10)
+                                _engine.Config.RecentRemoteServers.RemoveAt(_engine.Config.RecentRemoteServers.Count - 1);
+                            _engine.SaveConfig();
+                        }
+                    }
                 }
 
                 string logsJson = await _httpClient.GetStringAsync($"{baseUrl}/api/logs", cts.Token);
@@ -304,6 +482,8 @@ namespace ConanServerManager
             {
                 TxtRemoteUrl.Text = _engine.Config.RemoteServerUrl;
             }
+
+            PopulateRemoteServerDropdown();
 
             if (_engine.Config.IsRemoteClientMode)
             {

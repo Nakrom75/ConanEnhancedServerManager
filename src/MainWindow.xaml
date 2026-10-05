@@ -117,9 +117,9 @@
                     <StackPanel Orientation="Vertical">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Image Source="app.png" Width="22" Height="22" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.0.7" Style="{StaticResource HeaderTitle}"/>
+                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.0.8" Style="{StaticResource HeaderTitle}"/>
                             <Border CornerRadius="8" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" Margin="10,0,0,0" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock Text="✨ v1.0.7" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock Text="✨ v1.0.8" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="TxtServerPathInfo" Text="Mode: Local Server Host | Embedded Web Console: http://0.0.0.0:8088" Foreground="#94A3B8" FontSize="11"/>
@@ -175,20 +175,34 @@
                 <Border Style="{StaticResource GlassPanel}">
                     <StackPanel>
                         <TextBlock Text="Connection Mode" Style="{StaticResource SectionHeading}"/>
-                        <WrapPanel>
+                        <WrapPanel Margin="0,1,0,3">
                             <RadioButton x:Name="RadLocalMode" Content="Local Host" Foreground="#E2E8F0" FontWeight="Bold" IsChecked="True" Checked="RadMode_Checked" Margin="0,0,8,0" VerticalAlignment="Center"/>
                             <RadioButton x:Name="RadRemoteMode" Content="Remote Client" Foreground="#E2E8F0" FontWeight="Bold" Checked="RadMode_Checked" VerticalAlignment="Center"/>
                         </WrapPanel>
-                        <Grid Margin="0,3,0,0">
+
+                        <!-- Remote Server Dropdown Selection & LAN/VM Scan -->
+                        <Grid Margin="0,1,0,2">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="4"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBox Grid.Column="0" x:Name="TxtRemoteUrl" Style="{StaticResource FormInput}" Text="http://localhost:8088"/>
-                            <Button Grid.Column="2" x:Name="BtnConnectRemote" Content="Connect" Style="{StaticResource BtnSecondary}" Click="BtnConnectRemote_Click"/>
+                            <ComboBox Grid.Column="0" x:Name="CmbRemoteServers" Style="{StaticResource FormCombo}" DisplayMemberPath="DisplayText" SelectionChanged="CmbRemoteServers_SelectionChanged" ToolTip="Select server (Localhost, Discovered on LAN/VM, or Custom)"/>
+                            <Button Grid.Column="2" x:Name="BtnDiscoverServers" Content="🔍 Scan" Style="{StaticResource BtnSecondary}" Padding="6,1" FontSize="10" ToolTip="Scan network &amp; VMs for active servers" Click="BtnDiscoverServers_Click"/>
                         </Grid>
-                        <StackPanel x:Name="PnlRemoteStatusIndicator" Orientation="Horizontal" Margin="0,4,0,0" Visibility="Collapsed">
+
+                        <!-- Target Server URL & Connect Button -->
+                        <Grid Margin="0,1,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="4"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" x:Name="TxtRemoteUrl" Style="{StaticResource FormInput}" Text="http://127.0.0.1:8088" ToolTip="Remote Server URL (e.g. http://192.168.1.100:8088)"/>
+                            <Button Grid.Column="2" x:Name="BtnConnectRemote" Content="Connect" Style="{StaticResource BtnPrimary}" Padding="8,1" FontSize="10" Click="BtnConnectRemote_Click"/>
+                        </Grid>
+
+                        <StackPanel x:Name="PnlRemoteStatusIndicator" Orientation="Horizontal" Margin="0,3,0,0" Visibility="Collapsed">
                             <Ellipse x:Name="LedRemoteConnection" Width="8" Height="8" Fill="#EF4444" Margin="0,0,5,0" VerticalAlignment="Center" ToolTip="Remote Connection Status Indicator"/>
                             <TextBlock x:Name="TxtRemoteStatusText" Text="Remote Status: STANDBY (Click Connect)" Foreground="#94A3B8" FontSize="10" FontWeight="Bold" VerticalAlignment="Center"/>
                         </StackPanel>

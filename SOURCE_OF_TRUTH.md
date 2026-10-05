@@ -771,6 +771,28 @@ Follow this step-by-step roadmap when developing your custom manager on your dev
   - Exposed `/api/players` endpoint and added `players` array to `/api/status`.
 - **Version Bump**: Centralized version `1.0.7` across project configurations, UI badges, and deployment packages.
 
+### 20. Remote Server Dropdown, Network & VM Discovery, and Custom Server Selection (v1.0.8)
+- **Remote Server Dropdown Selection (`CmbRemoteServers`)**:
+  - Added a dedicated server selection dropdown to the Connection Mode card, providing quick 1-click access to target server hosts without needing to manually copy/paste or remember URLs.
+  - Dropdown automatically categorizes target servers:
+    1. `🖥️ Local Host (http://127.0.0.1:8088)`: Default local server host.
+    2. `🌐 [LAN] ...` / `🌐 [VM] ...`: Active managers dynamically discovered across the local network and virtual machine subnets.
+    3. `⭐ Saved Server (http://...)`: Historically saved servers from previous successful connections (`RecentRemoteServers`).
+    4. `✏️ Custom Server (Enter IP / URL below)`: Allows freeform entry of custom VM IPs (e.g. VirtualBox host-only `192.168.56.x`, VMware `172.16.x.x`, Hyper-V, or isolated subnets). Selecting Custom automatically focuses and highlights the URL input field for immediate editing.
+- **LAN & VM Server Discovery Engine (`DiscoveryHelper.cs` & UDP 8089)**:
+  - Implemented lightweight, non-blocking UDP broadcast discovery protocol on port `8089` using `ReuseAddress` socket options to prevent port collisions.
+  - Broadcasts discovery probes across both global `255.255.255.255` and all active physical and virtual network adapter subnet masks (e.g., VirtualBox, VMware, Hyper-V).
+  - WebServer background discovery listener answers with server name, web port, and game port.
+  - Initial HTTP probing detects local instances running on standard ports.
+  - Added interactive **"🔍 Scan"** button (`BtnDiscoverServers`) in the UI that scans on demand with visual loading feedback (`⏳ Scanning...`).
+- **Auto-Persistence for Custom & VM Servers (`RecentRemoteServers`)**:
+  - Whenever a remote client successfully connects to a custom server (whether in a VM, across subnets, or over VPN), the URL is automatically added to `RecentRemoteServers` in `manager_config.json`.
+  - Saved servers persist across restarts and are automatically populated into the dropdown with a star badge (`⭐`).
+- **Two-Way Dynamic Selection**:
+  - Selecting any discovered or saved server in the dropdown instantly fills `TxtRemoteUrl` and, if already in Remote Client mode, initiates immediate polling and synchronization.
+  - Fully compatible with `GET /api/config` and two-way remote configuration editing.
+- **Version Bump**: Centralized version `1.0.8` across project configurations, UI badges, `ServerEngine.CurrentAppVersion`, and deployment packages.
+
 ---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
 
