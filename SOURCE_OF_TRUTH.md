@@ -49,6 +49,7 @@
 28. [Steam Master Server Announcement, FLS Registration & RCON Mapping Architecture (v1.1.9)](#28-steam-master-server-announcement-fls-registration--rcon-mapping-architecture-v119)
 29. [Self-Contained Deployment & .NET Runtime Independence (v1.1.10)](#29-self-contained-deployment--net-runtime-independence-v1110)
 30. [Zero-Data-Loss Architecture: Configuration Ingestion, Packaging Isolation & INI Integrity (v1.1.11)](#30-zero-data-loss-architecture-configuration-ingestion-packaging-isolation--ini-integrity-v1111)
+31. [Future Roadmap & Upcoming Engineering Tasks (To-Do)](#31-future-roadmap--upcoming-engineering-tasks-to-do)
 
 ---
 
@@ -1028,6 +1029,30 @@ Follow this step-by-step roadmap when developing your custom manager on your dev
     - `UpdateIniKey()` explicitly checks `Path.GetFileName(filePath).Equals("ServerSettings.ini")`. If the file does not exist, it aborts write operations, ensuring Conan Sandbox Server can generate its full 220+ default settings on first boot without premature truncation.
   - **Updater Trampoline Scrubbing**:
     - `DownloadAndApplyAppUpdateAsync()` aggressively scrubs any staged `manager_config.json`, `ConanExilesDedicatedServer`, `workshop_cache.json`, `Backups`, or `*.ini` files from `stagedDir` before spawning the updater trampoline script.
+
+---
+
+## 31. Future Roadmap & Upcoming Engineering Tasks (To-Do)
+
+### To-Do: In-App Web Browser Interface for Mod Searches
+- **Feature Request / Requirement**:
+  - Implement an integrated in-app web browser interface directly inside the Conan Enhanced Server Manager (WPF Windows Desktop app and Android mobile companion client) specifically dedicated to searching, browsing, and inspecting Steam Workshop mods (`appid=440900`).
+- **Architectural Scope & Technical Design**:
+  1. **Windows Desktop Implementation (`Microsoft.Web.WebView2`)**:
+     - Integrate Microsoft Edge Chromium WebView2 control (`Microsoft.Web.WebView2` NuGet package) inside a dedicated tab or modal view (`TabModBrowser`).
+     - Points by default to Conan Exiles Steam Workshop hub: `https://steamcommunity.com/app/440900/workshop/`.
+     - Provides standard browser navigation toolbar: `◀ Back`, `▶ Forward`, `🔄 Refresh`, `🏠 Workshop Home`, and search input query bar.
+     - **Seamless 1-Click Mod Addition**:
+       - Injects JavaScript DOM bridge or hooks `NavigationStarting` / `SourceChanged` events to detect Steam Workshop item URLs matching `*steamcommunity.com/sharedfiles/filedetails/?id=*`.
+       - Renders an interactive action overlay (e.g., **"➕ Add This Mod to Server"**) whenever the user is viewing an item page.
+       - Automatically parses the Workshop PublishedFileId (`id`), queries metadata via `SteamWorkshopHelper`, appends the mod to `Config.Mods`, regenerates `modlist.txt`, and triggers `ServerSettings.ini` synchronization without requiring manual copy-pasting of 10-digit IDs.
+  2. **Android Mobile Implementation (`WebView`)**:
+     - Embed Android `android.webkit.WebView` within the mobile client (`TabModBrowser` in `index.html` / `app.js`).
+     - Supports full HTML5 responsive navigation of Steam Community Workshop.
+     - Android JS Bridge detects active mod page URL and displays a floating action button (FAB) **"➕ Add Mod to Server"** to install directly to the remote server host via `POST /api/mods/add`.
+- **Key Benefits**:
+  - Eliminates external browser switching and manual copy-pasting of numeric IDs.
+  - Allows full review of screenshots, patch notes, mod compatibility requirements, and community discussions directly within the manager environment before installing.
 
 ---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
