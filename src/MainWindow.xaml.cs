@@ -17,6 +17,7 @@ namespace ConanServerManager
         private readonly ServerEngine _engine;
         private readonly HttpClient _httpClient = new HttpClient();
         private readonly DispatcherTimer _remoteTimer = new DispatcherTimer();
+        private bool _isInitialized = false;
         private bool _hasSyncedRemoteConfig = false;
         private int _remoteUptimeSeconds = 0;
 
@@ -26,6 +27,7 @@ namespace ConanServerManager
         {
             _engine = new ServerEngine();
             InitializeComponent();
+            _isInitialized = true;
 
             _engine.OnLog += LogToLauncherConsole;
             _engine.OnSteamCmdLog += LogToSteamCmdConsole;
@@ -119,7 +121,7 @@ namespace ConanServerManager
 
         private void RadMode_Checked(object sender, RoutedEventArgs e)
         {
-            if (TxtServerPathInfo == null) return; // Guard against XAML initialization ordering
+            if (!_isInitialized || TxtServerPathInfo == null) return; // Guard against XAML initialization ordering
 
             if (IsRemoteMode)
             {
@@ -268,6 +270,8 @@ namespace ConanServerManager
 
         private void LoadUiFromConfig()
         {
+            if (!_isInitialized) return;
+
             if (TxtRemoteUrl != null && !string.IsNullOrWhiteSpace(_engine.Config.RemoteServerUrl))
             {
                 TxtRemoteUrl.Text = _engine.Config.RemoteServerUrl;
@@ -297,7 +301,7 @@ namespace ConanServerManager
 
         private void PopulateUiFromConfig(ManagerConfig cfg)
         {
-            if (cfg == null) return;
+            if (!_isInitialized || cfg == null || TxtServerName == null) return;
 
             TxtServerName.Text = cfg.ServerName;
             TxtServerPass.Text = cfg.ServerPassword;
@@ -600,6 +604,7 @@ namespace ConanServerManager
 
         private void CmbNetworkAdapter_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (!_isInitialized || CmbNetworkAdapter == null || TxtMacAddress == null) return;
             if (CmbNetworkAdapter.SelectedItem != null)
             {
                 string sel = CmbNetworkAdapter.SelectedItem.ToString() ?? "";
