@@ -236,7 +236,7 @@ public class MainActivity extends AppCompatActivity {
             try {
                 return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
             } catch (Exception ignored) {
-                return "1.1.8";
+                return "1.1.9";
             }
         }
 
@@ -249,7 +249,7 @@ public class MainActivity extends AppCompatActivity {
                     return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
                 }
             } catch (Exception ignored) {
-                return 10108;
+                return 10109;
             }
         }
 

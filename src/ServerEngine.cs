@@ -227,7 +227,7 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.1.8";
+            return "1.1.9";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
@@ -883,18 +883,66 @@ namespace ConanServerManager
                             continue;
                         }
 
-                        if (eSection.Equals("URL", StringComparison.OrdinalIgnoreCase) && line.Contains("="))
+                        if (!line.Contains("=")) continue;
+                        var parts = line.Split(new[] { '=' }, 2);
+                        string k = parts[0].Trim();
+                        string v = parts[1].Trim();
+
+                        if (eSection.Equals("URL", StringComparison.OrdinalIgnoreCase) && k.Equals("Port", StringComparison.OrdinalIgnoreCase) && int.TryParse(v, out int gPort))
                         {
-                            var parts = line.Split(new[] { '=' }, 2);
-                            if (parts[0].Trim().Equals("Port", StringComparison.OrdinalIgnoreCase) && int.TryParse(parts[1].Trim(), out int gPort))
-                            {
-                                Config.GamePort = gPort;
-                            }
+                            Config.GamePort = gPort;
+                        }
+                        else if (eSection.Equals("OnlineSubsystemSteam", StringComparison.OrdinalIgnoreCase) && k.Equals("GameServerQueryPort", StringComparison.OrdinalIgnoreCase) && int.TryParse(v, out int qPort))
+                        {
+                            Config.QueryPort = qPort;
+                        }
+                        else if (eSection.Equals("OnlineSubsystem", StringComparison.OrdinalIgnoreCase) && k.Equals("ServerName", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(v))
+                        {
+                            Config.ServerName = v;
+                        }
+                        else if (eSection.Equals("OnlineSubsystem", StringComparison.OrdinalIgnoreCase) && k.Equals("ServerPassword", StringComparison.OrdinalIgnoreCase))
+                        {
+                            Config.ServerPassword = v;
+                        }
+                        else if (eSection.Equals("/Script/OnlineSubsystemUtils.IpNetDriver", StringComparison.OrdinalIgnoreCase) && k.Equals("NetServerMaxTickRate", StringComparison.OrdinalIgnoreCase) && int.TryParse(v, out int tick))
+                        {
+                            Config.MaxTickRate = tick;
                         }
                     }
                 }
 
-                Log("Loaded existing server configuration from ServerSettings.ini and Engine.ini.");
+                if (File.Exists(GameIni))
+                {
+                    var gLines = File.ReadAllLines(GameIni);
+                    string gSection = "";
+                    foreach (var rawLine in gLines)
+                    {
+                        string line = rawLine.Trim();
+                        if (line.StartsWith("[") && line.EndsWith("]"))
+                        {
+                            gSection = line.Substring(1, line.Length - 2).Trim();
+                            continue;
+                        }
+
+                        if (!line.Contains("=")) continue;
+                        var parts = line.Split(new[] { '=' }, 2);
+                        string k = parts[0].Trim();
+                        string v = parts[1].Trim();
+
+                        if (gSection.Equals("/Script/Engine.GameSession", StringComparison.OrdinalIgnoreCase) && k.Equals("MaxPlayers", StringComparison.OrdinalIgnoreCase) && int.TryParse(v, out int maxP))
+                        {
+                            Config.MaxPlayers = maxP;
+                        }
+                        else if (gSection.Equals("RconPlugin", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (k.Equals("RconEnabled", StringComparison.OrdinalIgnoreCase) && bool.TryParse(v, out bool rconOn)) Config.RconEnabled = rconOn;
+                            else if (k.Equals("RconPort", StringComparison.OrdinalIgnoreCase) && int.TryParse(v, out int rPort)) Config.RconPort = rPort;
+                            else if (k.Equals("RconPassword", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(v)) Config.RconPassword = v;
+                        }
+                    }
+                }
+
+                Log("Loaded existing server configuration from ServerSettings.ini, Engine.ini, and Game.ini.");
             }
             catch (Exception ex)
             {
@@ -1005,15 +1053,41 @@ namespace ConanServerManager
         {
             Directory.CreateDirectory(ConfigDir);
 
+            // ServerSettings.ini
             UpdateIniKey(ServerSettingsIni, "ServerSettings", "ServerName", Config.ServerName);
             UpdateIniKey(ServerSettingsIni, "ServerSettings", "ServerPassword", Config.ServerPassword);
             UpdateIniKey(ServerSettingsIni, "ServerSettings", "AdminPassword", Config.AdminPassword);
-            UpdateIniKey(ServerSettingsIni, "ServerSettings", "RconEnabled", Config.RconEnabled ? "True" : "False");
-            UpdateIniKey(ServerSettingsIni, "ServerSettings", "RconPassword", Config.RconPassword);
-            UpdateIniKey(ServerSettingsIni, "ServerSettings", "RconPort", Config.RconPort.ToString());
+            if (!string.IsNullOrWhiteSpace(Config.Region))
+            {
+                UpdateIniKey(ServerSettingsIni, "ServerSettings", "serverRegion", Config.Region.Split(' ')[0]);
+            }
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "DedicatedServerLauncherModEnabled", "True");
             UpdateIniKey(ServerSettingsIni, "ServerSettings", "DedicatedServerLauncherModList", string.Join(",", Config.Mods));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "IsBattlEyeEnabled", Config.EnableBattlEye ? "True" : "False");
 
+            // Engine.ini - Steam Master Server and Unreal Engine OSS read identity from here!
+            UpdateIniKey(EngineIni, "OnlineSubsystem", "ServerName", Config.ServerName);
+            UpdateIniKey(EngineIni, "OnlineSubsystem", "ServerPassword", Config.ServerPassword);
+            if (Config.UseMultihome && !string.IsNullOrWhiteSpace(Config.MultihomeIp))
+            {
+                UpdateIniKey(EngineIni, "OnlineSubsystem", "DedicatedServerLauncherMultihomeEnabled", "True");
+                UpdateIniKey(EngineIni, "OnlineSubsystem", "DedicatedServerLauncherMultihomeIP", Config.MultihomeIp.Trim());
+            }
+            else
+            {
+                UpdateIniKey(EngineIni, "OnlineSubsystem", "DedicatedServerLauncherMultihomeEnabled", "False");
+            }
             UpdateIniKey(EngineIni, "URL", "Port", Config.GamePort.ToString());
+            UpdateIniKey(EngineIni, "OnlineSubsystemSteam", "GameServerQueryPort", Config.QueryPort.ToString());
+            UpdateIniKey(EngineIni, "/Script/OnlineSubsystemUtils.IpNetDriver", "NetServerMaxTickRate", Config.MaxTickRate.ToString());
+
+            // Game.ini - Conan Exiles reads MaxPlayers and RconPlugin from Game.ini
+            UpdateIniKey(GameIni, "/Script/Engine.GameSession", "MaxPlayers", Config.MaxPlayers.ToString());
+            UpdateIniKey(GameIni, "RconPlugin", "RconEnabled", Config.RconEnabled ? "True" : "False");
+            UpdateIniKey(GameIni, "RconPlugin", "RconPort", Config.RconPort.ToString());
+            UpdateIniKey(GameIni, "RconPlugin", "RconPassword", Config.RconPassword);
+            UpdateIniKey(GameIni, "RconPlugin", "RconMaxKarma", "60");
+            UpdateIniKey(GameIni, "RconPlugin", "RconMessageMethod", "0");
         }
 
         private void UpdateIniKey(string filePath, string section, string key, string value)
@@ -1093,6 +1167,39 @@ namespace ConanServerManager
             }
         }
 
+        public void EnsureSteamDependencies()
+        {
+            try
+            {
+                string binDir = Path.GetDirectoryName(ExecutablePath) ?? "";
+                if (!Directory.Exists(binDir)) return;
+
+                // Ensure steam_appid.txt exists in Binaries/Win64 and ServerRootDir with AppID 440900
+                string binAppId = Path.Combine(binDir, "steam_appid.txt");
+                if (!File.Exists(binAppId)) File.WriteAllText(binAppId, "440900");
+
+                string rootAppId = Path.Combine(ServerRootDir, "steam_appid.txt");
+                if (!File.Exists(rootAppId)) File.WriteAllText(rootAppId, "440900");
+
+                // Deploy 64-bit and 32-bit Steam Game Server DLLs into binary folder if present in ServerRootDir
+                string[] dlls = { "steamclient64.dll", "tier0_s64.dll", "vstdlib_s64.dll", "steamclient.dll", "tier0_s.dll", "vstdlib_s.dll" };
+                foreach (var dll in dlls)
+                {
+                    string src = Path.Combine(ServerRootDir, dll);
+                    string dest = Path.Combine(binDir, dll);
+                    if (File.Exists(src) && !File.Exists(dest))
+                    {
+                        File.Copy(src, dest, true);
+                        Log($"[Steam Dependency] Deployed {dll} into binary directory.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[Steam Dependency Warning] Could not verify/deploy Steam DLLs: {ex.Message}");
+            }
+        }
+
         public async Task RunFullUpdateAndStartAsync()
         {
             if (DetectAndAdoptRunningServerProcess() || ServerStatus == "RUNNING" || ServerStatus == "UPDATING")
@@ -1131,6 +1238,8 @@ namespace ConanServerManager
                 return;
             }
 
+            EnsureSteamDependencies();
+
             Log("Launching Conan Sandbox Dedicated Server executable...");
 
             string mapPath = Config.StartupMap.Contains("|") ? Config.StartupMap.Split('|')[1] : Config.StartupMap;
@@ -1147,6 +1256,14 @@ namespace ConanServerManager
                 WorkingDirectory = Path.GetDirectoryName(ExecutablePath),
                 UseShellExecute = false
             };
+
+            // Fix Funcom Live Services (FLS) SSL authentication on modern Intel CPUs
+            psi.EnvironmentVariables["OPENSSL_ia32cap"] = ":~0x20000000";
+            Environment.SetEnvironmentVariable("OPENSSL_ia32cap", ":~0x20000000");
+
+            // Ensure Steam Game Server initialization detects AppId
+            psi.EnvironmentVariables["SteamAppId"] = "440900";
+            psi.EnvironmentVariables["SteamGameId"] = "440900";
 
             if (DetectAndAdoptRunningServerProcess())
             {
