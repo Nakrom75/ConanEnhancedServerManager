@@ -227,7 +227,7 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.1.3";
+            return "1.1.4";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
@@ -239,6 +239,7 @@ namespace ConanServerManager
 
         public AppUpdateInfo? LatestAppUpdate { get; private set; }
         public event Action<AppUpdateInfo>? OnAppUpdateDiscovered;
+        public event Action? OnConfigSaved;
 
         public ServerEngine()
         {
@@ -906,6 +907,7 @@ namespace ConanServerManager
             string json = JsonSerializer.Serialize(Config, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(ConfigJsonPath, json);
             SyncIniSettings();
+            try { OnConfigSaved?.Invoke(); } catch { }
         }
 
         public void UpdateConfig(ManagerConfig newConfig)
@@ -922,6 +924,56 @@ namespace ConanServerManager
             }
 
             SaveConfig();
+        }
+
+        public void UpdateSettingsFromRemote(JsonElement root)
+        {
+            bool changed = false;
+
+            if (root.TryGetProperty("serverName", out var sName) || root.TryGetProperty("ServerName", out sName))
+            {
+                string val = sName.GetString()?.Trim() ?? "";
+                if (!string.IsNullOrEmpty(val)) { Config.ServerName = val; changed = true; }
+            }
+            if (root.TryGetProperty("serverPassword", out var sPass) || root.TryGetProperty("ServerPassword", out sPass))
+            {
+                Config.ServerPassword = sPass.GetString()?.Trim() ?? "";
+                changed = true;
+            }
+            if (root.TryGetProperty("adminPassword", out var aPass) || root.TryGetProperty("AdminPassword", out aPass))
+            {
+                string val = aPass.GetString()?.Trim() ?? "";
+                if (!string.IsNullOrEmpty(val)) { Config.AdminPassword = val; changed = true; }
+            }
+            if (root.TryGetProperty("maxPlayers", out var mPl) || root.TryGetProperty("MaxPlayers", out mPl))
+            {
+                if (mPl.TryGetInt32(out int val)) { Config.MaxPlayers = val; changed = true; }
+            }
+            if (root.TryGetProperty("maxTickRate", out var mTick) || root.TryGetProperty("MaxTickRate", out mTick))
+            {
+                if (mTick.TryGetInt32(out int val)) { Config.MaxTickRate = val; changed = true; }
+            }
+            if (root.TryGetProperty("region", out var reg) || root.TryGetProperty("Region", out reg) || root.TryGetProperty("serverRegion", out reg))
+            {
+                string val = reg.GetString()?.Trim() ?? "";
+                if (!string.IsNullOrEmpty(val)) { Config.Region = val; changed = true; }
+            }
+            if (root.TryGetProperty("enableBattlEye", out var be) || root.TryGetProperty("EnableBattlEye", out be) || root.TryGetProperty("battlEyeEnabled", out be))
+            {
+                Config.EnableBattlEye = be.GetBoolean();
+                changed = true;
+            }
+            if (root.TryGetProperty("enableVAC", out var vac) || root.TryGetProperty("EnableVAC", out vac) || root.TryGetProperty("vacEnabled", out vac))
+            {
+                Config.EnableVAC = vac.GetBoolean();
+                changed = true;
+            }
+
+            if (changed)
+            {
+                SaveConfig();
+                Log($"[Remote Admin] Server configuration updated remotely (Server: \"{Config.ServerName}\", MaxPlayers: {Config.MaxPlayers})");
+            }
         }
 
         public void Log(string message)

@@ -38,6 +38,7 @@ namespace ConanServerManager
             _engine.OnAppUpdateDiscovered += ShowAppUpdateBanner;
             _engine.OnSteamStatusChanged += UpdateSteamVisibilityUi;
             _engine.OnPlayersChanged += (players) => Dispatcher.Invoke(() => UpdatePlayersListUi(players));
+            _engine.OnConfigSaved += () => Dispatcher.Invoke(LoadUiFromConfig);
 
             _remoteTimer.Interval = TimeSpan.FromSeconds(3);
             _remoteTimer.Tick += async (s, e) =>

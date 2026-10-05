@@ -5,7 +5,7 @@ let pollTimer = null;
 let installedMods = [];
 let savedServers = [];
 let latestApkUrl = "";
-let APP_VERSION = "1.1.3";
+let APP_VERSION = "1.1.4";
 if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
 }
@@ -54,6 +54,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     pollServer();
+    fetchServerConfig();
     pollTimer = setInterval(pollServer, 3000);
 
     // Initial check for app update
@@ -414,19 +415,60 @@ async function reorderMod(index, delta) {
 // SERVER SETTINGS
 async function fetchServerConfig() {
     try {
-        const res = await fetch(`${currentServerUrl}/api/config`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+        const res = await fetch(`${currentServerUrl}/api/config`, {
+            cache: "no-store",
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (!res.ok) throw new Error("HTTP " + res.status);
         const cfg = await res.json();
 
-        document.getElementById("cfgServerName").value = cfg.serverName || "";
-        document.getElementById("cfgServerPassword").value = cfg.serverPassword || "";
-        document.getElementById("cfgAdminPassword").value = cfg.adminPassword || "";
-        document.getElementById("cfgMaxPlayers").value = cfg.maxPlayers || 40;
-        document.getElementById("cfgMaxTickRate").value = cfg.maxTickRate || 30;
-        document.getElementById("cfgRegion").value = cfg.serverRegion ?? 0;
-        document.getElementById("cfgBattlEye").checked = !!cfg.battlEyeEnabled;
-        document.getElementById("cfgVac").checked = !!cfg.vacEnabled;
+        const srvName = cfg.serverName ?? cfg.ServerName ?? "";
+        const srvPass = cfg.serverPassword ?? cfg.ServerPassword ?? "";
+        const admPass = cfg.adminPassword ?? cfg.AdminPassword ?? "";
+        const maxPl = cfg.maxPlayers ?? cfg.MaxPlayers ?? 40;
+        const tick = cfg.maxTickRate ?? cfg.MaxTickRate ?? 30;
+        const be = cfg.battlEyeEnabled ?? cfg.enableBattlEye ?? cfg.EnableBattlEye ?? false;
+        const vac = cfg.vacEnabled ?? cfg.enableVAC ?? cfg.EnableVAC ?? false;
+
+        const rawReg = cfg.region ?? cfg.serverRegion ?? cfg.Region ?? "0";
+        let regionIndex = "0";
+        if (typeof rawReg === "number") {
+            regionIndex = String(rawReg);
+        } else if (typeof rawReg === "string") {
+            regionIndex = rawReg.split(" - ")[0].trim();
+        }
+
+        const elName = document.getElementById("cfgServerName");
+        const elPass = document.getElementById("cfgServerPassword");
+        const elAdmin = document.getElementById("cfgAdminPassword");
+        const elMaxPl = document.getElementById("cfgMaxPlayers");
+        const elTick = document.getElementById("cfgMaxTickRate");
+        const elReg = document.getElementById("cfgRegion");
+        const elBe = document.getElementById("cfgBattlEye");
+        const elVac = document.getElementById("cfgVac");
+
+        if (elName) elName.value = srvName;
+        if (elPass) elPass.value = srvPass;
+        if (elAdmin) elAdmin.value = admPass;
+        if (elMaxPl) elMaxPl.value = maxPl;
+        if (elTick) elTick.value = tick;
+        if (elReg) elReg.value = regionIndex;
+        if (elBe) elBe.checked = !!be;
+        if (elVac) elVac.checked = !!vac;
+
+        // Also update dashboard server display if set
+        if (srvName) {
+            const dashName = document.getElementById("dashServerName");
+            if (dashName) dashName.innerText = srvName;
+            const activeModalName = document.getElementById("activeModalServerName");
+            if (activeModalName) activeModalName.innerText = srvName;
+        }
     } catch (e) {
-        showToast("Error loading server config: " + e.message);
+        console.warn("fetchServerConfig warning:", e);
     }
 }
 
@@ -434,14 +476,20 @@ async function saveServerConfig() {
     vibrate(40);
     try {
         showToast("Saving settings to server...");
+        const regSelect = document.getElementById("cfgRegion");
+        const regText = regSelect ? (regSelect.options[regSelect.selectedIndex]?.text || regSelect.value) : "0 - Europe";
+
         const payload = {
             serverName: document.getElementById("cfgServerName").value.trim(),
             serverPassword: document.getElementById("cfgServerPassword").value.trim(),
             adminPassword: document.getElementById("cfgAdminPassword").value.trim(),
             maxPlayers: parseInt(document.getElementById("cfgMaxPlayers").value) || 40,
             maxTickRate: parseInt(document.getElementById("cfgMaxTickRate").value) || 30,
-            serverRegion: parseInt(document.getElementById("cfgRegion").value) || 0,
+            region: regText,
+            serverRegion: regSelect ? regSelect.value : "0",
+            enableBattlEye: document.getElementById("cfgBattlEye").checked,
             battlEyeEnabled: document.getElementById("cfgBattlEye").checked,
+            enableVAC: document.getElementById("cfgVac").checked,
             vacEnabled: document.getElementById("cfgVac").checked
         };
 
@@ -452,10 +500,18 @@ async function saveServerConfig() {
         });
         const data = await res.json();
         showToast(data.message || "Server settings updated!");
+        fetchServerConfig();
         pollServer();
     } catch (e) {
         showToast("Save error: " + e.message);
     }
+}
+
+function togglePasswordVisibility(fieldId) {
+    vibrate(20);
+    const input = document.getElementById(fieldId);
+    if (!input) return;
+    input.type = input.type === "password" ? "text" : "password";
 }
 
 // IN-APP SMART DUAL-SOURCE UPDATE CHECKER
@@ -743,6 +799,7 @@ function connectToCustomServer() {
         updateHeaderDisplay();
         closeServerModal();
         pollServer();
+        fetchServerConfig();
         showToast("Connecting to " + currentServerUrl + "...");
     } catch (err) {
         console.error("connectToCustomServer error:", err);
@@ -1015,3 +1072,5 @@ window.checkAppUpdates = checkAppUpdates;
 window.installUpdate = installUpdate;
 window.downloadFromServerDirect = downloadFromServerDirect;
 window.downloadFromGithubDirect = downloadFromGithubDirect;
+window.togglePasswordVisibility = togglePasswordVisibility;
+window.fetchServerConfig = fetchServerConfig;

@@ -298,18 +298,47 @@ namespace ConanServerManager
             }
             else if (path == "/api/config" && method == "GET")
             {
-                await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(_engine.Config));
+                var cfg = _engine.Config;
+                var res = new
+                {
+                    serverName = cfg.ServerName,
+                    serverPassword = cfg.ServerPassword,
+                    adminPassword = cfg.AdminPassword,
+                    rconPassword = cfg.RconPassword,
+                    rconPort = cfg.RconPort,
+                    gamePort = cfg.GamePort,
+                    rawUdpPort = cfg.RawUdpPort,
+                    queryPort = cfg.QueryPort,
+                    maxPlayers = cfg.MaxPlayers,
+                    maxTickRate = cfg.MaxTickRate,
+                    region = cfg.Region,
+                    serverRegion = cfg.Region,
+                    enableBattlEye = cfg.EnableBattlEye,
+                    battlEyeEnabled = cfg.EnableBattlEye,
+                    enableVAC = cfg.EnableVAC,
+                    vacEnabled = cfg.EnableVAC,
+                    // PascalCase aliases for backward compatibility
+                    ServerName = cfg.ServerName,
+                    ServerPassword = cfg.ServerPassword,
+                    AdminPassword = cfg.AdminPassword,
+                    RconPassword = cfg.RconPassword,
+                    RconPort = cfg.RconPort,
+                    GamePort = cfg.GamePort,
+                    MaxPlayers = cfg.MaxPlayers,
+                    MaxTickRate = cfg.MaxTickRate,
+                    Region = cfg.Region,
+                    EnableBattlEye = cfg.EnableBattlEye,
+                    EnableVAC = cfg.EnableVAC
+                };
+                await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(res));
             }
             else if (path == "/api/config" && method == "POST")
             {
                 try
                 {
-                    var cfg = JsonSerializer.Deserialize<ManagerConfig>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                    if (cfg != null)
-                    {
-                        _engine.UpdateConfig(cfg);
-                    }
-                    await SendHttpResponseAsync(stream, 200, "application/json", "{\"success\": true, \"message\": \"Manager config updated remotely.\"}");
+                    using var doc = JsonDocument.Parse(body);
+                    _engine.UpdateSettingsFromRemote(doc.RootElement);
+                    await SendHttpResponseAsync(stream, 200, "application/json", "{\"success\": true, \"message\": \"Server configuration updated successfully.\"}");
                 }
                 catch (Exception ex)
                 {
