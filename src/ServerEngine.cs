@@ -1296,7 +1296,7 @@ namespace ConanServerManager
             }
         }
 
-        private void GenerateModlistFile()
+        public void GenerateModlistFile()
         {
             Directory.CreateDirectory(ModsDir);
             string workshopContentDir = Path.Combine(ServerRootDir, "steamapps", "workshop", "content", WorkshopAppId);

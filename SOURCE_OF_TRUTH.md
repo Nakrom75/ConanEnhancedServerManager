@@ -793,6 +793,53 @@ Follow this step-by-step roadmap when developing your custom manager on your dev
   - Fully compatible with `GET /api/config` and two-way remote configuration editing.
 - **Version Bump**: Centralized version `1.0.8` across project configurations, UI badges, `ServerEngine.CurrentAppVersion`, and deployment packages.
 
+### 21. Android Mobile Remote Client App (`.apk`), Steam Workshop Live Mod Browser & Remote Management, and In-App Auto-Updates (v1.0.8)
+- **Standalone Android APK (`ConanServerManager-v1.0.8.apk`)**:
+  - Created a dedicated, standalone Android client application (`android/`) targeting Android 14 (API 34) with backward compatibility to Android 7.0 (API 24).
+  - Built with Gradle 8.5, Android Gradle Plugin 8.2.2, and OpenJDK 17.
+  - Packaged and pre-signed with APK Signature Scheme v2 via `android/conan-release.keystore` (4.62 MB release APK).
+  - Designed for on-the-road server management over cellular networks, WAN IPs, Dynamic DNS (DDNS), VPNs (Tailscale, WireGuard), or local home WiFi.
+  - Native Android app features:
+    - Custom app launcher icons generated across all mipmap densities (mdpi, hdpi, xhdpi, xxhdpi, xxxhdpi) matching the authentic Conan icon.
+    - Android JavaScript Bridge (`AndroidBridge` in `MainActivity.java`) exposing native toast notifications, haptic vibrations, persistent `SharedPreferences` server storage, and automated APK downloads and installs.
+    - Full cleartext traffic and network security configuration (`network_security_config.xml`) allowing seamless connections to non-SSL local IP addresses and home DDNS endpoints.
+
+- **Steam Workshop Mod Search Engine & Remote Installer**:
+  - Implemented `SteamWorkshopHelper.cs` providing real-time queries against Steam Community Workshop for Conan Exiles (`appid=440900`):
+    - Web scraping parser that queries `https://steamcommunity.com/workshop/browse/?appid=440900&searchtext=<query>` to extract mod IDs, titles, and preview thumbnail images directly from embedded JSON objects without requiring an API key.
+    - Valve Remote Storage API integration via `https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/` to retrieve mod metadata, titles, subscriptions, file sizes, and descriptions.
+  - Server REST API Endpoints added to `WebServer.cs`:
+    - `GET /api/workshop/search?query=...`: Searches Steam Workshop and returns mod results, highlighting whether each mod is already installed on the server.
+    - `GET /api/workshop/details?id=...`: Fetches detailed metadata for a specific Workshop mod.
+    - `GET /api/mods`: Returns list of currently active mods with titles, IDs, and positions.
+    - `POST /api/mods/add`: Appends a new mod ID to server configuration, regenerates `modlist.txt` in server root, and updates `ServerSettings.ini`.
+    - `POST /api/mods/remove`: Removes a mod ID, rewrites `modlist.txt`, and updates configuration.
+    - `POST /api/mods/reorder`: Persists reordered mod load sequences.
+
+- **Remote Server Configuration & Identity Control**:
+  - Fully integrated remote settings editor allowing administrators to rename the server, update server passwords, update admin passwords, adjust max players, and set server tick rates remotely from an Android device or web browser.
+  - Changes are validated, saved to `manager_config.json`, and written directly to `DefaultServerSettings.ini` / `ServerSettings.ini`.
+
+- **Direct APK Distribution & In-App Auto-Update System**:
+  - Embedded `WebServer.cs` serves the compiled Android APK directly at `GET /conan.apk` and `GET /api/download/apk` with proper `application/vnd.android.package-archive` MIME type and `Content-Disposition: attachment; filename="ConanServerManager-v1.0.8.apk"`.
+  - Android app includes built-in update checker that compares the running app version with the latest GitHub release.
+  - 1-tap in-app update: `MainActivity.java` initiates Android `DownloadManager` to fetch the new release `.apk`, stores it in the app's external files directory, and launches Android's native package installer via `FileProvider` (`com.conan.servermanager.fileprovider`) and `Intent.ACTION_VIEW` (`FLAG_GRANT_READ_URI_PERMISSION`).
+
+- **Mobile Client UI & Capabilities**:
+  - Intuitive handheld UI optimized for smartphones:
+    - **Server Switcher**: Quick connection to local host, saved servers, or custom remote IPs/DDNS with port and status badges.
+    - **📊 Server Dashboard**: Real-time status badge (Stopped, Starting, Running, Updating), Steam master server visibility indicator with ping, uptime counter, and player count.
+    - **🎮 Server Controls**: 1-tap Start Server, Stop Server, Restart Server, and Hot Backup creation.
+    - **🧩 Steam Workshop Browser**: Search bar, instant mod thumbnail cards, and 1-tap **"➕ Add to Server"** button.
+    - **📦 Active Mods Manager**: View current load order, delete mods, and trigger server refreshes.
+    - **⚙️ Settings Editor**: Modify server name and core rules on the fly.
+    - **👥 Online Players**: Live list of connected characters, connection duration, score, and 1-tap RCON kick.
+    - **💻 Live Console & RCON**: Real-time log monitoring with custom RCON command terminal.
+    - **✨ Update Checker**: Status badge indicating whether the app is up to date, with 1-tap APK update button.
+
+- **Deployment Packages Updated**:
+  - Re-packaged and verified `ConanServerManager_v1.0.8.zip` and `ConanServerManager_DeployPackage.zip` containing the updated Windows server manager binaries and the pre-signed `ConanServerManager-v1.0.8.apk`.
+
 ---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
 

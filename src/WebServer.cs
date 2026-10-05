@@ -358,6 +358,191 @@ namespace ConanServerManager
                     await SendHttpResponseAsync(stream, 400, "application/json", JsonSerializer.Serialize(new { success = false, error = ex.Message }));
                 }
             }
+            else if (path == "/api/workshop/search" && method == "GET")
+            {
+                string query = "";
+                if (rawUrl.Contains("?"))
+                {
+                    var qParts = rawUrl.Split('?')[1].Split('&');
+                    foreach (var q in qParts)
+                    {
+                        var kv = q.Split('=');
+                        if (kv.Length == 2 && kv[0].Equals("query", StringComparison.OrdinalIgnoreCase))
+                        {
+                            query = WebUtility.UrlDecode(kv[1]);
+                        }
+                    }
+                }
+
+                var results = await SteamWorkshopHelper.SearchModsAsync(query);
+                var installedSet = new HashSet<string>(_engine.Config.Mods, StringComparer.OrdinalIgnoreCase);
+                foreach (var r in results)
+                {
+                    r.IsInstalled = installedSet.Contains(r.Id);
+                }
+
+                await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(results));
+            }
+            else if (path == "/api/workshop/details" && method == "GET")
+            {
+                string modId = "";
+                if (rawUrl.Contains("?"))
+                {
+                    var qParts = rawUrl.Split('?')[1].Split('&');
+                    foreach (var q in qParts)
+                    {
+                        var kv = q.Split('=');
+                        if (kv.Length == 2 && kv[0].Equals("id", StringComparison.OrdinalIgnoreCase))
+                        {
+                            modId = WebUtility.UrlDecode(kv[1]);
+                        }
+                    }
+                }
+
+                var item = await SteamWorkshopHelper.GetModDetailsAsync(modId);
+                if (item != null)
+                {
+                    item.IsInstalled = _engine.Config.Mods.Contains(item.Id, StringComparer.OrdinalIgnoreCase);
+                    await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(item));
+                }
+                else
+                {
+                    await SendHttpResponseAsync(stream, 404, "application/json", "{\"error\": \"Mod not found or invalid ID.\"}");
+                }
+            }
+            else if (path == "/api/mods" && method == "GET")
+            {
+                var modList = new List<WorkshopModItem>();
+                foreach (var modId in _engine.Config.Mods)
+                {
+                    var details = await SteamWorkshopHelper.GetModDetailsAsync(modId);
+                    if (details != null)
+                    {
+                        details.IsInstalled = true;
+                        modList.Add(details);
+                    }
+                    else
+                    {
+                        modList.Add(new WorkshopModItem
+                        {
+                            Id = modId,
+                            Title = $"Mod #{modId}",
+                            IsInstalled = true
+                        });
+                    }
+                }
+                await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { mods = _engine.Config.Mods, details = modList }));
+            }
+            else if (path == "/api/mods/add" && method == "POST")
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    string modId = doc.RootElement.GetProperty("modId").GetString()?.Trim() ?? "";
+
+                    if (string.IsNullOrWhiteSpace(modId))
+                    {
+                        await SendHttpResponseAsync(stream, 400, "application/json", "{\"success\": false, \"error\": \"modId is required.\"}");
+                        return;
+                    }
+
+                    if (!_engine.Config.Mods.Contains(modId, StringComparer.OrdinalIgnoreCase))
+                    {
+                        _engine.Config.Mods.Add(modId);
+                        _engine.SaveConfig();
+                        _engine.SyncIniSettings();
+                        _engine.GenerateModlistFile();
+                        _engine.Log($"[Remote Admin] Added Steam Workshop Mod #{modId} to server mod list.");
+                    }
+
+                    await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = true, mods = _engine.Config.Mods }));
+                }
+                catch (Exception ex)
+                {
+                    await SendHttpResponseAsync(stream, 400, "application/json", JsonSerializer.Serialize(new { success = false, error = ex.Message }));
+                }
+            }
+            else if (path == "/api/mods/remove" && method == "POST")
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    string modId = doc.RootElement.GetProperty("modId").GetString()?.Trim() ?? "";
+
+                    _engine.Config.Mods.RemoveAll(x => x.Equals(modId, StringComparison.OrdinalIgnoreCase));
+                    _engine.SaveConfig();
+                    _engine.SyncIniSettings();
+                    _engine.GenerateModlistFile();
+                    _engine.Log($"[Remote Admin] Removed Steam Workshop Mod #{modId} from server mod list.");
+
+                    await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = true, mods = _engine.Config.Mods }));
+                }
+                catch (Exception ex)
+                {
+                    await SendHttpResponseAsync(stream, 400, "application/json", JsonSerializer.Serialize(new { success = false, error = ex.Message }));
+                }
+            }
+            else if (path == "/api/mods/reorder" && method == "POST")
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    if (doc.RootElement.TryGetProperty("mods", out var modsArr) && modsArr.ValueKind == JsonValueKind.Array)
+                    {
+                        var newOrder = new List<string>();
+                        foreach (var el in modsArr.EnumerateArray())
+                        {
+                            string id = el.GetString()?.Trim() ?? "";
+                            if (!string.IsNullOrWhiteSpace(id) && !newOrder.Contains(id))
+                            {
+                                newOrder.Add(id);
+                            }
+                        }
+                        _engine.Config.Mods = newOrder;
+                        _engine.SaveConfig();
+                        _engine.SyncIniSettings();
+                        _engine.GenerateModlistFile();
+                        _engine.Log($"[Remote Admin] Reordered server mod list ({newOrder.Count} mods).");
+                    }
+
+                    await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = true, mods = _engine.Config.Mods }));
+                }
+                catch (Exception ex)
+                {
+                    await SendHttpResponseAsync(stream, 400, "application/json", JsonSerializer.Serialize(new { success = false, error = ex.Message }));
+                }
+            }
+            else if ((path == "/api/download/apk" || path == "/conan.apk" || path == "/app.apk") && method == "GET")
+            {
+                string apkPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ConanServerManager-v1.0.8.apk");
+                if (!File.Exists(apkPath))
+                {
+                    apkPath = Path.Combine(Directory.GetCurrentDirectory(), "ConanServerManager-v1.0.8.apk");
+                }
+
+                if (File.Exists(apkPath))
+                {
+                    byte[] apkBytes = await File.ReadAllBytesAsync(apkPath);
+                    StringBuilder sb = new StringBuilder();
+                    sb.AppendLine("HTTP/1.1 200 OK");
+                    sb.AppendLine("Content-Type: application/vnd.android.package-archive");
+                    sb.AppendLine($"Content-Length: {apkBytes.Length}");
+                    sb.AppendLine("Content-Disposition: attachment; filename=\"ConanServerManager-v1.0.8.apk\"");
+                    sb.AppendLine("Access-Control-Allow-Origin: *");
+                    sb.AppendLine("Connection: close");
+                    sb.AppendLine();
+
+                    byte[] headerBytes = Encoding.UTF8.GetBytes(sb.ToString());
+                    await stream.WriteAsync(headerBytes, 0, headerBytes.Length);
+                    await stream.WriteAsync(apkBytes, 0, apkBytes.Length);
+                    await stream.FlushAsync();
+                    return;
+                }
+                else
+                {
+                    await SendHttpResponseAsync(stream, 404, "application/json", "{\"error\": \"APK not found on server host.\"}");
+                }
+            }
             else
             {
                 await SendHttpResponseAsync(stream, 404, "application/json", "{\"error\": \"Endpoint not found.\"}");
@@ -392,19 +577,21 @@ namespace ConanServerManager
 <head>
     <meta charset=""UTF-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
-    <title>Conan Exiles Server Remote Console (v1.0.7)</title>
+    <title>Conan Exiles Server Remote Console (v1.0.8)</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; }
         body { background: #0f172a; color: #f8fafc; padding: 16px; max-width: 900px; margin: 0 auto; }
         .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
         .header { display: flex; justify-content: space-between; align-items: center; }
         .title { font-size: 1.25rem; font-weight: bold; color: #818cf8; }
-        .subtitle { font-size: 0.85rem; color: #94a3b8; display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+        .subtitle { font-size: 0.85rem; color: #94a3b8; display: flex; align-items: center; gap: 8px; margin-top: 2px; flex-wrap: wrap; }
         .badge { padding: 6px 14px; border-radius: 20px; font-weight: bold; font-size: 0.85rem; letter-spacing: 0.5px; }
         .badge-running { background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399; }
         .badge-stopped { background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; }
         .badge-updating { background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.4); color: #fbbf24; }
         .badge-ver { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); padding: 2px 8px; border-radius: 10px; font-weight: bold; font-size: 0.75rem; }
+        .btn-apk { display: inline-flex; align-items: center; gap: 4px; background: #6366f1; color: white; text-decoration: none; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: bold; }
+        .btn-apk:hover { background: #4f46e5; }
         
         .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-top: 14px; }
         .metric-box { background: #0f172a; border-radius: 8px; padding: 12px; text-align: center; border: 1px solid #334155; }
@@ -432,7 +619,8 @@ namespace ConanServerManager
                 <div class=""title"" id=""srvName"">Conan Exiles Server</div>
                 <div class=""subtitle"">
                     <span>Remote Mobile &amp; Web Control Console</span>
-                    <span id=""appVerBadge"" class=""badge-ver"">v1.0.7</span>
+                    <span id=""appVerBadge"" class=""badge-ver"">v1.0.8</span>
+                    <a href=""/conan.apk"" class=""btn-apk"">📱 Download Android App (.apk)</a>
                 </div>
             </div>
             <div id=""statusBadge"" class=""badge badge-stopped"">STOPPED</div>
@@ -472,6 +660,63 @@ namespace ConanServerManager
         </div>
         <div id=""playersListContainer"">
             <div style=""color: #64748b; font-size: 0.85rem; text-align: center; padding: 12px;"" id=""noPlayersText"">No players currently online</div>
+        </div>
+    </div>
+
+    <!-- Steam Workshop Mod Search & Add Card -->
+    <div class=""card"">
+        <div class=""subtitle"" style=""margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold; color: #818cf8;"">
+            🔍 Steam Workshop Mod Lookup
+        </div>
+        <div style=""display: flex; gap: 8px; margin-bottom: 10px;"">
+            <input type=""text"" id=""txtWorkshopQuery"" placeholder=""Enter mod name or ID (e.g. pippi, emberlight)"">
+            <button class=""btn-start"" style=""padding: 10px 16px;"" onclick=""searchWorkshopMods()"">Search</button>
+        </div>
+        <div id=""workshopResults"" style=""max-height: 280px; overflow-y: auto;""></div>
+    </div>
+
+    <!-- Active Server Mods Card -->
+    <div class=""card"">
+        <div class=""header"" style=""margin-bottom: 8px;"">
+            <div class=""subtitle"" style=""text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold; color: #818cf8;"">
+                📦 Active Server Mods (<span id=""activeModsCountBadge"">0</span>)
+            </div>
+            <button class=""btn-backup"" style=""padding: 4px 10px; font-size: 0.75rem;"" onclick=""loadServerMods()"">🔄 Refresh</button>
+        </div>
+        <div id=""activeModsContainer""></div>
+    </div>
+
+    <!-- Server Settings Card -->
+    <div class=""card"">
+        <div class=""subtitle"" style=""margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold; color: #818cf8;"">
+            ⚙️ Server Identity &amp; Rules
+        </div>
+        <div style=""display: flex; flex-direction: column; gap: 10px;"">
+            <div>
+                <label style=""display: block; font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px;"">Server Name</label>
+                <input type=""text"" id=""cfgSrvName"" placeholder=""Server Name"">
+            </div>
+            <div style=""display: grid; grid-template-columns: 1fr 1fr; gap: 8px;"">
+                <div>
+                    <label style=""display: block; font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px;"">Server Password</label>
+                    <input type=""text"" id=""cfgSrvPass"" placeholder=""Password"">
+                </div>
+                <div>
+                    <label style=""display: block; font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px;"">Admin Password</label>
+                    <input type=""text"" id=""cfgAdmPass"" placeholder=""Admin Password"">
+                </div>
+            </div>
+            <div style=""display: grid; grid-template-columns: 1fr 1fr; gap: 8px;"">
+                <div>
+                    <label style=""display: block; font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px;"">Max Players</label>
+                    <input type=""number"" id=""cfgMaxPl"" value=""40"">
+                </div>
+                <div>
+                    <label style=""display: block; font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px;"">Max Tick Rate</label>
+                    <input type=""number"" id=""cfgMaxTick"" value=""30"">
+                </div>
+            </div>
+            <button class=""btn-start"" style=""background: #10b981; margin-top: 4px;"" onclick=""saveSettings()"">💾 Save Settings to Server</button>
         </div>
     </div>
 
@@ -612,10 +857,141 @@ namespace ConanServerManager
             }
         }
 
+        async function searchWorkshopMods() {
+            const query = document.getElementById('txtWorkshopQuery').value.trim();
+            if (!query) return alert('Please enter a mod name or ID');
+            const container = document.getElementById('workshopResults');
+            container.innerHTML = '<div style=""color:#38bdf8;padding:8px;text-align:center;"">🔍 Searching Steam Workshop for ""' + escapeHtml(query) + '""...</div>';
+
+            try {
+                const res = await fetch('/api/workshop/search?query=' + encodeURIComponent(query));
+                const results = await res.json();
+                if (!Array.isArray(results) || results.length === 0) {
+                    container.innerHTML = '<div style=""color:#94a3b8;padding:8px;text-align:center;"">No matching mods found</div>';
+                    return;
+                }
+                container.innerHTML = results.map(m => `
+                    <div style=""display:flex;align-items:center;gap:10px;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:8px;margin-bottom:6px;"">
+                        <img src=""${m.PreviewUrl || 'app.png'}"" style=""width:48px;height:48px;border-radius:4px;object-fit:cover;background:#1e293b;"" onerror=""this.src='app.png'"">
+                        <div style=""flex:1;min-width:0;"">
+                            <div style=""font-weight:bold;font-size:0.85rem;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"">${escapeHtml(m.Title)}</div>
+                            <div style=""font-size:0.72rem;color:#94a3b8;"">ID: <strong>${m.Id}</strong></div>
+                        </div>
+                        <div>
+                            ${m.IsInstalled ? '<span style=""color:#34d399;font-size:0.75rem;font-weight:bold;"">✓ Added</span>' :
+                            `<button class=""btn-start"" style=""padding:6px 10px;font-size:0.75rem;"" onclick=""addModToServer('${m.Id}','${escapeHtml(m.Title)}')\"">➕ Add</button>`}
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                container.innerHTML = '<div style=""color:#f87171;padding:8px;text-align:center;"">Search failed: ' + e.message + '</div>';
+            }
+        }
+
+        async function addModToServer(id, title) {
+            try {
+                const res = await fetch('/api/mods/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ modId: id })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('Added ' + title + ' to server!');
+                    loadServerMods();
+                    searchWorkshopMods();
+                } else {
+                    alert('Add failed: ' + (data.error || 'Unknown'));
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function removeModFromServer(id) {
+            if (!confirm('Remove mod #' + id + ' from server?')) return;
+            try {
+                const res = await fetch('/api/mods/remove', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ modId: id })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('Removed mod #' + id);
+                    loadServerMods();
+                } else {
+                    alert('Remove failed: ' + (data.error || 'Unknown'));
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function loadServerMods() {
+            try {
+                const res = await fetch('/api/mods');
+                const data = await res.json();
+                const container = document.getElementById('activeModsContainer');
+                const list = data.details || [];
+                document.getElementById('activeModsCountBadge').innerText = list.length;
+                if (list.length === 0) {
+                    container.innerHTML = '<div style=""color:#64748b;font-size:0.8rem;text-align:center;padding:10px;"">No mods installed on server</div>';
+                    return;
+                }
+                container.innerHTML = list.map((m, idx) => `
+                    <div style=""display:flex;align-items:center;gap:8px;background:#0f172a;border:1px solid #334155;border-radius:6px;padding:6px 10px;margin-bottom:6px;"">
+                        <span style=""font-weight:bold;color:#64748b;font-size:0.75rem;width:18px;"">${idx + 1}</span>
+                        <div style=""flex:1;min-width:0;"">
+                            <div style=""font-weight:bold;font-size:0.85rem;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"">${escapeHtml(m.Title)}</div>
+                            <div style=""font-size:0.7rem;color:#94a3b8;"">ID: <strong>${m.Id}</strong></div>
+                        </div>
+                        <button class=""btn-stop"" style=""padding:4px 8px;font-size:0.75rem;"" onclick=""removeModFromServer('${m.Id}')"">🗑️</button>
+                    </div>
+                `).join('');
+            } catch (e) {}
+        }
+
+        async function loadSettings() {
+            try {
+                const res = await fetch('/api/config');
+                const cfg = await res.json();
+                document.getElementById('cfgSrvName').value = cfg.serverName || '';
+                document.getElementById('cfgSrvPass').value = cfg.serverPassword || '';
+                document.getElementById('cfgAdmPass').value = cfg.adminPassword || '';
+                document.getElementById('cfgMaxPl').value = cfg.maxPlayers || 40;
+                document.getElementById('cfgMaxTick').value = cfg.maxTickRate || 30;
+            } catch (e) {}
+        }
+
+        async function saveSettings() {
+            try {
+                const payload = {
+                    serverName: document.getElementById('cfgSrvName').value.trim(),
+                    serverPassword: document.getElementById('cfgSrvPass').value.trim(),
+                    adminPassword: document.getElementById('cfgAdmPass').value.trim(),
+                    maxPlayers: parseInt(document.getElementById('cfgMaxPl').value) || 40,
+                    maxTickRate: parseInt(document.getElementById('cfgMaxTick').value) || 30
+                };
+                const res = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                alert(data.message || 'Settings saved successfully!');
+                fetchStatus();
+            } catch (e) {
+                alert('Save failed: ' + e.message);
+            }
+        }
+
         setInterval(fetchStatus, 3000);
         setInterval(fetchLogs, 2000);
         fetchStatus();
         fetchLogs();
+        loadServerMods();
+        loadSettings();
     </script>
 </body>
 </html>";

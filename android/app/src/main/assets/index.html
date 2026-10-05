@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Conan Server Manager</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- App Header & Active Server Connection -->
+    <header class="app-header">
+        <div class="brand">
+            <img src="app.png" class="brand-icon" alt="Logo">
+            <div>
+                <div class="brand-title">Conan Manager</div>
+                <div class="brand-subtitle">
+                    <span id="headerConnectionLed" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#ef4444;"></span>
+                    <span id="headerServerHost">Connecting...</span>
+                </div>
+            </div>
+        </div>
+        <button class="server-selector-btn" onclick="openServerModal()">
+            <span>🌐</span>
+            <span id="btnServerLabel">Server</span>
+        </button>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="container">
+
+        <!-- TAB 1: DASHBOARD -->
+        <section id="tab-dashboard" class="tab-content active">
+            <!-- Server Status Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <div style="font-size:1.15rem;font-weight:bold;color:#f8fafc;" id="dashServerName">Conan Exiles Server</div>
+                        <div style="font-size:0.75rem;color:#94a3b8;margin-top:2px;" id="dashServerSub">Remote Host</div>
+                    </div>
+                    <div id="dashStatusBadge" class="badge badge-stopped">STOPPED</div>
+                </div>
+
+                <div class="metrics-grid">
+                    <div class="metric-box">
+                        <div class="metric-lbl">Players Online</div>
+                        <div class="metric-val" id="dashValPlayers">0 / 40</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-lbl">Server Uptime</div>
+                        <div class="metric-val" id="dashValUptime">00:00:00</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-lbl">Steam Master</div>
+                        <div class="metric-val" id="dashValSteam" style="font-size:0.95rem;color:#94a3b8;">OFFLINE</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-lbl">Active Mods</div>
+                        <div class="metric-val" id="dashValMods">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Controls Card -->
+            <div class="card">
+                <div class="card-title">🎮 Remote Server Controls</div>
+                <div class="btn-grid">
+                    <button class="btn-primary" onclick="controlAction('start')">▶ Start</button>
+                    <button class="btn-danger" onclick="controlAction('stop')">■ Stop</button>
+                    <button class="btn-warning" onclick="controlAction('restart')">🔄 Restart</button>
+                    <button class="btn-secondary" onclick="controlAction('backup')">💾 Hot Backup</button>
+                </div>
+            </div>
+
+            <!-- Ports & Network Info -->
+            <div class="card">
+                <div class="card-title">📡 Network Ports</div>
+                <div style="display:flex;justify-content:space-between;font-size:0.85rem;color:#cbd5e1;padding:4px 0;">
+                    <span>Game Client Port:</span>
+                    <strong id="dashValGamePort" style="color:#38bdf8;">7777</strong>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:0.85rem;color:#cbd5e1;padding:4px 0;">
+                    <span>RCON Admin Port:</span>
+                    <strong id="dashValRconPort" style="color:#38bdf8;">25575</strong>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: STEAM WORKSHOP MODS -->
+        <section id="tab-mods" class="tab-content">
+            <!-- Workshop Search Card -->
+            <div class="card">
+                <div class="card-title">🔍 Steam Workshop Lookup</div>
+                <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:8px;">Search Conan Exiles mods or enter a Mod ID / URL to look up and add:</div>
+                <div style="display:flex;gap:8px;">
+                    <input type="text" id="txtModSearch" placeholder="Mod name or ID (e.g. pippi, emberlight)">
+                    <button class="btn-primary" style="padding:10px 14px;flex-shrink:0;" onclick="searchWorkshop()">Search</button>
+                </div>
+
+                <div id="workshopSearchResults" style="margin-top:12px;"></div>
+            </div>
+
+            <!-- Installed Server Mods List -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">📦 Installed Server Mods (<span id="installedModsCount">0</span>)</div>
+                    <button class="btn-icon" onclick="fetchInstalledMods()">🔄</button>
+                </div>
+                <div id="installedModsContainer">
+                    <div style="text-align:center;padding:16px;color:#64748b;font-size:0.85rem;">Loading server mods...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: SERVER SETTINGS -->
+        <section id="tab-settings" class="tab-content">
+            <div class="card">
+                <div class="card-title">🏷️ Server Identity &amp; Rules</div>
+
+                <div class="form-group">
+                    <label class="form-label">Server Name</label>
+                    <input type="text" id="cfgServerName" placeholder="My Conan Server">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Server Password</label>
+                    <input type="password" id="cfgServerPassword" placeholder="Leave empty for public">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Admin Password</label>
+                    <input type="password" id="cfgAdminPassword" placeholder="Server admin password">
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div class="form-group">
+                        <label class="form-label">Max Players</label>
+                        <input type="number" id="cfgMaxPlayers" min="1" max="100" value="40">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Max Tick Rate</label>
+                        <input type="number" id="cfgMaxTickRate" min="10" max="120" value="30">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Server Region</label>
+                    <select id="cfgRegion">
+                        <option value="0">0 - Europe</option>
+                        <option value="1">1 - America (East)</option>
+                        <option value="2">2 - America (West)</option>
+                        <option value="3">3 - Asia</option>
+                        <option value="4">4 - Oceania</option>
+                        <option value="5">5 - South America</option>
+                    </select>
+                </div>
+
+                <div style="margin-top:10px;display:flex;gap:16px;">
+                    <label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;color:#cbd5e1;cursor:pointer;">
+                        <input type="checkbox" id="cfgBattlEye"> BattlEye Anti-Cheat
+                    </label>
+                    <label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;color:#cbd5e1;cursor:pointer;">
+                        <input type="checkbox" id="cfgVac"> VAC Protection
+                    </label>
+                </div>
+
+                <button class="btn-success" style="width:100%;margin-top:16px;" onclick="saveServerConfig()">💾 Save Configuration to Server</button>
+            </div>
+        </section>
+
+        <!-- TAB 4: PLAYERS -->
+        <section id="tab-players" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">👥 Connected Players (<span id="playersListCount">0</span>)</div>
+                    <button class="btn-icon" onclick="pollServer()">🔄</button>
+                </div>
+                <div id="playersListContainer">
+                    <div style="text-align:center;padding:16px;color:#64748b;font-size:0.85rem;">No players online</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 5: CONSOLE & RCON -->
+        <section id="tab-console" class="tab-content">
+            <div class="card">
+                <div class="card-title">💻 Live Server Console</div>
+                <div class="log-box" id="consoleLogBox">Connecting to server log output...</div>
+
+                <div style="display:flex;gap:8px;margin-top:10px;">
+                    <input type="text" id="txtRconCmd" placeholder="RCON Command (e.g. broadcast Hello or save)">
+                    <button class="btn-success" style="padding:10px 14px;flex-shrink:0;" onclick="sendRcon()">Send</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 6: UPDATES -->
+        <section id="tab-updates" class="tab-content">
+            <div class="card">
+                <div class="card-title">✨ Application Updates</div>
+                <div style="font-size:0.85rem;color:#cbd5e1;margin-bottom:12px;">
+                    <div>App Version: <strong class="badge badge-ver" id="appInstalledVersion">v1.0.8</strong></div>
+                    <div style="margin-top:6px;">Server Manager Version: <strong id="serverInstalledVersion" style="color:#38bdf8;">--</strong></div>
+                </div>
+
+                <button class="btn-primary" style="width:100%;" onclick="checkAppUpdates()">🔄 Check for App Updates</button>
+
+                <div id="updateBannerCard" style="display:none;margin-top:14px;background:#0f172a;border:1px solid #38bdf8;border-radius:10px;padding:12px;">
+                    <div style="font-size:0.95rem;font-weight:bold;color:#38bdf8;" id="updateBannerTitle">New Update Available!</div>
+                    <div style="font-size:0.75rem;color:#94a3b8;margin-top:4px;" id="updateBannerNotes"></div>
+                    <button class="btn-success" style="width:100%;margin-top:10px;" id="btnInstallUpdate" onclick="installUpdate()">📥 Download &amp; Install APK Update</button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="bottom-nav">
+        <div class="nav-item active" onclick="switchTab('dashboard')">
+            <span class="nav-icon">📊</span>
+            <span>Dashboard</span>
+        </div>
+        <div class="nav-item" onclick="switchTab('mods')">
+            <span class="nav-icon">🧩</span>
+            <span>Mods</span>
+        </div>
+        <div class="nav-item" onclick="switchTab('settings')">
+            <span class="nav-icon">⚙️</span>
+            <span>Settings</span>
+        </div>
+        <div class="nav-item" onclick="switchTab('players')">
+            <span class="nav-icon">👥</span>
+            <span>Players</span>
+        </div>
+        <div class="nav-item" onclick="switchTab('console')">
+            <span class="nav-icon">💻</span>
+            <span>Console</span>
+        </div>
+        <div class="nav-item" onclick="switchTab('updates')">
+            <span class="nav-icon">✨</span>
+            <span>Updates</span>
+        </div>
+    </nav>
+
+    <!-- Server Selector Bottom Sheet Modal -->
+    <div id="serverModal" class="modal-backdrop" onclick="closeServerModal(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div style="font-size:1.1rem;font-weight:bold;color:#f8fafc;margin-bottom:12px;">Manage Server Connections</div>
+
+            <div class="form-group">
+                <label class="form-label">Server Target URL (IP or Hostname : Port)</label>
+                <input type="text" id="txtTargetUrl" placeholder="http://192.168.1.100:8088 or http://home.ddns.net:8088">
+            </div>
+
+            <div style="display:flex;gap:10px;margin-bottom:16px;">
+                <button class="btn-primary" style="flex:1;" onclick="connectToCustomServer()">Connect</button>
+                <button class="btn-secondary" onclick="closeServerModal()">Cancel</button>
+            </div>
+
+            <div class="card-title" style="margin-bottom:8px;">⭐ Saved Servers</div>
+            <div id="savedServersList"></div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
