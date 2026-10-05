@@ -243,24 +243,88 @@
         </div>
     </nav>
 
-    <!-- Server Selector Bottom Sheet Modal -->
-    <div id="serverModal" class="modal-backdrop" onclick="closeServerModal(event)">
-        <div class="modal-content" onclick="event.stopPropagation()">
-            <div style="font-size:1.1rem;font-weight:bold;color:#f8fafc;margin-bottom:12px;">Manage Server Connections</div>
+    <!-- Full-Screen Server Selection & Management Window -->
+    <div id="serverModal" class="modal-fullscreen">
+        <header class="modal-fullscreen-header">
+            <div class="modal-header-left">
+                <button class="btn-header-back" onclick="closeServerModal()">
+                    <span>←</span>
+                    <span>Back</span>
+                </button>
+                <div>
+                    <div class="modal-header-title">Server Selection</div>
+                    <div class="modal-header-sub">Manage &amp; switch server connections</div>
+                </div>
+            </div>
+            <button class="btn-header-close" onclick="closeServerModal()">✕</button>
+        </header>
 
-            <div class="form-group">
-                <label class="form-label">Server Target URL (IP or Hostname : Port)</label>
-                <input type="text" id="txtTargetUrl" placeholder="http://192.168.1.100:8088 or http://home.ddns.net:8088">
+        <main class="modal-fullscreen-body">
+            <!-- Currently Active Server Banner -->
+            <div class="card" style="border-color: #38bdf8; background: rgba(56, 189, 248, 0.05); margin-bottom: 14px;">
+                <div style="font-size: 0.72rem; color: #38bdf8; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Currently Connected Server</div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+                    <div>
+                        <div id="activeModalServerName" style="font-size: 1.05rem; font-weight: bold; color: #f8fafc;">Conan Exiles Server</div>
+                        <div id="activeModalServerUrl" style="font-size: 0.8rem; color: #94a3b8; font-family: 'Consolas', monospace; margin-top: 2px;">http://192.168.1.100:8088</div>
+                    </div>
+                    <span id="activeModalStatusBadge" class="badge badge-running">ONLINE</span>
+                </div>
             </div>
 
-            <div style="display:flex;gap:10px;margin-bottom:16px;">
-                <button class="btn-primary" style="flex:1;" onclick="connectToCustomServer()">Connect</button>
-                <button class="btn-secondary" onclick="closeServerModal()">Cancel</button>
+            <!-- Add or Connect New Server Card -->
+            <div class="card" style="margin-bottom: 14px;">
+                <div class="card-title">➕ Add or Switch Server</div>
+                <div style="font-size: 0.78rem; color: #94a3b8; margin-bottom: 10px;">
+                    Enter your home server's IP address, Dynamic DNS hostname, or VPN IP along with port 8088.
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Server Target URL (IP or Hostname : Port)</label>
+                    <input type="text" id="txtTargetUrl" placeholder="http://192.168.1.100:8088 or http://home.ddns.net:8088" style="font-size: 0.95rem; padding: 12px;">
+                </div>
+
+                <!-- Quick Helper Chips -->
+                <div class="chip-row">
+                    <button type="button" class="chip-btn" onclick="quickFillTarget('http://127.0.0.1:8088')">🏠 Localhost</button>
+                    <button type="button" class="chip-btn" onclick="quickAppendPort(':8088')">➕ :8088</button>
+                    <button type="button" class="chip-btn" onclick="quickPrependHttp()">🌐 http://</button>
+                    <button type="button" class="chip-btn" onclick="quickFillTarget('http://192.168.1.')">📶 192.168.1.</button>
+                    <button type="button" class="chip-btn" onclick="clearTargetUrl()">✕ Clear</button>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Server Nickname / Label (Optional)</label>
+                    <input type="text" id="txtTargetNickname" placeholder="e.g. Home Server, Living Room PC, Cloud VM">
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px;">
+                    <button class="btn-primary" style="padding: 12px;" onclick="connectToCustomServer()">
+                        <span>▶</span>
+                        <span>Connect Server</span>
+                    </button>
+                    <button class="btn-secondary" style="padding: 12px;" onclick="saveServerWithoutConnecting()">
+                        <span>💾</span>
+                        <span>Save to List</span>
+                    </button>
+                </div>
             </div>
 
-            <div class="card-title" style="margin-bottom:8px;">⭐ Saved Servers</div>
-            <div id="savedServersList"></div>
-        </div>
+            <!-- Saved Servers Card -->
+            <div class="card" style="margin-bottom: 14px;">
+                <div class="card-header" style="margin-bottom: 10px;">
+                    <div class="card-title" style="margin-bottom: 0;">⭐ Saved Servers (<span id="savedServersCount">0</span>)</div>
+                    <button class="btn-secondary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="scanLocalNetworkServers()">🔍 Scan LAN</button>
+                </div>
+                <div id="savedServersList"></div>
+            </div>
+
+            <!-- Discovered Local Network Servers (Shown when scanned) -->
+            <div id="discoveredServersCard" class="card" style="display: none; border-color: #6366f1;">
+                <div class="card-title" style="color: #818cf8;">🌐 Discovered Network Servers</div>
+                <div id="discoveredServersList"></div>
+            </div>
+        </main>
     </div>
 
     <script src="app.js"></script>
