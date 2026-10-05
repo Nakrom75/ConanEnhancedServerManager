@@ -23,10 +23,10 @@ namespace ConanServerManager
 
     public class ManagerConfig
     {
-        public string ServerName { get; set; } = "Antigravity Conan Server";
+        public string ServerName { get; set; } = "";
         public string ServerPassword { get; set; } = "";
-        public string AdminPassword { get; set; } = "SuperSecretAdminPassword123!";
-        public string RconPassword { get; set; } = "SuperSecretRconPassword123!";
+        public string AdminPassword { get; set; } = "";
+        public string RconPassword { get; set; } = "";
         public int GamePort { get; set; } = 7777;
         public int RawUdpPort { get; set; } = 7778;
         public int QueryPort { get; set; } = 27015;
@@ -169,12 +169,37 @@ namespace ConanServerManager
             get
             {
                 string baseDir = BaseDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                if (Path.GetFileName(baseDir).Equals("dist", StringComparison.OrdinalIgnoreCase))
+                string folderName = Path.GetFileName(baseDir);
+                if (folderName.Equals("dist", StringComparison.OrdinalIgnoreCase) ||
+                    folderName.Equals("ServerManager", StringComparison.OrdinalIgnoreCase) ||
+                    folderName.Equals("net10.0-windows", StringComparison.OrdinalIgnoreCase))
                 {
                     return Directory.GetParent(baseDir)?.FullName ?? baseDir;
                 }
                 return baseDir;
             }
+        }
+
+        public static bool IsPlaceholderServerName(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return true;
+            string t = name.Trim();
+            return t.Equals("Antigravity Conan Server", StringComparison.OrdinalIgnoreCase) ||
+                   t.Equals("Test Server v1.1.5", StringComparison.OrdinalIgnoreCase) ||
+                   t.Equals("Antigravity C# Dedicated Server", StringComparison.OrdinalIgnoreCase) ||
+                   t.Equals("My Conan Exiles Dedicated Server", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static bool IsPlaceholderPassword(string? pass)
+        {
+            if (string.IsNullOrWhiteSpace(pass)) return true;
+            string t = pass.Trim();
+            return t.Equals("SuperSecretAdminPassword123!", StringComparison.OrdinalIgnoreCase) ||
+                   t.Equals("SuperSecretRconPassword123!", StringComparison.OrdinalIgnoreCase) ||
+                   t.Equals("AdminPassword456", StringComparison.OrdinalIgnoreCase) ||
+                   t.Equals("SecretPassword", StringComparison.OrdinalIgnoreCase) ||
+                   t.Equals("ChangeMeAdminPassword123!", StringComparison.OrdinalIgnoreCase) ||
+                   t.Equals("ChangeMeRconPassword123!", StringComparison.OrdinalIgnoreCase);
         }
 
         public ManagerConfig Config { get; private set; } = new ManagerConfig();
@@ -227,7 +252,7 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.1.10";
+            return "1.1.11";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
@@ -752,7 +777,21 @@ namespace ConanServerManager
                 {
                     return Config.CustomServerDir;
                 }
-                return Path.Combine(AppWorkingDir, "ConanExilesDedicatedServer");
+
+                string defaultPath = Path.Combine(AppWorkingDir, "ConanExilesDedicatedServer");
+                if (Directory.Exists(defaultPath)) return defaultPath;
+
+                string basePath = Path.Combine(BaseDir, "ConanExilesDedicatedServer");
+                if (Directory.Exists(basePath)) return basePath;
+
+                string? parentDir = Directory.GetParent(AppWorkingDir)?.FullName;
+                if (!string.IsNullOrEmpty(parentDir))
+                {
+                    string parentServer = Path.Combine(parentDir, "ConanExilesDedicatedServer");
+                    if (Directory.Exists(parentServer)) return parentServer;
+                }
+
+                return defaultPath;
             }
         }
 
@@ -797,7 +836,20 @@ namespace ConanServerManager
         public string ModlistTxt => Path.Combine(ModsDir, "modlist.txt");
         public string GameDbPath => Path.Combine(ServerRootDir, "ConanSandbox", "Saved", "game.db");
         public string BackupDir => Path.Combine(AppWorkingDir, "Backups");
-        public string ConfigJsonPath => Path.Combine(AppWorkingDir, "manager_config.json");
+
+        public string ConfigJsonPath
+        {
+            get
+            {
+                string appPath = Path.Combine(AppWorkingDir, "manager_config.json");
+                if (File.Exists(appPath)) return appPath;
+
+                string basePath = Path.Combine(BaseDir, "manager_config.json");
+                if (File.Exists(basePath)) return basePath;
+
+                return appPath;
+            }
+        }
 
         public string ExecutablePath
         {
@@ -821,7 +873,15 @@ namespace ConanServerManager
                 {
                     string json = File.ReadAllText(ConfigJsonPath);
                     var cfg = JsonSerializer.Deserialize<ManagerConfig>(json);
-                    if (cfg != null) Config = cfg;
+                    if (cfg != null)
+                    {
+                        Config = cfg;
+                        // Purge any stale generic placeholders that may have been saved in manager_config.json
+                        if (IsPlaceholderServerName(Config.ServerName)) Config.ServerName = "";
+                        if (IsPlaceholderPassword(Config.AdminPassword)) Config.AdminPassword = "";
+                        if (IsPlaceholderPassword(Config.RconPassword)) Config.RconPassword = "";
+                        if (IsPlaceholderPassword(Config.ServerPassword)) Config.ServerPassword = "";
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -854,11 +914,38 @@ namespace ConanServerManager
                         string key = parts[0].Trim();
                         string val = parts[1].Trim();
 
-                        if (key.Equals("ServerName", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(val)) Config.ServerName = val;
-                        else if (key.Equals("ServerPassword", StringComparison.OrdinalIgnoreCase)) Config.ServerPassword = val;
-                        else if (key.Equals("AdminPassword", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(val)) Config.AdminPassword = val;
-                        else if (key.Equals("RconPassword", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(val)) Config.RconPassword = val;
-                        else if (key.Equals("RconPort", StringComparison.OrdinalIgnoreCase) && int.TryParse(val, out int rPort)) Config.RconPort = rPort;
+                        if (key.Equals("ServerName", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(val))
+                        {
+                            if (!IsPlaceholderServerName(val) || string.IsNullOrEmpty(Config.ServerName))
+                            {
+                                Config.ServerName = val;
+                            }
+                        }
+                        else if (key.Equals("ServerPassword", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (!IsPlaceholderPassword(val))
+                            {
+                                Config.ServerPassword = val;
+                            }
+                        }
+                        else if (key.Equals("AdminPassword", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(val))
+                        {
+                            if (!IsPlaceholderPassword(val))
+                            {
+                                Config.AdminPassword = val;
+                            }
+                        }
+                        else if (key.Equals("RconPassword", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(val))
+                        {
+                            if (!IsPlaceholderPassword(val))
+                            {
+                                Config.RconPassword = val;
+                            }
+                        }
+                        else if (key.Equals("RconPort", StringComparison.OrdinalIgnoreCase) && int.TryParse(val, out int rPort))
+                        {
+                            Config.RconPort = rPort;
+                        }
                         else if (key.Equals("DedicatedServerLauncherModList", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(val))
                         {
                             var modIds = val.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
@@ -898,11 +985,17 @@ namespace ConanServerManager
                         }
                         else if (eSection.Equals("OnlineSubsystem", StringComparison.OrdinalIgnoreCase) && k.Equals("ServerName", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(v))
                         {
-                            Config.ServerName = v;
+                            if ((string.IsNullOrEmpty(Config.ServerName) || IsPlaceholderServerName(Config.ServerName)) && !IsPlaceholderServerName(v))
+                            {
+                                Config.ServerName = v;
+                            }
                         }
-                        else if (eSection.Equals("OnlineSubsystem", StringComparison.OrdinalIgnoreCase) && k.Equals("ServerPassword", StringComparison.OrdinalIgnoreCase))
+                        else if (eSection.Equals("OnlineSubsystem", StringComparison.OrdinalIgnoreCase) && k.Equals("ServerPassword", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(v))
                         {
-                            Config.ServerPassword = v;
+                            if (string.IsNullOrEmpty(Config.ServerPassword) && !IsPlaceholderPassword(v))
+                            {
+                                Config.ServerPassword = v;
+                            }
                         }
                         else if (eSection.Equals("/Script/OnlineSubsystemUtils.IpNetDriver", StringComparison.OrdinalIgnoreCase) && k.Equals("NetServerMaxTickRate", StringComparison.OrdinalIgnoreCase) && int.TryParse(v, out int tick))
                         {
@@ -937,9 +1030,20 @@ namespace ConanServerManager
                         {
                             if (k.Equals("RconEnabled", StringComparison.OrdinalIgnoreCase) && bool.TryParse(v, out bool rconOn)) Config.RconEnabled = rconOn;
                             else if (k.Equals("RconPort", StringComparison.OrdinalIgnoreCase) && int.TryParse(v, out int rPort)) Config.RconPort = rPort;
-                            else if (k.Equals("RconPassword", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(v)) Config.RconPassword = v;
+                            else if (k.Equals("RconPassword", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(v))
+                            {
+                                if (string.IsNullOrEmpty(Config.RconPassword) && !IsPlaceholderPassword(v))
+                                {
+                                    Config.RconPassword = v;
+                                }
+                            }
                         }
                     }
+                }
+
+                if (string.IsNullOrWhiteSpace(Config.ServerName))
+                {
+                    Config.ServerName = "Conan Exiles Dedicated Server";
                 }
 
                 Log("Loaded existing server configuration from ServerSettings.ini, Engine.ini, and Game.ini.");
@@ -1051,12 +1155,23 @@ namespace ConanServerManager
 
         public void SyncIniSettings()
         {
+            if (!Directory.Exists(ServerRootDir)) return;
+
             Directory.CreateDirectory(ConfigDir);
 
             // ServerSettings.ini
-            UpdateIniKey(ServerSettingsIni, "ServerSettings", "ServerName", Config.ServerName);
-            UpdateIniKey(ServerSettingsIni, "ServerSettings", "ServerPassword", Config.ServerPassword);
-            UpdateIniKey(ServerSettingsIni, "ServerSettings", "AdminPassword", Config.AdminPassword);
+            if (!string.IsNullOrWhiteSpace(Config.ServerName) && !IsPlaceholderServerName(Config.ServerName))
+            {
+                UpdateIniKey(ServerSettingsIni, "ServerSettings", "ServerName", Config.ServerName);
+            }
+            if (Config.ServerPassword != null && !IsPlaceholderPassword(Config.ServerPassword))
+            {
+                UpdateIniKey(ServerSettingsIni, "ServerSettings", "ServerPassword", Config.ServerPassword);
+            }
+            if (!string.IsNullOrWhiteSpace(Config.AdminPassword) && !IsPlaceholderPassword(Config.AdminPassword))
+            {
+                UpdateIniKey(ServerSettingsIni, "ServerSettings", "AdminPassword", Config.AdminPassword);
+            }
             if (!string.IsNullOrWhiteSpace(Config.Region))
             {
                 UpdateIniKey(ServerSettingsIni, "ServerSettings", "serverRegion", Config.Region.Split(' ')[0]);
@@ -1066,8 +1181,14 @@ namespace ConanServerManager
             UpdateIniKey(ServerSettingsIni, "ServerSettings", "IsBattlEyeEnabled", Config.EnableBattlEye ? "True" : "False");
 
             // Engine.ini - Steam Master Server and Unreal Engine OSS read identity from here!
-            UpdateIniKey(EngineIni, "OnlineSubsystem", "ServerName", Config.ServerName);
-            UpdateIniKey(EngineIni, "OnlineSubsystem", "ServerPassword", Config.ServerPassword);
+            if (!string.IsNullOrWhiteSpace(Config.ServerName) && !IsPlaceholderServerName(Config.ServerName))
+            {
+                UpdateIniKey(EngineIni, "OnlineSubsystem", "ServerName", Config.ServerName);
+            }
+            if (Config.ServerPassword != null && !IsPlaceholderPassword(Config.ServerPassword))
+            {
+                UpdateIniKey(EngineIni, "OnlineSubsystem", "ServerPassword", Config.ServerPassword);
+            }
             if (Config.UseMultihome && !string.IsNullOrWhiteSpace(Config.MultihomeIp))
             {
                 UpdateIniKey(EngineIni, "OnlineSubsystem", "DedicatedServerLauncherMultihomeEnabled", "True");
@@ -1085,13 +1206,23 @@ namespace ConanServerManager
             UpdateIniKey(GameIni, "/Script/Engine.GameSession", "MaxPlayers", Config.MaxPlayers.ToString());
             UpdateIniKey(GameIni, "RconPlugin", "RconEnabled", Config.RconEnabled ? "True" : "False");
             UpdateIniKey(GameIni, "RconPlugin", "RconPort", Config.RconPort.ToString());
-            UpdateIniKey(GameIni, "RconPlugin", "RconPassword", Config.RconPassword);
+            if (!string.IsNullOrWhiteSpace(Config.RconPassword) && !IsPlaceholderPassword(Config.RconPassword))
+            {
+                UpdateIniKey(GameIni, "RconPlugin", "RconPassword", Config.RconPassword);
+            }
             UpdateIniKey(GameIni, "RconPlugin", "RconMaxKarma", "60");
             UpdateIniKey(GameIni, "RconPlugin", "RconMessageMethod", "0");
         }
 
         private void UpdateIniKey(string filePath, string section, string key, string value)
         {
+            if (!File.Exists(filePath) && Path.GetFileName(filePath).Equals("ServerSettings.ini", StringComparison.OrdinalIgnoreCase))
+            {
+                // Don't create a truncated skeleton ServerSettings.ini if the file doesn't exist yet;
+                // allow ConanSandbox server to generate the full 220+ default settings on first run.
+                return;
+            }
+
             var lines = File.Exists(filePath) ? File.ReadAllLines(filePath).ToList() : new List<string>();
             int sectionIdx = lines.FindIndex(l => l.Trim().Equals($"[{section}]", StringComparison.OrdinalIgnoreCase));
 
@@ -1861,6 +1992,29 @@ namespace ConanServerManager
                 if (File.Exists(stagedConfig))
                 {
                     try { File.Delete(stagedConfig); } catch { }
+                }
+
+                string stagedServerDir = Path.Combine(stagedDir, "ConanExilesDedicatedServer");
+                if (Directory.Exists(stagedServerDir))
+                {
+                    try { Directory.Delete(stagedServerDir, true); } catch { }
+                }
+
+                string stagedCache = Path.Combine(stagedDir, "workshop_cache.json");
+                if (File.Exists(stagedCache))
+                {
+                    try { File.Delete(stagedCache); } catch { }
+                }
+
+                string stagedBackups = Path.Combine(stagedDir, "Backups");
+                if (Directory.Exists(stagedBackups))
+                {
+                    try { Directory.Delete(stagedBackups, true); } catch { }
+                }
+
+                foreach (var ini in Directory.GetFiles(stagedDir, "*.ini", SearchOption.AllDirectories))
+                {
+                    try { File.Delete(ini); } catch { }
                 }
 
                 Log("Preparing update helper trampoline script...");

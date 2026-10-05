@@ -44,3 +44,4 @@ Screenshot*.png
 
 # Local credentials & sensitive config (use manager_config.example.json instead)
 manager_config.json
+*.bak
