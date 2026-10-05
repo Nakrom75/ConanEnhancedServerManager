@@ -36,6 +36,7 @@ namespace ConanServerManager
             _engine.OnDownloadProgress += UpdateDownloadProgressUi;
             _engine.OnAppUpdateDiscovered += ShowAppUpdateBanner;
             _engine.OnSteamStatusChanged += UpdateSteamVisibilityUi;
+            _engine.OnPlayersChanged += (players) => Dispatcher.Invoke(() => UpdatePlayersListUi(players));
 
             _remoteTimer.Interval = TimeSpan.FromSeconds(3);
             _remoteTimer.Tick += async (s, e) =>
@@ -216,6 +217,33 @@ namespace ConanServerManager
                     _remoteUptimeSeconds = uptimeSec;
                     UpdateStatusUi(status);
                     UpdateSteamVisibilityUi(remoteSteam);
+
+                    if (doc.RootElement.TryGetProperty("players", out var playersArr) && playersArr.ValueKind == JsonValueKind.Array)
+                    {
+                        var remotePlayers = new List<SteamPlayerInfo>();
+                        foreach (var pEl in playersArr.EnumerateArray())
+                        {
+                            string pName = pEl.TryGetProperty("name", out var nProp) ? nProp.GetString() ?? "" : "";
+                            int pScore = pEl.TryGetProperty("score", out var sProp) ? sProp.GetInt32() : 0;
+                            float pDur = pEl.TryGetProperty("durationSeconds", out var dProp) ? (float)dProp.GetDouble() : 0f;
+                            int pPing = pEl.TryGetProperty("ping", out var piProp) ? piProp.GetInt32() : 0;
+                            if (!string.IsNullOrWhiteSpace(pName))
+                            {
+                                remotePlayers.Add(new SteamPlayerInfo
+                                {
+                                    Name = pName,
+                                    Score = pScore,
+                                    DurationSeconds = pDur,
+                                    Ping = pPing
+                                });
+                            }
+                        }
+                        UpdatePlayersListUi(remotePlayers, steamPlayers, steamMaxPlayers);
+                    }
+                    else
+                    {
+                        UpdatePlayersListUi(new List<SteamPlayerInfo>(), steamPlayers, steamMaxPlayers);
+                    }
 
                     if (TxtServerPathInfo != null)
                         TxtServerPathInfo.Text = $"Remote Host: {srvName} ({status}) | Uptime: {uptime} | URL: {baseUrl}";
@@ -777,9 +805,23 @@ namespace ConanServerManager
                         BadgeSteamVisibility.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2610B981"));
                         BadgeSteamVisibility.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#10B981"));
                         BadgeSteamVisibility.ToolTip = $"Server is VERIFIED ONLINE and actively responding on Steam Query Port!\n\nName: {info.ServerName}\nMap: {info.Map}\nPlayers: {playersText}\nPing: {info.PingMs}ms";
+
+                        if (TxtPlayersCountBadge != null)
+                        {
+                            TxtPlayersCountBadge.Text = playersText;
+                        }
+
+                        if (!IsRemoteMode && info.PlayerList != null && info.PlayerList.Count > 0)
+                        {
+                            UpdatePlayersListUi(info.PlayerList, info.Players, info.MaxPlayers);
+                        }
                     }
                     else
                     {
+                        if (!IsRemoteMode)
+                        {
+                            UpdatePlayersListUi(new List<SteamPlayerInfo>(), 0, _engine?.Config?.MaxPlayers ?? 40);
+                        }
                         bool isLongStartup = false;
                         if (IsRemoteMode)
                         {
@@ -787,7 +829,7 @@ namespace ConanServerManager
                         }
                         else
                         {
-                            DateTime startTime = _engine.ServerStartTime;
+                            DateTime startTime = _engine?.ServerStartTime ?? DateTime.MinValue;
                             isLongStartup = startTime > DateTime.MinValue && (DateTime.Now - startTime).TotalMinutes >= 4;
                         }
 
@@ -1135,6 +1177,138 @@ namespace ConanServerManager
                     BtnCheckAppUpdate.IsEnabled = true;
                     BtnCheckAppUpdate.Content = "🔄 Check App Updates";
                 }
+            }
+        }
+
+        private void UpdatePlayersListUi(List<SteamPlayerInfo>? players, int steamCount = 0, int steamMax = 0)
+        {
+            if (!_isInitialized) return;
+
+            Dispatcher.Invoke(() =>
+            {
+                var list = players != null ? new List<SteamPlayerInfo>(players) : new List<SteamPlayerInfo>();
+
+                if (list.Count == 0 && steamCount > 0)
+                {
+                    for (int i = 0; i < steamCount; i++)
+                    {
+                        list.Add(new SteamPlayerInfo
+                        {
+                            Index = (byte)i,
+                            Name = $"Player #{i + 1}",
+                            Score = 0,
+                            DurationSeconds = 0
+                        });
+                    }
+                }
+
+                if (LstConnectedPlayers != null)
+                {
+                    LstConnectedPlayers.ItemsSource = null;
+                    LstConnectedPlayers.ItemsSource = list;
+                }
+
+                if (PnlNoPlayers != null)
+                {
+                    PnlNoPlayers.Visibility = list.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+                }
+
+                if (TxtPlayersCountBadge != null)
+                {
+                    int maxCap = steamMax > 0 ? steamMax : (_engine?.Config?.MaxPlayers ?? 40);
+                    int curCount = list.Count > 0 ? list.Count : steamCount;
+                    TxtPlayersCountBadge.Text = $"{curCount} / {maxCap}";
+                }
+            });
+        }
+
+        private async void BtnRefreshPlayers_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (IsRemoteMode)
+                {
+                    await PollRemoteServerAsync();
+                }
+                else
+                {
+                    if (_engine.ServerStatus == "RUNNING")
+                    {
+                        string host = (_engine.Config.UseMultihome && !string.IsNullOrWhiteSpace(_engine.Config.MultihomeIp))
+                            ? _engine.Config.MultihomeIp.Trim()
+                            : "127.0.0.1";
+                        var a2sPlayers = await SteamQueryHelper.QueryA2sPlayersAsync(host, _engine.Config.QueryPort, 1500);
+                        if (a2sPlayers != null && a2sPlayers.Count > 0)
+                        {
+                            UpdatePlayersListUi(a2sPlayers, a2sPlayers.Count, _engine.Config.MaxPlayers);
+                        }
+                        else
+                        {
+                            var rconPlayers = await _engine.QueryRconPlayersAsync();
+                            UpdatePlayersListUi(rconPlayers, _engine.SteamStatus.Players, _engine.Config.MaxPlayers);
+                        }
+                    }
+                    else
+                    {
+                        UpdatePlayersListUi(new List<SteamPlayerInfo>(), 0, _engine.Config.MaxPlayers);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _engine.Log($"[Players Refresh Error]: {ex.Message}");
+            }
+        }
+
+        private async void BtnKickSelectedPlayer_Click(object sender, RoutedEventArgs e)
+        {
+            if (LstConnectedPlayers?.SelectedItem is not SteamPlayerInfo player || string.IsNullOrWhiteSpace(player.Name))
+            {
+                MessageBox.Show("Please select an active player from the list to kick.", "Kick Player", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var confirm = MessageBox.Show($"Are you sure you want to kick '{player.Name}' from the server?", "Confirm Kick", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (confirm != MessageBoxResult.Yes) return;
+
+            try
+            {
+                if (IsRemoteMode)
+                {
+                    string baseUrl = TxtRemoteUrl.Text.Trim().TrimEnd('/');
+                    if (!baseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !baseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                    {
+                        baseUrl = "http://" + baseUrl;
+                    }
+                    using var content = new StringContent(JsonSerializer.Serialize(new { command = $"kick \"{player.Name}\"" }), Encoding.UTF8, "application/json");
+                    var res = await _httpClient.PostAsync($"{baseUrl}/api/control/rcon", content);
+                    if (res.IsSuccessStatusCode)
+                    {
+                        MessageBox.Show($"Kick command sent for '{player.Name}'.", "Player Kicked", MessageBoxButton.OK, MessageBoxImage.Information);
+                        await PollRemoteServerAsync();
+                    }
+                    else
+                    {
+                        MessageBox.Show($"Failed to kick player: {res.StatusCode}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+                else
+                {
+                    bool kicked = await _engine.KickPlayerAsync(player.Name);
+                    if (kicked)
+                    {
+                        MessageBox.Show($"Player '{player.Name}' was kicked successfully.", "Player Kicked", MessageBoxButton.OK, MessageBoxImage.Information);
+                        BtnRefreshPlayers_Click(sender, e);
+                    }
+                    else
+                    {
+                        MessageBox.Show($"Could not kick '{player.Name}'. Make sure RCON is enabled and server is running.", "Kick Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error executing kick: {ex.Message}", "Kick Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
     }

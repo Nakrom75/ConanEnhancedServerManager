@@ -753,6 +753,25 @@ Follow this step-by-step roadmap when developing your custom manager on your dev
 - **Version Bump**: Bumped to version `v1.0.6` across project files, `ServerEngine.CurrentAppVersion`, and UI badges.
 
 ---
+
+### 19. Permanent Players Sidebar & Web Interface Live Players (v1.0.7)
+- **Permanent Left-Side Players Panel**:
+  - Moved the connected players display out of the tab control at the bottom into a dedicated, permanently visible left sidebar (Row 3, Column 0) with a draggable `GridSplitter`.
+  - Header displays live player count badge (`TxtPlayersCountBadge`: e.g. `2 / 40`).
+  - Dark-themed `ListBox` rendering character names, connection duration, score, and ping badges with empty state placeholder when no players are connected.
+  - Interactive player management: 1-click **Refresh** and **Kick** actions via RCON.
+- **A2S_PLAYER Query & Multi-Tier Player Discovery**:
+  - Implemented Valve UDP `A2S_PLAYER` protocol (`0x55` request with challenge handshake) in `SteamQueryHelper.cs`.
+  - Added fallback discovery via RCON `listplayers` and session tracking.
+  - Automatic placeholder synthesis when query count is reported by Steam Master Server.
+- **Web Console Enhancements (`http://<ip>:8088`)**:
+  - Added visible version badge (`v1.0.7`) to the web interface header and browser title.
+  - Added **Players Online** metric card (`valPlayers`: `X / Y`) to the top statistics grid.
+  - Added dedicated **Connected Players** card displaying live connected player rows (name, duration, score, ping) or empty state.
+  - Exposed `/api/players` endpoint and added `players` array to `/api/status`.
+- **Version Bump**: Centralized version `1.0.7` across project configurations, UI badges, and deployment packages.
+
+---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
 
 

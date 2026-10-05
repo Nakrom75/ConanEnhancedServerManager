@@ -18,12 +18,31 @@ namespace ConanServerManager
         public int MaxPlayers { get; set; }
         public int PingMs { get; set; }
         public string ErrorMessage { get; set; } = "";
+        public List<SteamPlayerInfo> PlayerList { get; set; } = new List<SteamPlayerInfo>();
 
         public override string ToString()
         {
             if (!IsOnline) return "OFFLINE";
             return $"{ServerName} | Map: {Map} | Players: {Players}/{MaxPlayers} ({PingMs}ms)";
         }
+    }
+
+    public class SteamPlayerInfo
+    {
+        public byte Index { get; set; }
+        public string Name { get; set; } = "";
+        public int Score { get; set; }
+        public float DurationSeconds { get; set; }
+        public string DurationFormatted
+        {
+            get
+            {
+                var ts = TimeSpan.FromSeconds(DurationSeconds);
+                return ts.TotalHours >= 1 ? ts.ToString(@"h\:mm\:ss") : ts.ToString(@"m\:ss");
+            }
+        }
+        public int Ping { get; set; }
+        public string PingText => Ping > 0 ? $"{Ping}ms" : "--";
     }
 
     public static class SteamQueryHelper
@@ -148,6 +167,101 @@ namespace ConanServerManager
                 info.ErrorMessage = ex.Message;
                 return info;
             }
+        }
+
+        public static async Task<List<SteamPlayerInfo>> QueryA2sPlayersAsync(string host, int queryPort, int timeoutMs = 2500)
+        {
+            var players = new List<SteamPlayerInfo>();
+            try
+            {
+                using var client = new UdpClient();
+                client.Client.SendTimeout = timeoutMs;
+                client.Client.ReceiveTimeout = timeoutMs;
+
+                IPAddress ip;
+                if (!IPAddress.TryParse(host, out ip!))
+                {
+                    var addresses = await Dns.GetHostAddressesAsync(host);
+                    if (addresses.Length == 0) return players;
+                    ip = addresses[0];
+                }
+
+                var ep = new IPEndPoint(ip, queryPort);
+
+                // 1. Initial request with challenge -1 (0xFFFFFFFF)
+                byte[] req = new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0x55, 0xFF, 0xFF, 0xFF, 0xFF };
+                await client.SendAsync(req, req.Length, ep);
+
+                using var cts = new CancellationTokenSource(timeoutMs);
+                var receiveTask = client.ReceiveAsync();
+                var completedTask = await Task.WhenAny(receiveTask, Task.Delay(timeoutMs, cts.Token));
+                if (completedTask != receiveTask) return players;
+
+                var result = await receiveTask;
+                byte[] data = result.Buffer;
+
+                if (data.Length < 5 || data[0] != 0xFF || data[1] != 0xFF || data[2] != 0xFF || data[3] != 0xFF)
+                    return players;
+
+                // 2. Challenge response (0x41)
+                if (data[4] == 0x41 && data.Length >= 9)
+                {
+                    byte[] challengeReq = new byte[9];
+                    challengeReq[0] = 0xFF; challengeReq[1] = 0xFF; challengeReq[2] = 0xFF; challengeReq[3] = 0xFF;
+                    challengeReq[4] = 0x55;
+                    Buffer.BlockCopy(data, 5, challengeReq, 5, 4);
+
+                    await client.SendAsync(challengeReq, challengeReq.Length, ep);
+
+                    using var cts2 = new CancellationTokenSource(timeoutMs);
+                    var receiveTask2 = client.ReceiveAsync();
+                    var completedTask2 = await Task.WhenAny(receiveTask2, Task.Delay(timeoutMs, cts2.Token));
+                    if (completedTask2 != receiveTask2) return players;
+
+                    var result2 = await receiveTask2;
+                    data = result2.Buffer;
+                }
+
+                // 3. A2S_PLAYER Response (0x44)
+                if (data.Length >= 6 && data[0] == 0xFF && data[1] == 0xFF && data[2] == 0xFF && data[3] == 0xFF && data[4] == 0x44)
+                {
+                    byte numPlayers = data[5];
+                    int offset = 6;
+                    for (int i = 0; i < numPlayers && offset < data.Length; i++)
+                    {
+                        byte idx = data[offset++];
+                        string name = ReadNullTerminatedString(data, ref offset);
+                        int score = 0;
+                        if (offset + 4 <= data.Length)
+                        {
+                            score = BitConverter.ToInt32(data, offset);
+                            offset += 4;
+                        }
+                        float duration = 0;
+                        if (offset + 4 <= data.Length)
+                        {
+                            duration = BitConverter.ToSingle(data, offset);
+                            offset += 4;
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(name))
+                        {
+                            players.Add(new SteamPlayerInfo
+                            {
+                                Index = idx,
+                                Name = name,
+                                Score = score,
+                                DurationSeconds = duration
+                            });
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Silently return whatever players were retrieved
+            }
+            return players;
         }
 
         private static string ReadNullTerminatedString(byte[] data, ref int offset)

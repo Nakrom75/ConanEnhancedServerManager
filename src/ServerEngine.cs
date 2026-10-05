@@ -207,11 +207,14 @@ namespace ConanServerManager
 
         public const string WorkshopAppId = "440900";
         public const string ServerAppId = "443030";
-        public const string CurrentAppVersion = "1.0.6";
+        public const string CurrentAppVersion = "1.0.7";
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
         public SteamServerInfo SteamStatus { get; private set; } = new SteamServerInfo();
         public event Action<SteamServerInfo>? OnSteamStatusChanged;
+
+        public List<SteamPlayerInfo> ConnectedPlayers { get; private set; } = new List<SteamPlayerInfo>();
+        public event Action<List<SteamPlayerInfo>>? OnPlayersChanged;
 
         public AppUpdateInfo? LatestAppUpdate { get; private set; }
         public event Action<AppUpdateInfo>? OnAppUpdateDiscovered;
@@ -309,21 +312,162 @@ namespace ConanServerManager
                             ? Config.MultihomeIp.Trim()
                             : "127.0.0.1";
                         var info = await SteamQueryHelper.QueryA2sInfoAsync(host, Config.QueryPort, 2000);
+
+                        if (info.IsOnline)
+                        {
+                            try
+                            {
+                                var playerList = await SteamQueryHelper.QueryA2sPlayersAsync(host, Config.QueryPort, 1500);
+                                if (playerList != null && playerList.Count > 0)
+                                {
+                                    ConnectedPlayers = playerList;
+                                }
+                                else if (info.Players > 0)
+                                {
+                                    var rconPlayers = await QueryRconPlayersAsync();
+                                    if (rconPlayers.Count > 0)
+                                    {
+                                        ConnectedPlayers = rconPlayers;
+                                    }
+                                    else
+                                    {
+                                        var placeholderList = new List<SteamPlayerInfo>();
+                                        for (int i = 0; i < info.Players; i++)
+                                        {
+                                            placeholderList.Add(new SteamPlayerInfo
+                                            {
+                                                Index = (byte)i,
+                                                Name = $"Player #{i + 1}",
+                                                Score = 0,
+                                                DurationSeconds = 0,
+                                                Ping = info.PingMs
+                                            });
+                                        }
+                                        ConnectedPlayers = placeholderList;
+                                    }
+                                }
+                                else
+                                {
+                                    ConnectedPlayers = new List<SteamPlayerInfo>();
+                                }
+                            }
+                            catch
+                            {
+                                // Ignore player query errors
+                            }
+                            info.PlayerList = ConnectedPlayers;
+                            OnPlayersChanged?.Invoke(ConnectedPlayers);
+                        }
+                        else if (ConnectedPlayers.Count > 0)
+                        {
+                            ConnectedPlayers = new List<SteamPlayerInfo>();
+                            OnPlayersChanged?.Invoke(ConnectedPlayers);
+                        }
+
                         SteamStatus = info;
                         OnSteamStatusChanged?.Invoke(info);
                     }
                     catch (Exception ex)
                     {
                         SteamStatus = new SteamServerInfo { IsOnline = false, ErrorMessage = ex.Message };
+                        if (ConnectedPlayers.Count > 0)
+                        {
+                            ConnectedPlayers = new List<SteamPlayerInfo>();
+                            OnPlayersChanged?.Invoke(ConnectedPlayers);
+                        }
                         OnSteamStatusChanged?.Invoke(SteamStatus);
                     }
                 }
                 else if (SteamStatus.IsOnline || SteamStatus.ErrorMessage != "Server is stopped.")
                 {
                     SteamStatus = new SteamServerInfo { IsOnline = false, ErrorMessage = "Server is stopped." };
+                    if (ConnectedPlayers.Count > 0)
+                    {
+                        ConnectedPlayers = new List<SteamPlayerInfo>();
+                        OnPlayersChanged?.Invoke(ConnectedPlayers);
+                    }
                     OnSteamStatusChanged?.Invoke(SteamStatus);
                 }
             }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5));
+        }
+
+        public async Task<List<SteamPlayerInfo>> QueryRconPlayersAsync()
+        {
+            var list = new List<SteamPlayerInfo>();
+            if (ServerStatus != "RUNNING" || Config.RconPort <= 0) return list;
+
+            try
+            {
+                using var rcon = new ValveRconClient("127.0.0.1", Config.RconPort, Config.RconPassword);
+                await rcon.ConnectAsync(1500);
+                string resp = await rcon.ExecuteAsync("listplayers");
+                if (!string.IsNullOrWhiteSpace(resp))
+                {
+                    var lines = resp.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                    byte idx = 0;
+                    foreach (var line in lines)
+                    {
+                        string trimmed = line.Trim();
+                        if (trimmed.StartsWith("Id", StringComparison.OrdinalIgnoreCase) ||
+                            trimmed.StartsWith("---") ||
+                            trimmed.StartsWith("No players", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        var parts = trimmed.Split('|');
+                        if (parts.Length >= 2)
+                        {
+                            string charName = parts[1].Trim();
+                            int ping = 0;
+                            if (parts.Length >= 4)
+                            {
+                                int.TryParse(parts[3].Replace("ms", "").Trim(), out ping);
+                            }
+                            if (!string.IsNullOrEmpty(charName))
+                            {
+                                list.Add(new SteamPlayerInfo
+                                {
+                                    Index = idx++,
+                                    Name = charName,
+                                    Ping = ping
+                                });
+                            }
+                        }
+                        else if (!string.IsNullOrEmpty(trimmed))
+                        {
+                            list.Add(new SteamPlayerInfo
+                            {
+                                Index = idx++,
+                                Name = trimmed
+                            });
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Silently return whatever was parsed
+            }
+            return list;
+        }
+
+        public async Task<bool> KickPlayerAsync(string playerName)
+        {
+            if (ServerStatus != "RUNNING" || string.IsNullOrWhiteSpace(playerName)) return false;
+            try
+            {
+                using var rcon = new ValveRconClient("127.0.0.1", Config.RconPort, Config.RconPassword);
+                await rcon.ConnectAsync(2000);
+                string reply = await rcon.ExecuteAsync($"kick \"{playerName}\"");
+                Log($"[RCON Kick]: {reply}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log($"[RCON Kick Error]: {ex.Message}");
+                return false;
+            }
         }
 
         private async Task CheckWatchdogAsync()

@@ -189,9 +189,22 @@ namespace ConanServerManager
                     steamPlayers = _engine.SteamStatus.Players,
                     steamMaxPlayers = _engine.SteamStatus.MaxPlayers,
                     steamPing = _engine.SteamStatus.PingMs,
-                    steamError = _engine.SteamStatus.ErrorMessage
+                    steamError = _engine.SteamStatus.ErrorMessage,
+                    players = _engine.ConnectedPlayers.Select(p => new
+                    {
+                        index = p.Index,
+                        name = p.Name,
+                        score = p.Score,
+                        durationSeconds = p.DurationSeconds,
+                        durationFormatted = p.DurationFormatted,
+                        ping = p.Ping
+                    }).ToList()
                 };
                 await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(statusObj));
+            }
+            else if (path == "/api/players" && method == "GET")
+            {
+                await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(_engine.ConnectedPlayers));
             }
             else if (path == "/api/control/check-update" && method == "POST")
             {
@@ -372,18 +385,19 @@ namespace ConanServerManager
 <head>
     <meta charset=""UTF-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
-    <title>Conan Exiles Server Remote Console</title>
+    <title>Conan Exiles Server Remote Console (v1.0.7)</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; }
         body { background: #0f172a; color: #f8fafc; padding: 16px; max-width: 900px; margin: 0 auto; }
         .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
         .header { display: flex; justify-content: space-between; align-items: center; }
         .title { font-size: 1.25rem; font-weight: bold; color: #818cf8; }
-        .subtitle { font-size: 0.85rem; color: #94a3b8; }
+        .subtitle { font-size: 0.85rem; color: #94a3b8; display: flex; align-items: center; gap: 8px; margin-top: 2px; }
         .badge { padding: 6px 14px; border-radius: 20px; font-weight: bold; font-size: 0.85rem; letter-spacing: 0.5px; }
         .badge-running { background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399; }
         .badge-stopped { background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; }
         .badge-updating { background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.4); color: #fbbf24; }
+        .badge-ver { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); padding: 2px 8px; border-radius: 10px; font-weight: bold; font-size: 0.75rem; }
         
         .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-top: 14px; }
         .metric-box { background: #0f172a; border-radius: 8px; padding: 12px; text-align: center; border: 1px solid #334155; }
@@ -409,12 +423,19 @@ namespace ConanServerManager
         <div class=""header"">
             <div>
                 <div class=""title"" id=""srvName"">Conan Exiles Server</div>
-                <div class=""subtitle"">Remote Mobile & Web Control Console</div>
+                <div class=""subtitle"">
+                    <span>Remote Mobile &amp; Web Control Console</span>
+                    <span id=""appVerBadge"" class=""badge-ver"">v1.0.7</span>
+                </div>
             </div>
             <div id=""statusBadge"" class=""badge badge-stopped"">STOPPED</div>
         </div>
 
         <div class=""metrics-grid"">
+            <div class=""metric-box"">
+                <div class=""metric-lbl"">Players Online</div>
+                <div class=""metric-val"" id=""valPlayers"">0 / 40</div>
+            </div>
             <div class=""metric-box"">
                 <div class=""metric-lbl"">Uptime</div>
                 <div class=""metric-val"" id=""valUptime"">00:00:00</div>
@@ -431,6 +452,19 @@ namespace ConanServerManager
                 <div class=""metric-lbl"">Active Mods</div>
                 <div class=""metric-val"" id=""valMods"">0</div>
             </div>
+        </div>
+    </div>
+
+    <!-- Connected Players Card -->
+    <div class=""card"">
+        <div class=""header"" style=""margin-bottom: 10px;"">
+            <div class=""subtitle"" style=""text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold; color: #818cf8;"">
+                👥 Players Online (<span id=""playersHeaderCount"">0</span>)
+            </div>
+            <div id=""steamStatusTag"" style=""font-size: 0.75rem; color: #94a3b8; font-weight: bold;"">STEAM: OFFLINE</div>
+        </div>
+        <div id=""playersListContainer"">
+            <div style=""color: #64748b; font-size: 0.85rem; text-align: center; padding: 12px;"" id=""noPlayersText"">No players currently online</div>
         </div>
     </div>
 
@@ -455,6 +489,11 @@ namespace ConanServerManager
     </div>
 
     <script>
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/""/g, '&quot;');
+        }
+
         async function fetchStatus() {
             try {
                 const res = await fetch('/api/status');
@@ -466,11 +505,59 @@ namespace ConanServerManager
                 document.getElementById('valMods').innerText = data.activeModsCount;
                 document.getElementById('valUptime').innerText = data.uptimeString || '00:00:00';
 
+                if (data.appVersion) {
+                    document.getElementById('appVerBadge').innerText = 'v' + data.appVersion;
+                }
+
+                const maxP = data.steamMaxPlayers || data.maxPlayers || 40;
+                const curP = (data.players && data.players.length > 0) ? data.players.length : (data.steamPlayers || 0);
+                document.getElementById('valPlayers').innerText = curP + ' / ' + maxP;
+                document.getElementById('playersHeaderCount').innerText = curP;
+
+                const steamTag = document.getElementById('steamStatusTag');
+                if (data.steamOnline) {
+                    steamTag.innerText = 'STEAM: ONLINE (' + (data.steamPing || 0) + 'ms)';
+                    steamTag.style.color = '#34d399';
+                } else if (data.status === 'RUNNING') {
+                    steamTag.innerText = 'STEAM: STARTING UP...';
+                    steamTag.style.color = '#fbbf24';
+                } else {
+                    steamTag.innerText = 'STEAM: OFFLINE';
+                    steamTag.style.color = '#94a3b8';
+                }
+
                 const badge = document.getElementById('statusBadge');
                 badge.innerText = data.status;
                 if (data.status === 'RUNNING') badge.className = 'badge badge-running';
                 else if (data.status === 'UPDATING') badge.className = 'badge badge-updating';
                 else badge.className = 'badge badge-stopped';
+
+                // Render live connected players
+                const container = document.getElementById('playersListContainer');
+                if (data.players && data.players.length > 0) {
+                    container.innerHTML = data.players.map(p => `
+                        <div style=""display: flex; justify-content: space-between; align-items: center; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px;"">
+                            <div style=""display: flex; align-items: center; gap: 8px;"">
+                                <span style=""display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981;""></span>
+                                <div>
+                                    <div style=""font-weight: bold; color: #f8fafc; font-size: 0.9rem;"">${escapeHtml(p.name)}</div>
+                                    <div style=""font-size: 0.75rem; color: #94a3b8;"">Connected: ${escapeHtml(p.durationFormatted || '--')} | Score: ${p.score || 0}</div>
+                                </div>
+                            </div>
+                            <div style=""background: #1e293b; color: #34d399; font-size: 0.75rem; font-weight: bold; padding: 3px 8px; border-radius: 4px;"">
+                                ${(p.ping && p.ping > 0) ? p.ping + 'ms' : (data.steamPing ? data.steamPing + 'ms' : '--')}
+                            </div>
+                        </div>
+                    `).join('');
+                } else if (data.steamPlayers > 0) {
+                    container.innerHTML = `
+                        <div style=""background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px; color: #38bdf8; font-size: 0.85rem; text-align: center;"">
+                            ${data.steamPlayers} player(s) actively connected to server
+                        </div>
+                    `;
+                } else {
+                    container.innerHTML = '<div style=""color: #64748b; font-size: 0.85rem; text-align: center; padding: 12px;"">No players currently online</div>';
+                }
             } catch (e) {}
         }
 
