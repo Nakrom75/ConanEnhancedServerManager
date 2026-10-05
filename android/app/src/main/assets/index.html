@@ -10,7 +10,7 @@
 
     <!-- App Header & Active Server Connection -->
     <header class="app-header">
-        <div class="brand">
+        <div id="headerBrandContainer" class="brand" onclick="openServerModal()" style="cursor: pointer;" title="Server Selection">
             <img src="app.png" class="brand-icon" alt="Logo">
             <div>
                 <div class="brand-title">Conan Manager</div>
@@ -20,7 +20,7 @@
                 </div>
             </div>
         </div>
-        <button class="server-selector-btn" onclick="openServerModal()">
+        <button id="btnOpenServerModal" class="server-selector-btn" onclick="openServerModal()">
             <span>🌐</span>
             <span id="btnServerLabel">Server</span>
         </button>
@@ -38,7 +38,10 @@
                         <div style="font-size:1.15rem;font-weight:bold;color:#f8fafc;" id="dashServerName">Conan Exiles Server</div>
                         <div style="font-size:0.75rem;color:#94a3b8;margin-top:2px;" id="dashServerSub">Remote Host</div>
                     </div>
-                    <div id="dashStatusBadge" class="badge badge-stopped">STOPPED</div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <button class="btn-secondary" style="padding:4px 8px;font-size:0.75rem;" onclick="openServerModal()">🌐 Switch</button>
+                        <div id="dashStatusBadge" class="badge badge-stopped">STOPPED</div>
+                    </div>
                 </div>
 
                 <div class="metrics-grid">

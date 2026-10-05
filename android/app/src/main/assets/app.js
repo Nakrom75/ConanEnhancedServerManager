@@ -10,6 +10,12 @@ if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
 }
 
+// Global Error Handler for WebView debugging
+window.onerror = function(msg, url, lineNo, columnNo, error) {
+    console.error("Window Error:", msg, "at line", lineNo, error);
+    return false;
+};
+
 // Initialization
 document.addEventListener("DOMContentLoaded", () => {
     if (window.Android && typeof Android.getAppVersion === "function") {
@@ -29,6 +35,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
     normalizeServerUrl();
     updateHeaderDisplay();
+
+    // Attach direct listeners to ensure tapping always works regardless of event bubbling
+    const srvBtn = document.getElementById("btnOpenServerModal");
+    if (srvBtn) {
+        srvBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            openServerModal();
+        });
+    }
+
+    const brandEl = document.getElementById("headerBrandContainer");
+    if (brandEl) {
+        brandEl.addEventListener("click", (e) => {
+            e.preventDefault();
+            openServerModal();
+        });
+    }
 
     pollServer();
     pollTimer = setInterval(pollServer, 3000);
@@ -494,142 +517,186 @@ function installUpdate() {
 
 // SERVER CONNECTION FULL-SCREEN MODAL
 function openServerModal() {
-    vibrate(20);
+    try {
+        vibrate(20);
+    } catch (e) {}
+
     const modal = document.getElementById("serverModal");
-    if (!modal) return;
-
-    document.getElementById("txtTargetUrl").value = currentServerUrl;
-    const nickInput = document.getElementById("txtTargetNickname");
-    if (nickInput) nickInput.value = "";
-
-    // Sync active server banner
-    const dashName = document.getElementById("dashServerName");
-    const activeName = document.getElementById("activeModalServerName");
-    if (activeName && dashName) activeName.innerText = dashName.innerText || "Conan Server";
-
-    const activeUrl = document.getElementById("activeModalServerUrl");
-    if (activeUrl) activeUrl.innerText = currentServerUrl;
-
-    const dashBadge = document.getElementById("dashStatusBadge");
-    const activeBadge = document.getElementById("activeModalStatusBadge");
-    if (activeBadge && dashBadge) {
-        activeBadge.innerText = dashBadge.innerText;
-        activeBadge.className = dashBadge.className;
+    if (!modal) {
+        console.error("serverModal element not found in DOM");
+        return;
     }
 
-    renderSavedServers();
+    // 1. ALWAYS OPEN THE MODAL IMMEDIATELY
+    modal.classList.add("active");
     modal.style.display = "flex";
+
+    // 2. Safely populate input values
+    try {
+        const input = document.getElementById("txtTargetUrl");
+        if (input) input.value = currentServerUrl || "";
+
+        const nickInput = document.getElementById("txtTargetNickname");
+        if (nickInput) nickInput.value = "";
+
+        const dashName = document.getElementById("dashServerName");
+        const activeName = document.getElementById("activeModalServerName");
+        if (activeName && dashName) activeName.innerText = dashName.innerText || "Conan Server";
+
+        const activeUrl = document.getElementById("activeModalServerUrl");
+        if (activeUrl) activeUrl.innerText = currentServerUrl || "";
+
+        const dashBadge = document.getElementById("dashStatusBadge");
+        const activeBadge = document.getElementById("activeModalStatusBadge");
+        if (activeBadge && dashBadge) {
+            activeBadge.innerText = dashBadge.innerText || "UNKNOWN";
+            activeBadge.className = dashBadge.className || "badge";
+        }
+    } catch (err) {
+        console.error("Error setting active server display:", err);
+    }
+
+    // 3. Safely render saved servers
+    try {
+        renderSavedServers();
+    } catch (err) {
+        console.error("Error rendering saved servers:", err);
+    }
 }
 
 function closeServerModal() {
+    try {
+        vibrate(15);
+    } catch (e) {}
     const modal = document.getElementById("serverModal");
-    if (modal) modal.style.display = "none";
+    if (modal) {
+        modal.classList.remove("active");
+        modal.style.display = "none";
+    }
 }
 
 function quickFillTarget(val) {
-    vibrate(15);
-    const input = document.getElementById("txtTargetUrl");
-    if (!input) return;
-    input.value = val;
-    input.focus();
+    try {
+        vibrate(15);
+        const input = document.getElementById("txtTargetUrl");
+        if (!input) return;
+        input.value = val;
+        input.focus();
+    } catch (e) {}
 }
 
 function quickAppendPort(port) {
-    vibrate(15);
-    const input = document.getElementById("txtTargetUrl");
-    if (!input) return;
-    let val = input.value.trim();
-    if (!val) {
-        input.value = "http://192.168.1.100" + port;
-    } else if (!val.includes(":") || val.lastIndexOf(":") <= val.indexOf("//") + 1) {
-        input.value = val.replace(/\/+$/, "") + port;
-    }
-    input.focus();
+    try {
+        vibrate(15);
+        const input = document.getElementById("txtTargetUrl");
+        if (!input) return;
+        let val = input.value.trim();
+        if (!val) {
+            input.value = "http://192.168.1.100" + port;
+        } else if (!val.includes(":") || val.lastIndexOf(":") <= val.indexOf("//") + 1) {
+            input.value = val.replace(/\/+$/, "") + port;
+        }
+        input.focus();
+    } catch (e) {}
 }
 
 function quickPrependHttp() {
-    vibrate(15);
-    const input = document.getElementById("txtTargetUrl");
-    if (!input) return;
-    let val = input.value.trim();
-    if (val && !val.startsWith("http://") && !val.startsWith("https://")) {
-        input.value = "http://" + val;
-    } else if (!val) {
-        input.value = "http://";
-    }
-    input.focus();
+    try {
+        vibrate(15);
+        const input = document.getElementById("txtTargetUrl");
+        if (!input) return;
+        let val = input.value.trim();
+        if (val && !val.startsWith("http://") && !val.startsWith("https://")) {
+            input.value = "http://" + val;
+        } else if (!val) {
+            input.value = "http://";
+        }
+        input.focus();
+    } catch (e) {}
 }
 
 function clearTargetUrl() {
-    vibrate(15);
-    const urlInput = document.getElementById("txtTargetUrl");
-    const nickInput = document.getElementById("txtTargetNickname");
-    if (urlInput) urlInput.value = "";
-    if (nickInput) nickInput.value = "";
+    try {
+        vibrate(15);
+        const urlInput = document.getElementById("txtTargetUrl");
+        const nickInput = document.getElementById("txtTargetNickname");
+        if (urlInput) urlInput.value = "";
+        if (nickInput) nickInput.value = "";
+    } catch (e) {}
 }
 
 function connectToCustomServer() {
-    vibrate(30);
-    const urlInput = document.getElementById("txtTargetUrl");
-    const nickInput = document.getElementById("txtTargetNickname");
-    let url = urlInput ? urlInput.value.trim() : "";
-    let nickname = nickInput ? nickInput.value.trim() : "";
+    try {
+        vibrate(30);
+        const urlInput = document.getElementById("txtTargetUrl");
+        const nickInput = document.getElementById("txtTargetNickname");
+        let url = urlInput ? urlInput.value.trim() : "";
+        let nickname = nickInput ? nickInput.value.trim() : "";
 
-    if (!url) {
-        showToast("Please enter a valid server URL or IP");
-        return;
+        if (!url) {
+            showToast("Please enter a valid server URL or IP");
+            return;
+        }
+
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            url = "http://" + url;
+        }
+
+        currentServerUrl = url;
+        normalizeServerUrl();
+
+        // Save to Android persistent storage
+        if (window.Android && typeof Android.saveServerUrl === "function") {
+            Android.saveServerUrl(currentServerUrl);
+        } else {
+            localStorage.setItem("conan_server_url", currentServerUrl);
+        }
+
+        addSavedServer(currentServerUrl, nickname);
+        updateHeaderDisplay();
+        closeServerModal();
+        pollServer();
+        showToast("Connecting to " + currentServerUrl + "...");
+    } catch (err) {
+        console.error("connectToCustomServer error:", err);
     }
-
-    if (!url.startsWith("http://") && !url.startsWith("https://")) {
-        url = "http://" + url;
-    }
-
-    currentServerUrl = url;
-    normalizeServerUrl();
-
-    // Save to Android persistent storage
-    if (window.Android && typeof Android.saveServerUrl === "function") {
-        Android.saveServerUrl(currentServerUrl);
-    } else {
-        localStorage.setItem("conan_server_url", currentServerUrl);
-    }
-
-    addSavedServer(currentServerUrl, nickname);
-    updateHeaderDisplay();
-    closeServerModal();
-    pollServer();
-    showToast("Connecting to " + currentServerUrl + "...");
 }
 
 function saveServerWithoutConnecting() {
-    vibrate(25);
-    const urlInput = document.getElementById("txtTargetUrl");
-    const nickInput = document.getElementById("txtTargetNickname");
-    let url = urlInput ? urlInput.value.trim() : "";
-    let nickname = nickInput ? nickInput.value.trim() : "";
+    try {
+        vibrate(25);
+        const urlInput = document.getElementById("txtTargetUrl");
+        const nickInput = document.getElementById("txtTargetNickname");
+        let url = urlInput ? urlInput.value.trim() : "";
+        let nickname = nickInput ? nickInput.value.trim() : "";
 
-    if (!url) {
-        showToast("Please enter a valid server URL or IP");
-        return;
+        if (!url) {
+            showToast("Please enter a valid server URL or IP");
+            return;
+        }
+
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            url = "http://" + url;
+        }
+
+        addSavedServer(url, nickname);
+        renderSavedServers();
+        showToast("Server added to saved list!");
+    } catch (err) {
+        console.error("saveServerWithoutConnecting error:", err);
     }
-
-    if (!url.startsWith("http://") && !url.startsWith("https://")) {
-        url = "http://" + url;
-    }
-
-    addSavedServer(url, nickname);
-    renderSavedServers();
-    showToast("Server added to saved list!");
 }
 
 function normalizeServerItem(item) {
     if (!item) return null;
     if (typeof item === "string") {
-        return { url: item, name: item };
+        return { url: item.trim(), name: item.trim() };
     }
+    const u = (item.url || item.host || "").trim();
+    if (!u) return null;
     return {
-        url: item.url || item.host || "",
-        name: item.name || item.label || item.url || item.host || "Server"
+        url: u,
+        name: (item.name || item.label || u).trim()
     };
 }
 
@@ -638,53 +705,70 @@ function loadSavedServers() {
         const raw = localStorage.getItem("conan_saved_servers");
         if (raw) {
             const parsed = JSON.parse(raw);
-            savedServers = Array.isArray(parsed) ? parsed.map(normalizeServerItem).filter(Boolean) : [];
-        } else {
-            savedServers = [
-                { url: "http://127.0.0.1:8088", name: "Local Host (Loopback)" },
-                { url: "http://192.168.1.100:8088", name: "Home Server Default" }
-            ];
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                savedServers = parsed.map(normalizeServerItem).filter(Boolean);
+                if (savedServers.length > 0) {
+                    try {
+                        localStorage.setItem("conan_saved_servers", JSON.stringify(savedServers));
+                    } catch (e) {}
+                    return;
+                }
+            }
         }
-    } catch {
-        savedServers = [
-            { url: "http://127.0.0.1:8088", name: "Local Host (Loopback)" },
-            { url: "http://192.168.1.100:8088", name: "Home Server Default" }
-        ];
+    } catch (e) {
+        console.error("loadSavedServers error:", e);
     }
+
+    savedServers = [
+        { url: "http://127.0.0.1:8088", name: "Local Host (Loopback)" },
+        { url: "http://192.168.1.100:8088", name: "Home Server Default" }
+    ];
 }
 
 function addSavedServer(url, nickname) {
     if (!url) return;
-    loadSavedServers();
+    try {
+        loadSavedServers();
 
-    // Check if URL already exists
-    const existingIdx = savedServers.findIndex(s => s.url.toLowerCase() === url.toLowerCase());
-    const name = nickname || (existingIdx >= 0 ? savedServers[existingIdx].name : url);
+        const cleanUrl = url.trim();
+        const existingIdx = savedServers.findIndex(s => s && s.url && s.url.toLowerCase() === cleanUrl.toLowerCase());
+        const name = (nickname && nickname.trim()) || (existingIdx >= 0 ? savedServers[existingIdx].name : cleanUrl);
 
-    if (existingIdx >= 0) {
-        savedServers.splice(existingIdx, 1);
+        if (existingIdx >= 0) {
+            savedServers.splice(existingIdx, 1);
+        }
+
+        savedServers.unshift({ url: cleanUrl, name: name });
+        if (savedServers.length > 15) savedServers.pop();
+
+        localStorage.setItem("conan_saved_servers", JSON.stringify(savedServers));
+    } catch (e) {
+        console.error("addSavedServer error:", e);
     }
-
-    savedServers.unshift({ url: url, name: name });
-    if (savedServers.length > 15) savedServers.pop();
-
-    localStorage.setItem("conan_saved_servers", JSON.stringify(savedServers));
 }
 
 function selectSavedServer(url) {
+    if (!url) return;
     const input = document.getElementById("txtTargetUrl");
     if (input) input.value = url;
     connectToCustomServer();
 }
 
 function deleteSavedServer(idx, e) {
-    if (e && e.stopPropagation) e.stopPropagation();
-    vibrate(20);
-    loadSavedServers();
-    savedServers.splice(idx, 1);
-    localStorage.setItem("conan_saved_servers", JSON.stringify(savedServers));
-    renderSavedServers();
-    showToast("Server removed from list");
+    if (e) {
+        if (e.stopPropagation) e.stopPropagation();
+        if (e.preventDefault) e.preventDefault();
+    }
+    try {
+        vibrate(20);
+        loadSavedServers();
+        savedServers.splice(idx, 1);
+        localStorage.setItem("conan_saved_servers", JSON.stringify(savedServers));
+        renderSavedServers();
+        showToast("Server removed from list");
+    } catch (err) {
+        console.error("deleteSavedServer error:", err);
+    }
 }
 
 function renderSavedServers() {
@@ -692,36 +776,43 @@ function renderSavedServers() {
     const countBadge = document.getElementById("savedServersCount");
     if (!list) return;
 
-    loadSavedServers();
-    if (countBadge) countBadge.innerText = savedServers.length;
+    try {
+        loadSavedServers();
+        if (countBadge) countBadge.innerText = savedServers.length;
 
-    if (savedServers.length === 0) {
-        list.innerHTML = `<div style="color:#64748b;font-size:0.85rem;text-align:center;padding:16px;">No saved servers yet. Add one above!</div>`;
-        return;
-    }
+        if (!savedServers || savedServers.length === 0) {
+            list.innerHTML = `<div style="color:#64748b;font-size:0.85rem;text-align:center;padding:16px;">No saved servers yet. Add one above!</div>`;
+            return;
+        }
 
-    list.innerHTML = savedServers.map((srv, idx) => {
-        const isActive = (srv.url.toLowerCase() === currentServerUrl.toLowerCase());
-        const displayName = escapeHtml(srv.name && srv.name !== srv.url ? srv.name : srv.url);
-        const displayUrl = escapeHtml(srv.url);
+        list.innerHTML = savedServers.map((item, idx) => {
+            const srv = (typeof item === "string") ? { url: item, name: item } : (item || { url: "", name: "" });
+            const srvUrl = (srv.url || "").trim();
+            const srvName = (srv.name && srv.name !== srvUrl) ? srv.name : srvUrl;
+            const curUrl = (currentServerUrl || "").trim();
+            const isActive = (srvUrl && curUrl && srvUrl.toLowerCase() === curUrl.toLowerCase());
 
-        return `
-            <div class="saved-server-card ${isActive ? 'active-server' : ''}" onclick="selectSavedServer('${escapeHtml(srv.url)}')">
-                <div class="saved-server-info">
-                    <div class="saved-server-name">
-                        <span>🖥️</span>
-                        <span>${displayName}</span>
-                        ${isActive ? '<span style="background:rgba(16,185,129,0.2);color:#34d399;font-size:0.65rem;font-weight:bold;padding:2px 6px;border-radius:6px;border:1px solid rgba(16,185,129,0.4);">ACTIVE</span>' : ''}
+            return `
+                <div class="saved-server-card ${isActive ? 'active-server' : ''}" data-url="${escapeHtml(srvUrl)}" onclick="selectSavedServer(this.getAttribute('data-url'))">
+                    <div class="saved-server-info">
+                        <div class="saved-server-name">
+                            <span>🖥️</span>
+                            <span>${escapeHtml(srvName || "Server")}</span>
+                            ${isActive ? '<span style="background:rgba(16,185,129,0.2);color:#34d399;font-size:0.65rem;font-weight:bold;padding:2px 6px;border-radius:6px;border:1px solid rgba(16,185,129,0.4);">ACTIVE</span>' : ''}
+                        </div>
+                        <div class="saved-server-url">${escapeHtml(srvUrl)}</div>
                     </div>
-                    <div class="saved-server-url">${displayUrl}</div>
+                    <div class="saved-server-actions">
+                        <button class="btn-primary" style="padding:6px 12px;font-size:0.75rem;" data-url="${escapeHtml(srvUrl)}" onclick="event.stopPropagation(); selectSavedServer(this.getAttribute('data-url'))">▶ Connect</button>
+                        <button class="btn-danger" style="padding:6px 10px;font-size:0.75rem;" onclick="deleteSavedServer(${idx}, event)">🗑️</button>
+                    </div>
                 </div>
-                <div class="saved-server-actions">
-                    <button class="btn-primary" style="padding:6px 12px;font-size:0.75rem;" onclick="event.stopPropagation(); selectSavedServer('${escapeHtml(srv.url)}')">▶ Connect</button>
-                    <button class="btn-danger" style="padding:6px 10px;font-size:0.75rem;" onclick="deleteSavedServer(${idx}, event)">🗑️</button>
-                </div>
-            </div>
-        `;
-    }).join("");
+            `;
+        }).join("");
+    } catch (err) {
+        console.error("renderSavedServers error:", err);
+        list.innerHTML = `<div style="color:#f87171;font-size:0.8rem;text-align:center;padding:12px;">Error displaying servers. Please re-add your server above.</div>`;
+    }
 }
 
 async function scanLocalNetworkServers() {
@@ -778,7 +869,7 @@ async function scanLocalNetworkServers() {
         list.innerHTML = `<div style="color:#94a3b8;font-size:0.85rem;text-align:center;padding:12px;">No managers detected on standard subnet ports. Try entering your IP manually above.</div>`;
     } else {
         list.innerHTML = foundServers.map(s => `
-            <div class="saved-server-card active-server" style="border-color:#6366f1;margin-bottom:8px;">
+            <div class="saved-server-card active-server" style="border-color:#6366f1;margin-bottom:8px;" data-url="${escapeHtml(s.url)}" onclick="selectSavedServer(this.getAttribute('data-url'))">
                 <div class="saved-server-info">
                     <div class="saved-server-name">
                         <span>🌐</span>
@@ -787,7 +878,7 @@ async function scanLocalNetworkServers() {
                     </div>
                     <div class="saved-server-url">${escapeHtml(s.url)}</div>
                 </div>
-                <button class="btn-primary" style="padding:6px 12px;font-size:0.75rem;" onclick="selectSavedServer('${escapeHtml(s.url)}')">▶ Connect</button>
+                <button class="btn-primary" style="padding:6px 12px;font-size:0.75rem;" data-url="${escapeHtml(s.url)}" onclick="event.stopPropagation(); selectSavedServer(this.getAttribute('data-url'))">▶ Connect</button>
             </div>
         `).join("");
     }
@@ -795,8 +886,8 @@ async function scanLocalNetworkServers() {
 
 function handleBackPressed() {
     const modal = document.getElementById("serverModal");
-    if (modal && modal.style.display !== "none" && modal.style.display !== "") {
-        modal.style.display = "none";
+    if (modal && (modal.classList.contains("active") || (modal.style.display && modal.style.display !== "none"))) {
+        closeServerModal();
         return "handled";
     }
     if (currentTab !== "dashboard") {
@@ -808,5 +899,30 @@ function handleBackPressed() {
 
 function escapeHtml(str) {
     if (!str) return "";
-    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
 }
+
+// Explicitly register global helper functions on window
+window.openServerModal = openServerModal;
+window.closeServerModal = closeServerModal;
+window.selectSavedServer = selectSavedServer;
+window.deleteSavedServer = deleteSavedServer;
+window.connectToCustomServer = connectToCustomServer;
+window.saveServerWithoutConnecting = saveServerWithoutConnecting;
+window.scanLocalNetworkServers = scanLocalNetworkServers;
+window.handleBackPressed = handleBackPressed;
+window.switchTab = switchTab;
+window.controlAction = controlAction;
+window.searchWorkshop = searchWorkshop;
+window.installMod = installMod;
+window.uninstallMod = uninstallMod;
+window.fetchInstalledMods = fetchInstalledMods;
+window.saveServerConfig = saveServerConfig;
+window.sendRcon = sendRcon;
+window.checkAppUpdates = checkAppUpdates;
+window.installUpdate = installUpdate;

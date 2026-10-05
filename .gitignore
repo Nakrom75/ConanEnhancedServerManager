@@ -5,8 +5,8 @@ steamapps/
 Backups/
 Errors/
 Updates/
-ServerManager/
-ConanServerManager_DeployPackage/
+/ServerManager/
+/ConanServerManager_DeployPackage/
 ConanServerManager*.zip
 
 # Large utilities & SteamCMD files
