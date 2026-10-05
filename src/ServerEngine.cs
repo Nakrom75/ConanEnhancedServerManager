@@ -208,7 +208,27 @@ namespace ConanServerManager
 
         public const string WorkshopAppId = "440900";
         public const string ServerAppId = "443030";
-        public const string CurrentAppVersion = "1.1.0";
+        public static readonly string CurrentAppVersion = GetCurrentAppVersion();
+
+        private static string GetCurrentAppVersion()
+        {
+            try
+            {
+                var attr = Attribute.GetCustomAttribute(
+                    System.Reflection.Assembly.GetExecutingAssembly(),
+                    typeof(System.Reflection.AssemblyInformationalVersionAttribute)) as System.Reflection.AssemblyInformationalVersionAttribute;
+                string? infoVer = attr?.InformationalVersion;
+                if (!string.IsNullOrEmpty(infoVer))
+                {
+                    int plusIdx = infoVer.IndexOf('+');
+                    return plusIdx > 0 ? infoVer.Substring(0, plusIdx) : infoVer;
+                }
+                var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+                if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
+            }
+            catch { }
+            return "1.1.0";
+        }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
         public SteamServerInfo SteamStatus { get; private set; } = new SteamServerInfo();

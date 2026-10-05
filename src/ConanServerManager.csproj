@@ -8,10 +8,11 @@
     <UseWPF>true</UseWPF>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <NoWarn>$(NoWarn);NU1903;NU1902</NoWarn>
-    <Version>1.1.0</Version>
-    <AssemblyVersion>1.1.0.0</AssemblyVersion>
-    <FileVersion>1.1.0.0</FileVersion>
-    <InformationalVersion>1.1.0</InformationalVersion>
+    <VersionPrefix>$([System.IO.File]::ReadAllText('$([System.IO.Path]::Combine($(MSBuildProjectDirectory), '..', 'version.txt'))').Trim())</VersionPrefix>
+    <Version>$(VersionPrefix)</Version>
+    <AssemblyVersion>$(VersionPrefix).0</AssemblyVersion>
+    <FileVersion>$(VersionPrefix).0</FileVersion>
+    <InformationalVersion>$(VersionPrefix)</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>

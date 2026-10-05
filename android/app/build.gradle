@@ -2,9 +2,32 @@ plugins {
     id 'com.android.application'
 }
 
+def getAppVersionName() {
+    def versionFile = rootProject.file('../version.txt')
+    if (versionFile.exists()) {
+        return versionFile.text.trim()
+    }
+    return "1.1.0"
+}
+
+def getAppVersionCode(String versionName) {
+    try {
+        def parts = versionName.split('\\.')
+        int major = parts.length > 0 ? parts[0].toInteger() : 1
+        int minor = parts.length > 1 ? parts[1].toInteger() : 1
+        int patch = parts.length > 2 ? parts[2].toInteger() : 0
+        return major * 10000 + minor * 100 + patch
+    } catch (Exception ignored) {
+        return 10100
+    }
+}
+
 android {
     namespace 'com.conan.servermanager'
     compileSdk 34
+
+    def appVerName = getAppVersionName()
+    def appVerCode = getAppVersionCode(appVerName)
 
     signingConfigs {
         release {
@@ -19,8 +42,8 @@ android {
         applicationId "com.conan.servermanager"
         minSdk 24
         targetSdk 34
-        versionCode 111
-        versionName "1.1.0"
+        versionCode appVerCode
+        versionName appVerName
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -39,6 +62,16 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = "ConanServerManager-v${appVerName}.apk"
+        }
     }
 }
 

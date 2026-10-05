@@ -53,6 +53,7 @@ namespace ConanServerManager
                 Activate();
                 Focus();
                 TxtAppHeaderTitle.Text = $"Conan Enhanced Server Manager v{ServerEngine.CurrentAppVersion}";
+                TxtAppHeaderVersionBadge.Text = $"✨ v{ServerEngine.CurrentAppVersion}";
                 _engine.Log($"[System] Conan Enhanced Server Manager v{ServerEngine.CurrentAppVersion} initialized successfully.");
                 LoadUiFromConfig();
 

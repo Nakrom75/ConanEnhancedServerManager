@@ -5,11 +5,19 @@ let pollTimer = null;
 let installedMods = [];
 let savedServers = [];
 let latestApkUrl = "";
-let latestApkVersion = "";
-const APP_VERSION = "1.1.0";
+let APP_VERSION = "1.1.0";
+if (window.Android && typeof Android.getAppVersion === "function") {
+    APP_VERSION = Android.getAppVersion();
+}
 
 // Initialization
 document.addEventListener("DOMContentLoaded", () => {
+    if (window.Android && typeof Android.getAppVersion === "function") {
+        APP_VERSION = Android.getAppVersion();
+    }
+    const verBadge = document.getElementById("appInstalledVersion");
+    if (verBadge) verBadge.innerText = "v" + APP_VERSION;
+
     loadSavedServers();
 
     if (window.Android && typeof Android.getSavedServerUrl === "function") {

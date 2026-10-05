@@ -514,10 +514,11 @@ namespace ConanServerManager
             }
             else if ((path == "/api/download/apk" || path == "/conan.apk" || path == "/app.apk") && method == "GET")
             {
-                string apkPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ConanServerManager-v1.1.0.apk");
+                string apkName = $"ConanServerManager-v{ServerEngine.CurrentAppVersion}.apk";
+                string apkPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, apkName);
                 if (!File.Exists(apkPath))
                 {
-                    apkPath = Path.Combine(Directory.GetCurrentDirectory(), "ConanServerManager-v1.1.0.apk");
+                    apkPath = Path.Combine(Directory.GetCurrentDirectory(), apkName);
                 }
                 if (!File.Exists(apkPath))
                 {
@@ -588,7 +589,7 @@ namespace ConanServerManager
 <head>
     <meta charset=""UTF-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
-    <title>Conan Exiles Server Remote Console (v1.1.0)</title>
+    <title>Conan Exiles Server Remote Console (v__APP_VER__)</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; }
         body { background: #0f172a; color: #f8fafc; padding: 16px; max-width: 900px; margin: 0 auto; }
@@ -630,7 +631,7 @@ namespace ConanServerManager
                 <div class=""title"" id=""srvName"">Conan Exiles Server</div>
                 <div class=""subtitle"">
                     <span>Remote Mobile &amp; Web Control Console</span>
-                    <span id=""appVerBadge"" class=""badge-ver"">v1.1.0</span>
+                    <span id=""appVerBadge"" class=""badge-ver"">v__APP_VER__</span>
                     <a href=""/conan.apk"" class=""btn-apk"">📱 Download Android App (.apk)</a>
                 </div>
             </div>
@@ -1005,7 +1006,7 @@ namespace ConanServerManager
         loadSettings();
     </script>
 </body>
-</html>";
+</html>".Replace("__APP_VER__", ServerEngine.CurrentAppVersion);
         }
     }
 }
