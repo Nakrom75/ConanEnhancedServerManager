@@ -87,11 +87,12 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String u = request.getUrl().toString();
-                if (u.startsWith("http://") || u.startsWith("https://") || u.startsWith("file://")) {
+                if (u.startsWith("file:///android_asset/")) {
                     return false;
                 }
                 try {
                     Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(u));
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     startActivity(intent);
                     return true;
                 } catch (Exception e) {
@@ -218,11 +219,24 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @JavascriptInterface
+        public void openExternalUrl(String url) {
+            runOnUiThread(() -> {
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                } catch (Exception e) {
+                    Toast.makeText(MainActivity.this, "Could not open link: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+
+        @JavascriptInterface
         public String getAppVersion() {
             try {
                 return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
             } catch (Exception ignored) {
-                return "1.1.6";
+                return "1.1.7";
             }
         }
 
@@ -235,7 +249,7 @@ public class MainActivity extends AppCompatActivity {
                     return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
                 }
             } catch (Exception ignored) {
-                return 10106;
+                return 10107;
             }
         }
 

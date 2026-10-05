@@ -18,7 +18,7 @@ def getAppVersionCode(String versionName) {
         int patch = parts.length > 2 ? parts[2].toInteger() : 0
         return major * 10000 + minor * 100 + patch
     } catch (Exception ignored) {
-        return 10106
+        return 10107
     }
 }
 

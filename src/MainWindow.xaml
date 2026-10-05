@@ -117,9 +117,9 @@
                     <StackPanel Orientation="Vertical">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Image Source="app.png" Width="22" Height="22" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.1.6" Style="{StaticResource HeaderTitle}"/>
+                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.1.7" Style="{StaticResource HeaderTitle}"/>
                             <Border CornerRadius="8" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" Margin="10,0,0,0" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="✨ v1.1.6" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="✨ v1.1.7" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="TxtServerPathInfo" Text="Mode: Local Server Host | Embedded Web Console: http://0.0.0.0:8088" Foreground="#94A3B8" FontSize="11"/>
@@ -697,6 +697,30 @@
                             </Grid.ColumnDefinitions>
 
                             <ListBox Grid.Column="0" x:Name="LstMods" Background="#0F172A" Foreground="#FFFFFF" BorderBrush="#334155" VerticalAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="🌐 Open Steam Workshop Page" Click="MnuOpenWorkshopPage_Click"/>
+                                        <MenuItem Header="📋 Copy Workshop URL" Click="MnuCopyWorkshopUrl_Click"/>
+                                        <MenuItem Header="📋 Copy Mod ID" Click="MnuCopyModId_Click"/>
+                                        <Separator/>
+                                        <MenuItem Header="🗑️ Remove Mod" Click="BtnRemoveMod_Click"/>
+                                    </ContextMenu>
+                                </ListBox.ContextMenu>
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="ContextMenu">
+                                            <Setter.Value>
+                                                <ContextMenu>
+                                                    <MenuItem Header="🌐 Open Steam Workshop Page" Click="MnuOpenWorkshopPage_Click"/>
+                                                    <MenuItem Header="📋 Copy Workshop URL" Click="MnuCopyWorkshopUrl_Click"/>
+                                                    <MenuItem Header="📋 Copy Mod ID" Click="MnuCopyModId_Click"/>
+                                                    <Separator/>
+                                                    <MenuItem Header="🗑️ Remove Mod" Click="BtnRemoveMod_Click"/>
+                                                </ContextMenu>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <Border BorderBrush="#1E293B" BorderThickness="0,0,0,1" Padding="6,5" Margin="0,1">
@@ -724,7 +748,8 @@
                                 <TextBlock Text="Add Mod ID" Style="{StaticResource FormLabel}"/>
                                 <TextBox x:Name="TxtNewModId" Style="{StaticResource FormInput}" Margin="0,0,0,6"/>
                                 <Button Content="Add Mod" Style="{StaticResource BtnPrimary}" Click="BtnAddMod_Click" Margin="0,0,0,6"/>
-                                <Button Content="Remove Mod" Style="{StaticResource BtnDanger}" Click="BtnRemoveMod_Click"/>
+                                <Button Content="Remove Mod" Style="{StaticResource BtnDanger}" Click="BtnRemoveMod_Click" Margin="0,0,0,10"/>
+                                <Button Content="🌐 View on Workshop" Style="{StaticResource BtnSecondary}" Click="BtnViewModWorkshop_Click" Margin="0,0,0,6" ToolTip="Open the selected mod's Steam Workshop page in browser"/>
                             </StackPanel>
                         </Grid>
                     </TabItem>

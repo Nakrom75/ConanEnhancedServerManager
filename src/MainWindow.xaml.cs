@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
@@ -1242,8 +1243,105 @@ namespace ConanServerManager
             });
         }
 
+        private ModDisplayItem? GetSelectedOrClickedMod(object sender)
+        {
+            if (sender is MenuItem mi)
+            {
+                if (mi.DataContext is ModDisplayItem item) return item;
+                if (mi.CommandParameter is ModDisplayItem cpItem) return cpItem;
+            }
+            if (LstMods.SelectedItem is ModDisplayItem selItem)
+            {
+                return selItem;
+            }
+            if (LstMods.SelectedItem is string idStr)
+            {
+                return new ModDisplayItem { Id = idStr, Title = $"Mod #{idStr}" };
+            }
+            return null;
+        }
+
+        private void MnuOpenWorkshopPage_Click(object sender, RoutedEventArgs e)
+        {
+            var mod = GetSelectedOrClickedMod(sender);
+            if (mod == null || string.IsNullOrWhiteSpace(mod.Id))
+            {
+                MessageBox.Show("Please select a mod first.", "Open Workshop", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            OpenSteamWorkshopPage(mod.Id);
+        }
+
+        private void BtnViewModWorkshop_Click(object sender, RoutedEventArgs e)
+        {
+            var mod = GetSelectedOrClickedMod(sender);
+            if (mod == null || string.IsNullOrWhiteSpace(mod.Id))
+            {
+                MessageBox.Show("Please select a mod from the list first.", "Open Workshop", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            OpenSteamWorkshopPage(mod.Id);
+        }
+
+        private void OpenSteamWorkshopPage(string modId)
+        {
+            try
+            {
+                string url = $"https://steamcommunity.com/sharedfiles/filedetails/?id={modId.Trim()}";
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not open browser:\n{ex.Message}", "Browser Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void MnuCopyWorkshopUrl_Click(object sender, RoutedEventArgs e)
+        {
+            var mod = GetSelectedOrClickedMod(sender);
+            if (mod == null || string.IsNullOrWhiteSpace(mod.Id)) return;
+            string url = $"https://steamcommunity.com/sharedfiles/filedetails/?id={mod.Id.Trim()}";
+            try
+            {
+                Clipboard.SetText(url);
+                MessageBox.Show($"Copied Workshop link to Clipboard:\n\n{url}", "Copied", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                _engine.Log($"Clipboard copy note: {ex.Message}");
+            }
+        }
+
+        private void MnuCopyModId_Click(object sender, RoutedEventArgs e)
+        {
+            var mod = GetSelectedOrClickedMod(sender);
+            if (mod == null || string.IsNullOrWhiteSpace(mod.Id)) return;
+            try
+            {
+                Clipboard.SetText(mod.Id.Trim());
+                MessageBox.Show($"Copied Mod ID '{mod.Id.Trim()}' to Clipboard.", "Copied", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                _engine.Log($"Clipboard copy note: {ex.Message}");
+            }
+        }
+
         private void BtnRemoveMod_Click(object sender, RoutedEventArgs e)
         {
+            var mod = GetSelectedOrClickedMod(sender);
+            if (mod != null && LstMods.Items.Contains(mod))
+            {
+                LstMods.Items.Remove(mod);
+                return;
+            }
+
             int idx = LstMods.SelectedIndex;
             if (idx >= 0)
             {

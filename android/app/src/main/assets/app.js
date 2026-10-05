@@ -6,9 +6,123 @@ let installedMods = [];
 let savedServers = [];
 let latestApkUrl = "";
 let lastKnownConfig = null;
-let APP_VERSION = "1.1.6";
+let APP_VERSION = "1.1.7";
 if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
+}
+
+let currentModalMod = null;
+
+function openExternalBrowser(url) {
+    if (!url) return;
+    try {
+        if (window.Android && typeof Android.openExternalUrl === "function") {
+            Android.openExternalUrl(url);
+        } else {
+            window.open(url, "_blank");
+        }
+    } catch (e) {
+        window.open(url, "_blank");
+    }
+}
+
+function showModDetailsModal(modId, modTitle, previewUrl) {
+    if (!modId) return;
+    const cleanId = String(modId).trim();
+    currentModalMod = {
+        id: cleanId,
+        title: modTitle || `Mod #${cleanId}`,
+        previewUrl: previewUrl || "app.png",
+        url: `https://steamcommunity.com/sharedfiles/filedetails/?id=${cleanId}`
+    };
+
+    const modal = document.getElementById("modDetailsModal");
+    const titleEl = document.getElementById("modalModTitle");
+    const idEl = document.getElementById("modalModId");
+    const thumbEl = document.getElementById("modalModThumb");
+    const urlTextEl = document.getElementById("modalModUrlText");
+
+    if (titleEl) titleEl.innerText = currentModalMod.title;
+    if (idEl) idEl.innerText = `ID: ${currentModalMod.id}`;
+    if (thumbEl) thumbEl.src = currentModalMod.previewUrl;
+    if (urlTextEl) urlTextEl.innerText = currentModalMod.url;
+
+    if (modal) {
+        modal.style.display = "flex";
+    }
+}
+
+function closeModDetailsModal(e) {
+    if (e && e.target && e.target.classList && !e.target.classList.contains("modal-overlay") && !e.target.classList.contains("btn-header-close")) {
+        return;
+    }
+    const modal = document.getElementById("modDetailsModal");
+    if (modal) {
+        modal.style.display = "none";
+    }
+    currentModalMod = null;
+}
+
+function onModalOpenWorkshop() {
+    vibrate(30);
+    if (currentModalMod && currentModalMod.url) {
+        openExternalBrowser(currentModalMod.url);
+        closeModDetailsModal();
+    }
+}
+
+function onModalCopyLink() {
+    vibrate(20);
+    if (currentModalMod && currentModalMod.url) {
+        try {
+            navigator.clipboard.writeText(currentModalMod.url);
+            showToast("Copied Workshop link to clipboard!");
+        } catch (e) {
+            showToast("Link: " + currentModalMod.url);
+        }
+    }
+}
+
+function attachLongPressMod(el, modId, modTitle, previewUrl) {
+    if (!el) return;
+    let timer = null;
+    let startX = 0, startY = 0;
+    let moved = false;
+
+    el.addEventListener("touchstart", (e) => {
+        if (e.target.closest(".btn-icon") || e.target.closest("button")) return;
+        moved = false;
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        timer = setTimeout(() => {
+            if (!moved) {
+                vibrate(40);
+                showModDetailsModal(modId, modTitle, previewUrl);
+            }
+        }, 450);
+    }, { passive: true });
+
+    el.addEventListener("touchmove", (e) => {
+        if (Math.abs(e.touches[0].clientX - startX) > 10 || Math.abs(e.touches[0].clientY - startY) > 10) {
+            moved = true;
+            clearTimeout(timer);
+        }
+    }, { passive: true });
+
+    el.addEventListener("touchend", () => {
+        clearTimeout(timer);
+    });
+
+    el.addEventListener("touchcancel", () => {
+        clearTimeout(timer);
+    });
+
+    el.addEventListener("contextmenu", (e) => {
+        if (e.target.closest(".btn-icon") || e.target.closest("button")) return;
+        e.preventDefault();
+        vibrate(40);
+        showModDetailsModal(modId, modTitle, previewUrl);
+    });
 }
 
 // Global Error Handler for WebView debugging
@@ -322,7 +436,7 @@ async function searchWorkshop() {
         }
 
         container.innerHTML = results.map(mod => `
-            <div class="mod-item">
+            <div class="mod-item" data-mod-id="${mod.Id}" data-mod-title="${escapeHtml(mod.Title || 'Unknown Mod')}" data-mod-thumb="${mod.PreviewUrl || 'app.png'}" title="Long press to open Steam Workshop">
                 <img src="${mod.PreviewUrl || 'app.png'}" class="mod-thumb" onerror="this.src='app.png'">
                 <div class="mod-info">
                     <div class="mod-title">${escapeHtml(mod.Title || 'Unknown Mod')}</div>
@@ -336,6 +450,13 @@ async function searchWorkshop() {
                 </div>
             </div>
         `).join("");
+
+        container.querySelectorAll(".mod-item").forEach(item => {
+            const id = item.getAttribute("data-mod-id");
+            const title = item.getAttribute("data-mod-title");
+            const thumb = item.getAttribute("data-mod-thumb");
+            attachLongPressMod(item, id, title, thumb);
+        });
     } catch (e) {
         container.innerHTML = `<div style="text-align:center;padding:16px;color:#f87171;">Search error: ${e.message}</div>`;
     }
@@ -414,7 +535,7 @@ async function fetchInstalledMods() {
         }
 
         container.innerHTML = installedMods.map((mod, idx) => `
-            <div class="mod-item">
+            <div class="mod-item" data-mod-id="${mod.Id}" data-mod-title="${escapeHtml(mod.Title || ('Mod #' + mod.Id))}" data-mod-thumb="${mod.PreviewUrl || 'app.png'}" title="Long press to open Steam Workshop">
                 <span style="font-weight:bold;color:#64748b;font-size:0.8rem;width:18px;">${idx + 1}</span>
                 <img src="${mod.PreviewUrl || 'app.png'}" class="mod-thumb" onerror="this.src='app.png'">
                 <div class="mod-info">
@@ -428,6 +549,13 @@ async function fetchInstalledMods() {
                 </div>
             </div>
         `).join("");
+
+        container.querySelectorAll(".mod-item").forEach(item => {
+            const id = item.getAttribute("data-mod-id");
+            const title = item.getAttribute("data-mod-title");
+            const thumb = item.getAttribute("data-mod-thumb");
+            attachLongPressMod(item, id, title, thumb);
+        });
     } catch (e) {
         container.innerHTML = `
             <div style="text-align:center;padding:16px;color:#f87171;font-size:0.85rem;">
@@ -1169,6 +1297,11 @@ async function scanLocalNetworkServers() {
 }
 
 function handleBackPressed() {
+    const modModal = document.getElementById("modDetailsModal");
+    if (modModal && modModal.style.display && modModal.style.display !== "none") {
+        closeModDetailsModal();
+        return "handled";
+    }
     const modal = document.getElementById("serverModal");
     if (modal && (modal.classList.contains("active") || (modal.style.display && modal.style.display !== "none"))) {
         closeServerModal();
@@ -1214,3 +1347,8 @@ window.downloadFromServerDirect = downloadFromServerDirect;
 window.downloadFromGithubDirect = downloadFromGithubDirect;
 window.togglePasswordVisibility = togglePasswordVisibility;
 window.fetchServerConfig = fetchServerConfig;
+window.openModDetailsModal = showModDetailsModal;
+window.closeModDetailsModal = closeModDetailsModal;
+window.onModalOpenWorkshop = onModalOpenWorkshop;
+window.onModalCopyLink = onModalCopyLink;
+
