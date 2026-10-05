@@ -6,7 +6,7 @@ let installedMods = [];
 let savedServers = [];
 let latestApkUrl = "";
 let lastKnownConfig = null;
-let APP_VERSION = "1.1.5";
+let APP_VERSION = "1.1.6";
 if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
 }
@@ -391,12 +391,22 @@ async function fetchInstalledMods() {
     const container = document.getElementById("installedModsContainer");
     if (!container) return;
 
+    if (!installedMods || installedMods.length === 0) {
+        container.innerHTML = `<div style="text-align:center;padding:16px;color:#38bdf8;font-size:0.85rem;">⏳ Loading server mods &amp; titles...</div>`;
+    }
+
     try {
-        const res = await fetch(`${currentServerUrl}/api/mods`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const res = await fetch(`${currentServerUrl}/api/mods?_t=${Date.now()}`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (!res.ok) throw new Error("HTTP " + res.status);
         const data = await res.json();
         installedMods = data.details || [];
 
-        document.getElementById("installedModsCount").innerText = installedMods.length;
+        const countBadge = document.getElementById("installedModsCount");
+        if (countBadge) countBadge.innerText = installedMods.length;
 
         if (installedMods.length === 0) {
             container.innerHTML = `<div style="text-align:center;padding:16px;color:#64748b;font-size:0.85rem;">No mods currently installed on server</div>`;
@@ -408,18 +418,23 @@ async function fetchInstalledMods() {
                 <span style="font-weight:bold;color:#64748b;font-size:0.8rem;width:18px;">${idx + 1}</span>
                 <img src="${mod.PreviewUrl || 'app.png'}" class="mod-thumb" onerror="this.src='app.png'">
                 <div class="mod-info">
-                    <div class="mod-title">${escapeHtml(mod.Title || ('Mod #' + mod.Id))}</div>
-                    <div class="mod-meta">ID: <strong>${mod.Id}</strong></div>
+                    <div class="mod-title" style="font-weight:600;color:#f8fafc;">${escapeHtml(mod.Title || ('Mod #' + mod.Id))}</div>
+                    <div class="mod-meta" style="color:#94a3b8;font-size:0.75rem;margin-top:2px;">ID: <strong style="color:#38bdf8;">${mod.Id}</strong></div>
                 </div>
                 <div class="mod-actions">
-                    ${idx > 0 ? `<button class="btn-icon" onclick="reorderMod(${idx}, -1)">▲</button>` : ''}
-                    ${idx < installedMods.length - 1 ? `<button class="btn-icon" onclick="reorderMod(${idx}, 1)">▼</button>` : ''}
-                    <button class="btn-icon" style="background:#ef4444;color:white;" onclick="removeModFromServer('${mod.Id}')">🗑️</button>
+                    ${idx > 0 ? `<button class="btn-icon" onclick="reorderMod(${idx}, -1)" title="Move Up">▲</button>` : ''}
+                    ${idx < installedMods.length - 1 ? `<button class="btn-icon" onclick="reorderMod(${idx}, 1)" title="Move Down">▼</button>` : ''}
+                    <button class="btn-icon" style="background:#ef4444;color:white;" onclick="removeModFromServer('${mod.Id}')" title="Remove Mod">🗑️</button>
                 </div>
             </div>
         `).join("");
     } catch (e) {
-        container.innerHTML = `<div style="text-align:center;padding:16px;color:#f87171;">Failed to load server mods: ${e.message}</div>`;
+        container.innerHTML = `
+            <div style="text-align:center;padding:16px;color:#f87171;font-size:0.85rem;">
+                <div>⚠️ Failed to load server mods: ${escapeHtml(e.message)}</div>
+                <button class="btn-secondary" style="margin-top:8px;padding:4px 12px;font-size:0.75rem;" onclick="fetchInstalledMods()">🔄 Retry</button>
+            </div>
+        `;
     }
 }
 

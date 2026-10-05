@@ -638,14 +638,7 @@ namespace ConanServerManager
 
             ChkUseAllCores.IsChecked = cfg.UseAllAvailableCores;
 
-            LstMods.Items.Clear();
-            if (cfg.Mods != null)
-            {
-                foreach (var mod in cfg.Mods)
-                {
-                    LstMods.Items.Add(mod);
-                }
-            }
+            PopulateModListUi(cfg.Mods);
         }
 
         private ManagerConfig GetConfigFromUi()
@@ -716,7 +709,10 @@ namespace ConanServerManager
             cfg.DiscordIncludeTime = ChkDiscordTime.IsChecked == true;
             cfg.DiscordWebhookUrl = TxtDiscordWebhook.Text.Trim();
 
-            cfg.Mods = LstMods.Items.Cast<string>().ToList();
+            cfg.Mods = LstMods.Items.Cast<object>()
+                .Select(item => item is ModDisplayItem m ? m.Id : item?.ToString()?.Trim() ?? "")
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToList();
 
             cfg.IsRemoteClientMode = RadRemoteMode.IsChecked == true;
             cfg.RemoteServerUrl = TxtRemoteUrl.Text.Trim();
@@ -853,11 +849,56 @@ namespace ConanServerManager
 
         private void RefreshModListUi()
         {
+            PopulateModListUi(_engine.Config.Mods);
+        }
+
+        private void PopulateModListUi(IEnumerable<string>? modIds)
+        {
             LstMods.Items.Clear();
-            foreach (var mod in _engine.Config.Mods)
+            if (modIds == null) return;
+            var list = modIds.Where(m => !string.IsNullOrWhiteSpace(m)).Select(m => m.Trim()).ToList();
+            if (list.Count == 0) return;
+
+            var items = new List<ModDisplayItem>();
+            foreach (var id in list)
             {
-                LstMods.Items.Add(mod);
+                var cached = SteamWorkshopHelper.GetCachedMod(id);
+                var item = new ModDisplayItem
+                {
+                    Id = id,
+                    Title = cached != null && !string.IsNullOrWhiteSpace(cached.Title) && !cached.Title.StartsWith("Mod #")
+                        ? cached.Title
+                        : $"Loading Mod #{id}...",
+                    PreviewUrl = cached?.PreviewUrl ?? ""
+                };
+                items.Add(item);
+                LstMods.Items.Add(item);
             }
+
+            // Asynchronously resolve actual titles from Steam Workshop if any are missing
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var map = await SteamWorkshopHelper.GetMultipleModDetailsAsync(list);
+                    Dispatcher.Invoke(() =>
+                    {
+                        foreach (var item in items)
+                        {
+                            if (map.TryGetValue(item.Id, out var detail) && !string.IsNullOrWhiteSpace(detail.Title))
+                            {
+                                item.Title = detail.Title;
+                                item.PreviewUrl = detail.PreviewUrl;
+                            }
+                            else if (item.Title.StartsWith("Loading"))
+                            {
+                                item.Title = $"Mod #{item.Id}";
+                            }
+                        }
+                    });
+                }
+                catch { }
+            });
         }
 
         private void LoadIniFilesToTabs()
@@ -1163,11 +1204,42 @@ namespace ConanServerManager
         private void BtnAddMod_Click(object sender, RoutedEventArgs e)
         {
             string newId = TxtNewModId.Text.Trim();
-            if (!string.IsNullOrEmpty(newId) && !LstMods.Items.Contains(newId))
+            if (string.IsNullOrEmpty(newId)) return;
+
+            bool exists = LstMods.Items.OfType<ModDisplayItem>().Any(m => m.Id.Equals(newId, StringComparison.OrdinalIgnoreCase))
+                || LstMods.Items.OfType<string>().Any(s => s.Equals(newId, StringComparison.OrdinalIgnoreCase));
+            if (exists)
             {
-                LstMods.Items.Add(newId);
-                TxtNewModId.Clear();
+                MessageBox.Show($"Mod {newId} is already in the list.", "Notice", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
             }
+
+            var cached = SteamWorkshopHelper.GetCachedMod(newId);
+            var newItem = new ModDisplayItem
+            {
+                Id = newId,
+                Title = cached != null && !string.IsNullOrWhiteSpace(cached.Title) ? cached.Title : $"Loading Mod #{newId}...",
+                PreviewUrl = cached?.PreviewUrl ?? ""
+            };
+            LstMods.Items.Add(newItem);
+            TxtNewModId.Clear();
+
+            _ = Task.Run(async () =>
+            {
+                var detail = await SteamWorkshopHelper.GetModDetailsAsync(newId);
+                Dispatcher.Invoke(() =>
+                {
+                    if (detail != null && !string.IsNullOrWhiteSpace(detail.Title))
+                    {
+                        newItem.Title = detail.Title;
+                        newItem.PreviewUrl = detail.PreviewUrl;
+                    }
+                    else if (newItem.Title.StartsWith("Loading"))
+                    {
+                        newItem.Title = $"Mod #{newId}";
+                    }
+                });
+            });
         }
 
         private void BtnRemoveMod_Click(object sender, RoutedEventArgs e)
@@ -1493,5 +1565,37 @@ namespace ConanServerManager
                 MessageBox.Show($"Error executing kick: {ex.Message}", "Kick Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+    }
+
+    public class ModDisplayItem : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _id = "";
+        private string _title = "";
+        private string _previewUrl = "";
+
+        public string Id
+        {
+            get => _id;
+            set { _id = value; OnPropertyChanged(nameof(Id)); OnPropertyChanged(nameof(Subtitle)); }
+        }
+
+        public string Title
+        {
+            get => string.IsNullOrWhiteSpace(_title) ? $"Mod #{Id}" : _title;
+            set { _title = value; OnPropertyChanged(nameof(Title)); }
+        }
+
+        public string PreviewUrl
+        {
+            get => _previewUrl;
+            set { _previewUrl = value; OnPropertyChanged(nameof(PreviewUrl)); }
+        }
+
+        public string Subtitle => $"ID: {Id}";
+
+        public override string ToString() => $"{Title} ({Id})";
+
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+        protected void OnPropertyChanged(string prop) => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(prop));
     }
 }

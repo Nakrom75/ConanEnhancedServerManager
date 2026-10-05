@@ -495,11 +495,11 @@ namespace ConanServerManager
             }
             else if (path == "/api/mods" && method == "GET")
             {
+                var modMap = await SteamWorkshopHelper.GetMultipleModDetailsAsync(_engine.Config.Mods);
                 var modList = new List<WorkshopModItem>();
                 foreach (var modId in _engine.Config.Mods)
                 {
-                    var details = await SteamWorkshopHelper.GetModDetailsAsync(modId);
-                    if (details != null)
+                    if (modMap.TryGetValue(modId, out var details))
                     {
                         details.IsInstalled = true;
                         modList.Add(details);
