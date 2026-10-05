@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 
@@ -1241,6 +1242,22 @@ namespace ConanServerManager
                     }
                 });
             });
+        }
+
+        private void LstMods_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            try
+            {
+                if (e.OriginalSource is DependencyObject dep)
+                {
+                    var item = ItemsControl.ContainerFromElement(LstMods, dep) as ListBoxItem;
+                    if (item != null)
+                    {
+                        item.IsSelected = true;
+                    }
+                }
+            }
+            catch { }
         }
 
         private ModDisplayItem? GetSelectedOrClickedMod(object sender)
