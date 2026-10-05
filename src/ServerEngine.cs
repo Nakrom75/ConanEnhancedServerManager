@@ -227,7 +227,7 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.1.4";
+            return "1.1.5";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
@@ -947,11 +947,13 @@ namespace ConanServerManager
             }
             if (root.TryGetProperty("maxPlayers", out var mPl) || root.TryGetProperty("MaxPlayers", out mPl))
             {
-                if (mPl.TryGetInt32(out int val)) { Config.MaxPlayers = val; changed = true; }
+                if (mPl.ValueKind == JsonValueKind.Number && mPl.TryGetInt32(out int val)) { Config.MaxPlayers = val; changed = true; }
+                else if (mPl.ValueKind == JsonValueKind.String && int.TryParse(mPl.GetString(), out int sVal)) { Config.MaxPlayers = sVal; changed = true; }
             }
             if (root.TryGetProperty("maxTickRate", out var mTick) || root.TryGetProperty("MaxTickRate", out mTick))
             {
-                if (mTick.TryGetInt32(out int val)) { Config.MaxTickRate = val; changed = true; }
+                if (mTick.ValueKind == JsonValueKind.Number && mTick.TryGetInt32(out int val)) { Config.MaxTickRate = val; changed = true; }
+                else if (mTick.ValueKind == JsonValueKind.String && int.TryParse(mTick.GetString(), out int sVal)) { Config.MaxTickRate = sVal; changed = true; }
             }
             if (root.TryGetProperty("region", out var reg) || root.TryGetProperty("Region", out reg) || root.TryGetProperty("serverRegion", out reg))
             {
@@ -960,13 +962,13 @@ namespace ConanServerManager
             }
             if (root.TryGetProperty("enableBattlEye", out var be) || root.TryGetProperty("EnableBattlEye", out be) || root.TryGetProperty("battlEyeEnabled", out be))
             {
-                Config.EnableBattlEye = be.GetBoolean();
-                changed = true;
+                if (be.ValueKind == JsonValueKind.True || be.ValueKind == JsonValueKind.False) { Config.EnableBattlEye = be.GetBoolean(); changed = true; }
+                else if (be.ValueKind == JsonValueKind.String && bool.TryParse(be.GetString(), out bool bVal)) { Config.EnableBattlEye = bVal; changed = true; }
             }
             if (root.TryGetProperty("enableVAC", out var vac) || root.TryGetProperty("EnableVAC", out vac) || root.TryGetProperty("vacEnabled", out vac))
             {
-                Config.EnableVAC = vac.GetBoolean();
-                changed = true;
+                if (vac.ValueKind == JsonValueKind.True || vac.ValueKind == JsonValueKind.False) { Config.EnableVAC = vac.GetBoolean(); changed = true; }
+                else if (vac.ValueKind == JsonValueKind.String && bool.TryParse(vac.GetString(), out bool vVal)) { Config.EnableVAC = vVal; changed = true; }
             }
 
             if (changed)

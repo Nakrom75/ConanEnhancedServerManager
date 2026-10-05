@@ -5,7 +5,8 @@ let pollTimer = null;
 let installedMods = [];
 let savedServers = [];
 let latestApkUrl = "";
-let APP_VERSION = "1.1.4";
+let lastKnownConfig = null;
+let APP_VERSION = "1.1.5";
 if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
 }
@@ -120,7 +121,11 @@ function switchTab(tab) {
 // Server Polling & Status
 async function pollServer() {
     try {
-        const res = await fetch(`${currentServerUrl}/api/status`, { cache: "no-store", signal: AbortSignal.timeout(3500) });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
+        const res = await fetch(`${currentServerUrl}/api/status?_t=${Date.now()}`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
         if (!res.ok) throw new Error("HTTP " + res.status);
         const data = await res.json();
 
@@ -167,6 +172,28 @@ async function pollServer() {
         // Render connected players
         renderPlayersList(data.players || []);
 
+        // Cache configuration received in status payload
+        lastKnownConfig = {
+            serverName: data.serverName,
+            serverPassword: data.serverPassword,
+            adminPassword: data.adminPassword,
+            rconPassword: data.rconPassword,
+            maxPlayers: data.maxPlayers,
+            maxTickRate: data.maxTickRate,
+            region: data.region || data.serverRegion,
+            battlEyeEnabled: data.battlEyeEnabled ?? data.enableBattlEye,
+            vacEnabled: data.vacEnabled ?? data.enableVAC,
+            ...(data.config || {})
+        };
+
+        // If on settings tab and inputs are still empty or unpopulated, apply immediately
+        if (currentTab === "settings") {
+            const elName = document.getElementById("cfgServerName");
+            if (elName && !elName.value && data.serverName) {
+                applyConfigToForm(lastKnownConfig);
+            }
+        }
+
         if (currentTab === "console") {
             fetchLogs();
         }
@@ -174,6 +201,11 @@ async function pollServer() {
         document.getElementById("headerConnectionLed").style.background = "#ef4444";
         document.getElementById("dashStatusBadge").innerText = "OFFLINE";
         document.getElementById("dashStatusBadge").className = "badge badge-stopped";
+
+        const statusEl = document.getElementById("cfgStatusMsg");
+        if (statusEl && !lastKnownConfig) {
+            statusEl.innerHTML = `<span style="color:#f87171;">⚠️ Server offline at ${escapeHtml(currentServerUrl)}. Is ConanServerManager.exe running?</span>`;
+        }
     }
 }
 
@@ -413,67 +445,119 @@ async function reorderMod(index, delta) {
 }
 
 // SERVER SETTINGS
-async function fetchServerConfig() {
+function applyConfigToForm(cfg) {
+    if (!cfg || typeof cfg !== "object") return;
+
+    const srvName = cfg.serverName ?? cfg.ServerName;
+    const srvPass = cfg.serverPassword ?? cfg.ServerPassword;
+    const admPass = cfg.adminPassword ?? cfg.AdminPassword;
+    const maxPl = cfg.maxPlayers ?? cfg.MaxPlayers;
+    const tick = cfg.maxTickRate ?? cfg.MaxTickRate;
+    const be = cfg.battlEyeEnabled ?? cfg.enableBattlEye ?? cfg.EnableBattlEye;
+    const vac = cfg.vacEnabled ?? cfg.enableVAC ?? cfg.EnableVAC;
+    const rawReg = cfg.region ?? cfg.serverRegion ?? cfg.Region;
+
+    const elName = document.getElementById("cfgServerName");
+    const elPass = document.getElementById("cfgServerPassword");
+    const elAdmin = document.getElementById("cfgAdminPassword");
+    const elMaxPl = document.getElementById("cfgMaxPlayers");
+    const elTick = document.getElementById("cfgMaxTickRate");
+    const elReg = document.getElementById("cfgRegion");
+    const elBe = document.getElementById("cfgBattlEye");
+    const elVac = document.getElementById("cfgVac");
+
+    if (srvName !== undefined && elName) elName.value = srvName;
+    if (srvPass !== undefined && elPass) elPass.value = srvPass;
+    if (admPass !== undefined && elAdmin) elAdmin.value = admPass;
+    if (maxPl !== undefined && elMaxPl) elMaxPl.value = maxPl;
+    if (tick !== undefined && elTick) elTick.value = tick;
+    if (be !== undefined && elBe) elBe.checked = !!be;
+    if (vac !== undefined && elVac) elVac.checked = !!vac;
+
+    if (rawReg !== undefined && elReg) {
+        let matchVal = "";
+        const regStr = String(rawReg).trim();
+        for (let i = 0; i < elReg.options.length; i++) {
+            const opt = elReg.options[i];
+            if (opt.value === regStr || opt.value === regStr.split(" - ")[0].trim()) {
+                matchVal = opt.value;
+                break;
+            }
+            if (opt.text.toLowerCase().includes(regStr.toLowerCase())) {
+                matchVal = opt.value;
+                break;
+            }
+        }
+        if (matchVal !== "") {
+            elReg.value = matchVal;
+        }
+    }
+
+    if (srvName) {
+        const dashName = document.getElementById("dashServerName");
+        if (dashName) dashName.innerText = srvName;
+        const activeModalName = document.getElementById("activeModalServerName");
+        if (activeModalName) activeModalName.innerText = srvName;
+    }
+}
+
+async function fetchServerConfig(showFeedback = false) {
+    const statusEl = document.getElementById("cfgStatusMsg");
+    if (statusEl) {
+        statusEl.innerHTML = `<span style="color:#38bdf8;">⏳ Connecting to server config...</span>`;
+    }
+
+    // 1. If we already have cached status data, populate immediately
+    if (lastKnownConfig) {
+        applyConfigToForm(lastKnownConfig);
+    }
+
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 4000);
-        const res = await fetch(`${currentServerUrl}/api/config`, {
-            cache: "no-store",
+        const res = await fetch(`${currentServerUrl}/api/config?_t=${Date.now()}`, {
             signal: controller.signal
         });
         clearTimeout(timeoutId);
 
         if (!res.ok) throw new Error("HTTP " + res.status);
         const cfg = await res.json();
+        lastKnownConfig = cfg;
+        applyConfigToForm(cfg);
 
-        const srvName = cfg.serverName ?? cfg.ServerName ?? "";
-        const srvPass = cfg.serverPassword ?? cfg.ServerPassword ?? "";
-        const admPass = cfg.adminPassword ?? cfg.AdminPassword ?? "";
-        const maxPl = cfg.maxPlayers ?? cfg.MaxPlayers ?? 40;
-        const tick = cfg.maxTickRate ?? cfg.MaxTickRate ?? 30;
-        const be = cfg.battlEyeEnabled ?? cfg.enableBattlEye ?? cfg.EnableBattlEye ?? false;
-        const vac = cfg.vacEnabled ?? cfg.enableVAC ?? cfg.EnableVAC ?? false;
-
-        const rawReg = cfg.region ?? cfg.serverRegion ?? cfg.Region ?? "0";
-        let regionIndex = "0";
-        if (typeof rawReg === "number") {
-            regionIndex = String(rawReg);
-        } else if (typeof rawReg === "string") {
-            regionIndex = rawReg.split(" - ")[0].trim();
+        if (statusEl) {
+            statusEl.innerHTML = `<span style="color:#10b981;">🟢 Live config loaded from ${escapeHtml(currentServerUrl)}</span>`;
         }
-
-        const elName = document.getElementById("cfgServerName");
-        const elPass = document.getElementById("cfgServerPassword");
-        const elAdmin = document.getElementById("cfgAdminPassword");
-        const elMaxPl = document.getElementById("cfgMaxPlayers");
-        const elTick = document.getElementById("cfgMaxTickRate");
-        const elReg = document.getElementById("cfgRegion");
-        const elBe = document.getElementById("cfgBattlEye");
-        const elVac = document.getElementById("cfgVac");
-
-        if (elName) elName.value = srvName;
-        if (elPass) elPass.value = srvPass;
-        if (elAdmin) elAdmin.value = admPass;
-        if (elMaxPl) elMaxPl.value = maxPl;
-        if (elTick) elTick.value = tick;
-        if (elReg) elReg.value = regionIndex;
-        if (elBe) elBe.checked = !!be;
-        if (elVac) elVac.checked = !!vac;
-
-        // Also update dashboard server display if set
-        if (srvName) {
-            const dashName = document.getElementById("dashServerName");
-            if (dashName) dashName.innerText = srvName;
-            const activeModalName = document.getElementById("activeModalServerName");
-            if (activeModalName) activeModalName.innerText = srvName;
+        if (showFeedback) {
+            showToast("Server configuration updated from host");
         }
     } catch (e) {
         console.warn("fetchServerConfig warning:", e);
+        if (lastKnownConfig && (lastKnownConfig.serverName || lastKnownConfig.maxPlayers)) {
+            applyConfigToForm(lastKnownConfig);
+            if (statusEl) {
+                statusEl.innerHTML = `<span style="color:#fbbf24;">⚡ Config loaded from status cache (${escapeHtml(e.message)})</span>`;
+            }
+        } else {
+            if (statusEl) {
+                statusEl.innerHTML = `<span style="color:#f87171;">⚠️ Could not reach server at ${escapeHtml(currentServerUrl)} (${escapeHtml(e.message)}). Is ConanServerManager.exe running?</span>`;
+            }
+        }
+        if (showFeedback) {
+            showToast("Failed to fetch config: " + e.message);
+        }
     }
 }
 
 async function saveServerConfig() {
     vibrate(40);
+    const btn = document.getElementById("btnSaveConfig");
+    const originalText = btn ? btn.innerText : "💾 Save Configuration to Server";
+    if (btn) {
+        btn.disabled = true;
+        btn.innerText = "⏳ Saving to Server...";
+    }
+
     try {
         showToast("Saving settings to server...");
         const regSelect = document.getElementById("cfgRegion");
@@ -493,17 +577,40 @@ async function saveServerConfig() {
             vacEnabled: document.getElementById("cfgVac").checked
         };
 
-        const res = await fetch(`${currentServerUrl}/api/config`, {
+        const res = await fetch(`${currentServerUrl}/api/config?_t=${Date.now()}`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            },
             body: JSON.stringify(payload)
         });
+
+        if (!res.ok) throw new Error("HTTP " + res.status);
         const data = await res.json();
         showToast(data.message || "Server settings updated!");
-        fetchServerConfig();
+
+        lastKnownConfig = { ...lastKnownConfig, ...payload };
+        applyConfigToForm(lastKnownConfig);
+
+        const statusEl = document.getElementById("cfgStatusMsg");
+        if (statusEl) {
+            statusEl.innerHTML = `<span style="color:#10b981;">✅ Settings saved successfully at ${new Date().toLocaleTimeString()}</span>`;
+        }
+
+        setTimeout(() => fetchServerConfig(), 1000);
         pollServer();
     } catch (e) {
         showToast("Save error: " + e.message);
+        const statusEl = document.getElementById("cfgStatusMsg");
+        if (statusEl) {
+            statusEl.innerHTML = `<span style="color:#f87171;">❌ Save failed: ${escapeHtml(e.message)}</span>`;
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = originalText;
+        }
     }
 }
 
@@ -529,8 +636,7 @@ async function checkAppUpdates() {
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 4500);
-        const res = await fetch("https://api.github.com/repos/Nakrom75/ConanEnhancedServerManager/releases/latest", {
-            cache: "no-store",
+        const res = await fetch("https://api.github.com/repos/Nakrom75/ConanEnhancedServerManager/releases/latest?_t=" + Date.now(), {
             signal: controller.signal
         });
         clearTimeout(timeoutId);
@@ -563,8 +669,7 @@ async function checkAppUpdates() {
     try {
         const srvController = new AbortController();
         const srvTimeoutId = setTimeout(() => srvController.abort(), 3500);
-        const srvRes = await fetch(`${currentServerUrl}/api/status`, {
-            cache: "no-store",
+        const srvRes = await fetch(`${currentServerUrl}/api/status?_t=${Date.now()}`, {
             signal: srvController.signal
         });
         clearTimeout(srvTimeoutId);
@@ -974,19 +1079,39 @@ async function scanLocalNetworkServers() {
         currentServerUrl
     ];
 
-    // Extract base IP subnet from currentServerUrl if available
+    const prefixes = new Set();
+
+    // 1. Get phone's actual Wi-Fi IP from Android native bridge
+    if (window.Android && typeof Android.getLocalIpAddress === "function") {
+        const phoneIp = Android.getLocalIpAddress();
+        if (phoneIp && phoneIp.includes(".")) {
+            const pParts = phoneIp.split(".");
+            if (pParts.length === 4) {
+                prefixes.add(pParts.slice(0, 3).join("."));
+            }
+        }
+    }
+
+    // 2. Extract base IP subnet from currentServerUrl
     try {
         const u = new URL(currentServerUrl);
         const parts = u.hostname.split('.');
         if (parts.length === 4) {
-            const prefix = parts.slice(0, 3).join('.');
-            const probes = [1, 2, 10, 20, 50, 100, 101, 102, 105, 110, 120, 150, 200, 254];
-            probes.forEach(n => {
-                const candidate = `http://${prefix}.${n}:8088`;
-                if (!candidates.includes(candidate)) candidates.push(candidate);
-            });
+            prefixes.add(parts.slice(0, 3).join('.'));
         }
     } catch {}
+
+    // 3. Fallback common private subnets
+    prefixes.add("192.168.0");
+    prefixes.add("192.168.1");
+
+    const probes = [1, 2, 5, 10, 20, 50, 100, 101, 102, 105, 110, 120, 150, 200, 254];
+    prefixes.forEach(prefix => {
+        probes.forEach(n => {
+            const candidate = `http://${prefix}.${n}:8088`;
+            if (!candidates.includes(candidate)) candidates.push(candidate);
+        });
+    });
 
     const foundServers = [];
 
@@ -994,7 +1119,7 @@ async function scanLocalNetworkServers() {
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 1200);
-            const res = await fetch(targetUrl + "/api/status", { signal: controller.signal });
+            const res = await fetch(targetUrl + "/api/status?_t=" + Date.now(), { signal: controller.signal });
             clearTimeout(timeoutId);
 
             if (res.ok) {

@@ -90,6 +90,7 @@ namespace ConanServerManager
                 {
                     client.ReceiveTimeout = 5000;
                     client.SendTimeout = 5000;
+                    try { client.LingerState = new LingerOption(true, 2); } catch { }
                     using var stream = client.GetStream();
 
                     byte[] buffer = new byte[8192];
@@ -111,7 +112,8 @@ namespace ConanServerManager
 
                     string method = reqLineParts[0].ToUpperInvariant();
                     string rawUrl = reqLineParts[1];
-                    string path = rawUrl.Split('?')[0].ToLowerInvariant();
+                    string path = rawUrl.Split('?')[0].TrimEnd('/').ToLowerInvariant();
+                    if (string.IsNullOrEmpty(path)) path = "/";
 
                     int contentLength = 0;
                     foreach (var headerLine in lines.Skip(1))
@@ -144,11 +146,25 @@ namespace ConanServerManager
                         body = Encoding.UTF8.GetString(ms.ToArray());
                     }
 
-                    await ProcessRequestAsync(stream, method, path, body, rawUrl);
+                    try
+                    {
+                        await ProcessRequestAsync(stream, method, path, body, rawUrl);
+                    }
+                    catch (Exception pEx)
+                    {
+                        _engine.Log($"[Web Server Error processing {method} {path}]: {pEx.Message}");
+                        try
+                        {
+                            await SendHttpResponseAsync(stream, 500, "application/json", $"{{\"error\": \"{pEx.Message.Replace("\"", "'")}\"}}");
+                        }
+                        catch { }
+                    }
+
+                    try { client.Client.Shutdown(SocketShutdown.Send); } catch { }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Ignore socket disconnects
+                    _engine.Log($"[Web Server Client Error]: {ex.Message}");
                 }
             }
         }
@@ -157,7 +173,18 @@ namespace ConanServerManager
         {
             if (method == "OPTIONS")
             {
-                await SendHttpResponseAsync(stream, 200, "text/plain", "OK");
+                StringBuilder sbOpt = new StringBuilder();
+                sbOpt.AppendLine("HTTP/1.1 204 No Content");
+                sbOpt.AppendLine("Access-Control-Allow-Origin: *");
+                sbOpt.AppendLine("Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE");
+                sbOpt.AppendLine("Access-Control-Allow-Headers: *");
+                sbOpt.AppendLine("Access-Control-Max-Age: 86400");
+                sbOpt.AppendLine("Content-Length: 0");
+                sbOpt.AppendLine("Connection: close");
+                sbOpt.AppendLine();
+                byte[] optBytes = Encoding.UTF8.GetBytes(sbOpt.ToString());
+                await stream.WriteAsync(optBytes, 0, optBytes.Length);
+                await stream.FlushAsync();
                 return;
             }
 
@@ -169,14 +196,41 @@ namespace ConanServerManager
             {
                 TimeSpan uptime = _engine.ServerStatus == "RUNNING" ? DateTime.Now - _startTime : TimeSpan.Zero;
                 var prog = _engine.CurrentDownloadProgress;
+                var cfg = _engine.Config;
                 var statusObj = new
                 {
                     status = _engine.ServerStatus,
-                    serverName = _engine.Config.ServerName,
-                    gamePort = _engine.Config.GamePort,
-                    rconPort = _engine.Config.RconPort,
-                    maxPlayers = _engine.Config.MaxPlayers,
-                    activeModsCount = _engine.Config.Mods.Count,
+                    serverName = cfg.ServerName,
+                    serverPassword = cfg.ServerPassword,
+                    adminPassword = cfg.AdminPassword,
+                    rconPassword = cfg.RconPassword,
+                    gamePort = cfg.GamePort,
+                    rawUdpPort = cfg.RawUdpPort,
+                    queryPort = cfg.QueryPort,
+                    rconPort = cfg.RconPort,
+                    maxPlayers = cfg.MaxPlayers,
+                    maxTickRate = cfg.MaxTickRate,
+                    region = cfg.Region,
+                    serverRegion = cfg.Region,
+                    enableBattlEye = cfg.EnableBattlEye,
+                    battlEyeEnabled = cfg.EnableBattlEye,
+                    enableVAC = cfg.EnableVAC,
+                    vacEnabled = cfg.EnableVAC,
+                    config = new
+                    {
+                        serverName = cfg.ServerName,
+                        serverPassword = cfg.ServerPassword,
+                        adminPassword = cfg.AdminPassword,
+                        gamePort = cfg.GamePort,
+                        rconPort = cfg.RconPort,
+                        queryPort = cfg.QueryPort,
+                        maxPlayers = cfg.MaxPlayers,
+                        maxTickRate = cfg.MaxTickRate,
+                        region = cfg.Region,
+                        enableBattlEye = cfg.EnableBattlEye,
+                        enableVAC = cfg.EnableVAC
+                    },
+                    activeModsCount = cfg.Mods.Count,
                     uptimeSeconds = (int)uptime.TotalSeconds,
                     uptimeString = $"{uptime.Hours:D2}:{uptime.Minutes:D2}:{uptime.Seconds:D2}",
                     executableExists = File.Exists(_engine.ExecutablePath),
@@ -299,36 +353,36 @@ namespace ConanServerManager
             else if (path == "/api/config" && method == "GET")
             {
                 var cfg = _engine.Config;
-                var res = new
+                var res = new Dictionary<string, object>
                 {
-                    serverName = cfg.ServerName,
-                    serverPassword = cfg.ServerPassword,
-                    adminPassword = cfg.AdminPassword,
-                    rconPassword = cfg.RconPassword,
-                    rconPort = cfg.RconPort,
-                    gamePort = cfg.GamePort,
-                    rawUdpPort = cfg.RawUdpPort,
-                    queryPort = cfg.QueryPort,
-                    maxPlayers = cfg.MaxPlayers,
-                    maxTickRate = cfg.MaxTickRate,
-                    region = cfg.Region,
-                    serverRegion = cfg.Region,
-                    enableBattlEye = cfg.EnableBattlEye,
-                    battlEyeEnabled = cfg.EnableBattlEye,
-                    enableVAC = cfg.EnableVAC,
-                    vacEnabled = cfg.EnableVAC,
+                    ["serverName"] = cfg.ServerName,
+                    ["serverPassword"] = cfg.ServerPassword,
+                    ["adminPassword"] = cfg.AdminPassword,
+                    ["rconPassword"] = cfg.RconPassword,
+                    ["rconPort"] = cfg.RconPort,
+                    ["gamePort"] = cfg.GamePort,
+                    ["rawUdpPort"] = cfg.RawUdpPort,
+                    ["queryPort"] = cfg.QueryPort,
+                    ["maxPlayers"] = cfg.MaxPlayers,
+                    ["maxTickRate"] = cfg.MaxTickRate,
+                    ["region"] = cfg.Region,
+                    ["serverRegion"] = cfg.Region,
+                    ["enableBattlEye"] = cfg.EnableBattlEye,
+                    ["battlEyeEnabled"] = cfg.EnableBattlEye,
+                    ["enableVAC"] = cfg.EnableVAC,
+                    ["vacEnabled"] = cfg.EnableVAC,
                     // PascalCase aliases for backward compatibility
-                    ServerName = cfg.ServerName,
-                    ServerPassword = cfg.ServerPassword,
-                    AdminPassword = cfg.AdminPassword,
-                    RconPassword = cfg.RconPassword,
-                    RconPort = cfg.RconPort,
-                    GamePort = cfg.GamePort,
-                    MaxPlayers = cfg.MaxPlayers,
-                    MaxTickRate = cfg.MaxTickRate,
-                    Region = cfg.Region,
-                    EnableBattlEye = cfg.EnableBattlEye,
-                    EnableVAC = cfg.EnableVAC
+                    ["ServerName"] = cfg.ServerName,
+                    ["ServerPassword"] = cfg.ServerPassword,
+                    ["AdminPassword"] = cfg.AdminPassword,
+                    ["RconPassword"] = cfg.RconPassword,
+                    ["RconPort"] = cfg.RconPort,
+                    ["GamePort"] = cfg.GamePort,
+                    ["MaxPlayers"] = cfg.MaxPlayers,
+                    ["MaxTickRate"] = cfg.MaxTickRate,
+                    ["Region"] = cfg.Region,
+                    ["EnableBattlEye"] = cfg.EnableBattlEye,
+                    ["EnableVAC"] = cfg.EnableVAC
                 };
                 await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(res));
             }
@@ -600,8 +654,9 @@ namespace ConanServerManager
             sb.AppendLine($"Content-Type: {contentType}");
             sb.AppendLine($"Content-Length: {contentBytes.Length}");
             sb.AppendLine("Access-Control-Allow-Origin: *");
-            sb.AppendLine("Access-Control-Allow-Methods: GET, POST, OPTIONS");
-            sb.AppendLine("Access-Control-Allow-Headers: Content-Type");
+            sb.AppendLine("Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE");
+            sb.AppendLine("Access-Control-Allow-Headers: *");
+            sb.AppendLine("Access-Control-Expose-Headers: *");
             sb.AppendLine("Connection: close");
             sb.AppendLine();
 

@@ -7,7 +7,7 @@ def getAppVersionName() {
     if (versionFile.exists()) {
         return versionFile.text.trim()
     }
-    return "1.1.4"
+    return "1.1.5"
 }
 
 def getAppVersionCode(String versionName) {
@@ -18,7 +18,7 @@ def getAppVersionCode(String versionName) {
         int patch = parts.length > 2 ? parts[2].toInteger() : 0
         return major * 10000 + minor * 100 + patch
     } catch (Exception ignored) {
-        return 10104
+        return 10105
     }
 }
 
