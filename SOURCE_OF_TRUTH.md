@@ -709,14 +709,14 @@ Follow this step-by-step roadmap when developing your custom manager on your dev
 - **`-useallavailablecores`**: UE4 command-line argument for multi-core scaling.
 
 
-#### 7. issues found (added by Nakrom) - RESOLVED in v1.0.4
+#### 7. issues found (added by Nakrom) - RESOLVED in v1.0.5
 
 1. **Remote client connection does not save the address and defaults back to localhost on application restart or startup.**
-   - *Status: Resolved in v1.0.4.* `RemoteServerUrl` and `IsRemoteClientMode` are now saved to `manager_config.json`. On application launch or restart, `LoadUiFromConfig()` automatically restores the remote server URL and activates Remote Client mode.
+   - *Status: Resolved in v1.0.5.* `RemoteServerUrl` and `IsRemoteClientMode` are now saved to `manager_config.json`. On application launch or restart, `LoadUiFromConfig()` automatically restores the remote server URL and activates Remote Client mode.
 2. **Information of the various fields do not get populated with the remote servers information.**
-   - *Status: Resolved in v1.0.4.* Implemented full two-way synchronization via `FetchAndPopulateRemoteConfigAsync()`. When connecting to a remote server, the application automatically pulls and populates all fields (Server Name, Passwords, Ports, Max Players, Tick Rate, Region, BattlEye, VAC, Restart Timers, Discord, Mods) from `GET /api/config`, and fetches the contents of `ServerSettings.ini`, `Engine.ini`, and `Game.ini` from `GET /api/ini`. Clicking **Save Configuration** or any of the INI tab save buttons while in Remote Mode cleanly posts the updates back to the remote server over `POST /api/config` and `POST /api/ini`.
+   - *Status: Resolved in v1.0.5.* Implemented full two-way synchronization via `FetchAndPopulateRemoteConfigAsync()`. When connecting to a remote server, the application automatically pulls and populates all fields (Server Name, Passwords, Ports, Max Players, Tick Rate, Region, BattlEye, VAC, Restart Timers, Discord, Mods) from `GET /api/config`, and fetches the contents of `ServerSettings.ini`, `Engine.ini`, and `Game.ini` from `GET /api/ini`. Clicking **Save Configuration** or any of the INI tab save buttons while in Remote Mode cleanly posts the updates back to the remote server over `POST /api/config` and `POST /api/ini`.
 3. **The STEAM: badge does not update or refresh correctly to reflect the actual server's state.**
-   - *Status: Resolved in v1.0.4.* Fixed the race condition in `MainWindow.xaml.cs` where `UpdateStatusUi()` was unconditionally overwriting the remote server's Steam status with the local client machine's offline status. In addition, `ServerEngine.StartSteamQueryTimer()` now automatically targets `MultihomeIp` whenever multihome is enabled, ensuring the A2S_INFO query always hits the active network adapter.
+   - *Status: Resolved in v1.0.5.* Fixed the race condition in `MainWindow.xaml.cs` where `UpdateStatusUi()` was unconditionally overwriting the remote server's Steam status with the local client machine's offline status. In addition, `ServerEngine.StartSteamQueryTimer()` now automatically targets `MultihomeIp` whenever multihome is enabled, ensuring the A2S_INFO query always hits the active network adapter.
 
 ---
 
@@ -733,6 +733,13 @@ Follow this step-by-step roadmap when developing your custom manager on your dev
   - Guarded local Steam status update in `UpdateStatusUi` with `if (!IsRemoteMode)`. In Remote Mode, only the remote server's query response controls the badge.
   - In `ServerEngine.cs`, `StartSteamQueryTimer` queries `MultihomeIp` when `UseMultihome` is enabled, resolving UDP packet drops on multi-NIC setups.
   - Remote uptime (`uptimeSeconds`) is parsed in `PollRemoteServerAsync` to correctly distinguish between active server startup and unresponsive hangs.
+
+---
+
+### 17. Hotfix: XAML Startup Lifecycle & Initialization Guards (v1.0.5)
+- **Startup Crash Fix**: Fixed a `NullReferenceException` during `InitializeComponent()` caused by `RadMode_Checked` executing prematurely when the XAML parser initialized `IsChecked="True"` on `RadLocalMode` before subsequent UI controls were instantiated.
+- **Lifecycle Guards**: Added `_isInitialized` boolean flag to `MainWindow.xaml.cs` ensuring event handlers and UI population routines are ignored until the visual tree is fully constructed.
+- **Verification**: Verified launch and stability with zero errors and zero warnings.
 
 ---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
