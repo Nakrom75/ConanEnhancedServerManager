@@ -1,6 +1,6 @@
 # SOURCE OF TRUTH: Conan Exiles Dedicated Server & Manager Architecture
 
-> **Document Version:** 1.1.11  
+> **Document Version:** 1.1.12  
 > **Target Application:** Conan Exiles Dedicated Server (AppID `443030`)  
 > **Date:** October 2026  
 > **Purpose:** Complete reverse-engineered architectural blueprint, specifications, protocol details, and engineering roadmap to build a custom, modern, highly reliable Conan Exiles Dedicated Server Manager.
@@ -49,7 +49,8 @@
 28. [Steam Master Server Announcement, FLS Registration & RCON Mapping Architecture (v1.1.9)](#28-steam-master-server-announcement-fls-registration--rcon-mapping-architecture-v119)
 29. [Self-Contained Deployment & .NET Runtime Independence (v1.1.10)](#29-self-contained-deployment--net-runtime-independence-v1110)
 30. [Zero-Data-Loss Architecture: Configuration Ingestion, Packaging Isolation & INI Integrity (v1.1.11)](#30-zero-data-loss-architecture-configuration-ingestion-packaging-isolation--ini-integrity-v1111)
-31. [Future Roadmap & Upcoming Engineering Tasks (To-Do)](#31-future-roadmap--upcoming-engineering-tasks-to-do)
+31. [Instant Launch Controls, Hot Backup Multi-DB, Custom Paths & Auto-Restart Scheduler (v1.1.12)](#31-instant-launch-controls-hot-backup-multi-db-custom-paths--auto-restart-scheduler-v1112)
+32. [Future Roadmap & Upcoming Engineering Tasks (To-Do)](#32-future-roadmap--upcoming-engineering-tasks-to-do)
 
 ---
 
@@ -1032,7 +1033,88 @@ Follow this step-by-step roadmap when developing your custom manager on your dev
 
 ---
 
-## 31. Future Roadmap & Upcoming Engineering Tasks (To-Do)
+## 31. Instant Launch Controls, Hot Backup Multi-DB, Custom Paths & Auto-Restart Scheduler (v1.1.12)
+
+### 1. Instant Launch & Restart Controls (Bypassing SteamCMD Downloads)
+- **Problem**:
+  - Previously, all Start and Restart actions called `RunFullUpdateAndStartAsync()`, forcing an unskippable SteamCMD check/download for both the server base files and every registered workshop mod.
+  - On servers with large modlists (e.g. 18+ mods) or during rapid configuration iterations, this caused multi-minute launch delays even when game files were already up-to-date.
+- **Architectural Solution**:
+  - Implemented decoupled execution pathways:
+    - `RunFullUpdateAndStartAsync()`: Validates and downloads server files and Steam Workshop mods via SteamCMD, then launches the server.
+    - `StartServerWithoutUpdateAsync()`: Immediately validates executable presence, synchronizes INIs (`SyncIniSettings()`), generates `modlist.txt`, and spawns `ConanSandboxServer-Win64-Shipping.exe` without invoking SteamCMD.
+    - `RestartServerWithoutUpdateAsync()`: Gracefully halts active server via RCON and process termination, pauses 2.5s, then immediately launches via `StartServerWithoutUpdateAsync()`.
+    - `RestartServerAsync()`: Gracefully halts active server, then invokes update mode according to `Config.AutoUpdateRestartMode`.
+  - Added dedicated UI controls across all platforms:
+    - **Windows Desktop WPF**: Action buttons bar updated to a responsive `WrapPanel` featuring:
+      - `🚀 Update & Start Server` (`BtnStart`)
+      - `▶ Start (No Update)` (`BtnStartNoUpdate`)
+      - `🔄 Update & Restart` (`BtnRestart`)
+      - `⚡ Restart (No Update)` (`BtnRestartNoUpdate`)
+      - `🛑 Stop Server` (`BtnStop`)
+      - `💾 Hot SQLite Backup` (`BtnBackup`)
+    - **Embedded Web Console & Android Companion App**:
+      - Added `/api/control/start-noupdate` and `/api/control/restart-noupdate` endpoints.
+      - Integrated matching control buttons into the web console dashboard and Android mobile UI (`index.html`, `app.js`).
+
+### 2. Hot SQLite Backup Multi-DB Discovery (`game_0.db` & Dynamic Resolution)
+- **Problem**:
+  - The hot backup routine hardcoded the database path to `ConanSandbox/Saved/game.db`.
+  - Live Conan Exiles servers (e.g. `\\192.168.0.5\ConanServerManager\`) utilize `game_0.db` (along with SQLite WAL/SHM files and rolling backups `game_0_backup_*.db`).
+  - Because `game.db` did not exist, the backup aborted with `"Backup skipped: game.db does not exist yet."`
+- **Architectural Solution**:
+  - Implemented `GetActiveGameDbPath()` in `ServerEngine.cs`:
+    1. Checks if `game_0.db` exists (primary Conan Exiles dedicated database).
+    2. Checks if `game.db` exists (legacy/fallback name).
+    3. Scans `Saved/` directory for any active `*.db` file, strictly filtering out rolling backups (`*_backup_*.db`), upgrade markers (`*_upgrade_tags_*.db`), and WAL/SHM temporary journals, selecting the most recently modified database.
+  - Refactored `CreateHotBackupAsync()` to back up dynamically to `{dbPrefix}_{timestamp}.db` (e.g. `game_0_20261007_184500.db`).
+  - Online hot backup uses `Microsoft.Data.Sqlite.SqliteConnection` in `ReadOnly` mode with the SQLite Online Backup API (`srcConn.BackupDatabase(destConn)`), guaranteeing atomic, crash-consistent point-in-time snapshots even while the game server is actively reading and writing transactions in WAL mode.
+
+### 3. Custom Backup Directory Support
+- **Problem**:
+  - Backups defaulted strictly to `<appWorkingDir>\Backups`, with no configuration option to point backups to external drives, secondary volumes, or network-attached storage (NAS/UNC paths).
+- **Architectural Solution**:
+  - Added `CustomBackupDir` to `ManagerConfig` (defaulting to empty string).
+  - Resolved `BackupDir` property dynamically: returns `Config.CustomBackupDir` when configured; falls back to `<AppWorkingDir>\Backups`.
+  - Added Windows WPF UI controls in the Discord & Backup Automation panel:
+    - Text input `TxtCustomBackupDir` supporting local paths (e.g. `D:\ConanBackups`) and UNC network shares (e.g. `\\NAS\backups`).
+    - Dedicated browse button `BtnBrowseBackupDir` invoking `Microsoft.Win32.OpenFolderDialog`.
+  - Mobile architecture clarification: The Android companion client triggers server-side backups via `POST /api/control/backup` without downloading massive 1 GB+ databases over cellular/mobile connections. The server executes the hot backup to its configured `BackupDir` and returns the file name and size confirmation in a mobile toast alert.
+
+### 4. Automated Auto-Restart Scheduler & Countdown Warnings
+- **Problem**:
+  - Settings for daily restarts (`EnableDailyRestart`, `DailyRestartTime`, `MinimumUptime`, `RestartsPerDay`, `FirstWarningTime`, `SecondWarningTime`, `ThirdWarningTime`, `FastRestartZeroPlayers`) existed in configuration and UI, but were never evaluated by an active background timer.
+- **Architectural Solution**:
+  - Implemented `StartAutoRestartTimer()` in `ServerEngine.cs`, polling every 20 seconds.
+  - Features:
+    - **Minimum Uptime Guard**: Checks `DateTime.Now - ServerStartTime >= MinimumUptime` to prevent restart loops.
+    - **Multi-Slot Daily Scheduling**: Calculates scheduled restart slots across yesterday, today, and tomorrow based on `DailyRestartTime` and `RestartsPerDay` (e.g. 1, 2, 4 restarts/day).
+    - **RCON Countdown Broadcasts**: Parses user-defined warning countdowns (e.g. `10:00`, `05:00`, `02:00` or `00:10`) and broadcasts corresponding in-game warning messages via RCON at each milestone.
+    - **Fast Restart on Zero Players**: If `FastRestartZeroPlayers` is enabled and 0 players are currently connected during the countdown window, triggers the restart sequence immediately rather than keeping the server running until the final countdown.
+    - **Update Mode Awareness**: Evaluates `Config.AutoUpdateRestartMode`. If configured as `"Don't Auto-Update on Restart"`, triggers `RestartServerWithoutUpdateAsync()`; otherwise runs standard `RestartServerAsync()`.
+
+### 5. Standalone Android APK Pipeline & Version Synchronization
+- **Problem**:
+  - The Android companion client was stuck displaying `v1.1.8` because past release packaging steps had renamed the pre-existing APK rather than running a fresh compilation through the Android toolchain.
+- **Architectural Solution**:
+  - Located and configured the local Android build toolchain:
+    - OpenJDK 17: `C:\Program Files\Microsoft\jdk-17.0.20.101-hotspot`
+    - Android SDK: `C:\Android\android-sdk` (API 34, Build-Tools 34.0.0)
+    - Gradle 8.5: `C:\Gradle\gradle-8.5\bin\gradle.bat`
+  - Synchronized version numbering across all project components to `v1.1.12`:
+    - `version.txt` -> `1.1.12`
+    - `src/ServerEngine.cs` -> `CurrentAppVersion = "1.1.12"`
+    - `src/MainWindow.xaml` -> `v1.1.12`
+    - `android/app/build.gradle` -> reads `version.txt`, computes `versionCode = 10112`
+    - `android/app/src/main/assets/app.js` -> `APP_VERSION = "1.1.12"`
+    - `android/app/src/main/assets/index.html` -> badge `v1.1.12`
+    - `MainActivity.java` -> fallback `1.1.12` / `10112`
+  - Compiled and verified release APK (`assembleRelease`), generating fresh, pre-signed `ConanServerManager-v1.1.12.apk` (4.63 MB).
+  - Deployed to project root, `ServerManager/`, `ConanServerManager_DeployPackage/`, and the live server `\\192.168.0.5\ConanServerManager\conan.apk`.
+
+---
+
+## 32. Future Roadmap & Upcoming Engineering Tasks (To-Do)
 
 ### To-Do: In-App Web Browser Interface for Mod Searches
 - **Feature Request / Requirement**:

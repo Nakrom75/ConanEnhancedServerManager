@@ -68,9 +68,11 @@
             <div class="card">
                 <div class="card-title">🎮 Remote Server Controls</div>
                 <div class="btn-grid">
-                    <button class="btn-primary" onclick="controlAction('start')">▶ Start</button>
-                    <button class="btn-danger" onclick="controlAction('stop')">■ Stop</button>
-                    <button class="btn-warning" onclick="controlAction('restart')">🔄 Restart</button>
+                    <button class="btn-primary" onclick="controlAction('start')">🚀 Update &amp; Start</button>
+                    <button class="btn-success" onclick="controlAction('start-noupdate')">▶ Start (No Update)</button>
+                    <button class="btn-warning" onclick="controlAction('restart')">🔄 Update &amp; Restart</button>
+                    <button class="btn-secondary" onclick="controlAction('restart-noupdate')">⚡ Restart (No Update)</button>
+                    <button class="btn-danger" onclick="controlAction('stop')">🛑 Stop</button>
                     <button class="btn-secondary" onclick="controlAction('backup')">💾 Hot Backup</button>
                 </div>
             </div>
@@ -217,7 +219,7 @@
             <div class="card">
                 <div class="card-title">✨ Application Updates</div>
                 <div style="font-size:0.85rem;color:#cbd5e1;margin-bottom:12px;">
-                    <div>App Version: <strong class="badge badge-ver" id="appInstalledVersion">v1.1.11</strong></div>
+                    <div>App Version: <strong class="badge badge-ver" id="appInstalledVersion">v1.1.12</strong></div>
                     <div style="margin-top:6px;">Server Manager Version: <strong id="serverInstalledVersion" style="color:#38bdf8;">--</strong></div>
                 </div>
 

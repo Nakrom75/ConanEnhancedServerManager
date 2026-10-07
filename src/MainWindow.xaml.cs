@@ -620,6 +620,7 @@ namespace ConanServerManager
 
             ChkShutdownBackup.IsChecked = cfg.OnShutdownBackup;
             TxtBackupDays.Text = cfg.BackupLimitDays.ToString();
+            TxtCustomBackupDir.Text = cfg.CustomBackupDir;
 
             // Backup Script Mode
             if (!string.IsNullOrWhiteSpace(cfg.BackupScriptMode))
@@ -703,6 +704,7 @@ namespace ConanServerManager
 
             cfg.OnShutdownBackup = ChkShutdownBackup.IsChecked == true;
             if (int.TryParse(TxtBackupDays.Text, out int bd)) cfg.BackupLimitDays = bd;
+            cfg.CustomBackupDir = TxtCustomBackupDir.Text.Trim();
 
             if (CmbBackupScriptMode.SelectedItem is ComboBoxItem scriptItem && scriptItem.Content != null)
                 cfg.BackupScriptMode = scriptItem.Content.ToString() ?? "Don't Run Scripts";
@@ -1097,6 +1099,45 @@ namespace ConanServerManager
             }
         }
 
+        private async void BtnStartNoUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            if (IsRemoteMode)
+            {
+                await SendRemoteActionAsync("start-noupdate");
+            }
+            else
+            {
+                SaveConfigFromUi();
+                await _engine.StartServerWithoutUpdateAsync();
+            }
+        }
+
+        private async void BtnRestart_Click(object sender, RoutedEventArgs e)
+        {
+            if (IsRemoteMode)
+            {
+                await SendRemoteActionAsync("restart");
+            }
+            else
+            {
+                SaveConfigFromUi();
+                await _engine.RestartServerAsync();
+            }
+        }
+
+        private async void BtnRestartNoUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            if (IsRemoteMode)
+            {
+                await SendRemoteActionAsync("restart-noupdate");
+            }
+            else
+            {
+                SaveConfigFromUi();
+                await _engine.RestartServerWithoutUpdateAsync();
+            }
+        }
+
         private async void BtnStop_Click(object sender, RoutedEventArgs e)
         {
             if (IsRemoteMode)
@@ -1119,6 +1160,22 @@ namespace ConanServerManager
             {
                 string res = await _engine.CreateHotBackupAsync();
                 MessageBox.Show(res, "Hot Backup Result", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+
+        private void BtnBrowseBackupDir_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new Microsoft.Win32.OpenFolderDialog
+            {
+                Title = "Select Custom Backup Directory"
+            };
+            if (!string.IsNullOrWhiteSpace(TxtCustomBackupDir.Text) && System.IO.Directory.Exists(TxtCustomBackupDir.Text))
+            {
+                dlg.InitialDirectory = TxtCustomBackupDir.Text;
+            }
+            if (dlg.ShowDialog() == true)
+            {
+                TxtCustomBackupDir.Text = dlg.FolderName;
             }
         }
 

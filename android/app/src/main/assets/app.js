@@ -6,7 +6,7 @@ let installedMods = [];
 let savedServers = [];
 let latestApkUrl = "";
 let lastKnownConfig = null;
-let APP_VERSION = "1.1.11";
+let APP_VERSION = "1.1.12";
 if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
 }
@@ -373,7 +373,7 @@ async function controlAction(action) {
             headers: { "Content-Type": "application/json" }
         });
         const data = await res.json();
-        showToast(data.message || "Command executed.");
+        showToast(data.result || data.message || "Command executed.");
         pollServer();
     } catch (e) {
         showToast("Error: " + e.message);

@@ -117,9 +117,9 @@
                     <StackPanel Orientation="Vertical">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Image Source="app.png" Width="22" Height="22" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.1.11" Style="{StaticResource HeaderTitle}"/>
+                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.1.12" Style="{StaticResource HeaderTitle}"/>
                             <Border CornerRadius="8" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" Margin="10,0,0,0" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="✨ v1.1.11" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="✨ v1.1.12" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="TxtServerPathInfo" Text="Mode: Local Server Host | Embedded Web Console: http://0.0.0.0:8088" Foreground="#94A3B8" FontSize="11"/>
@@ -492,6 +492,16 @@
                             </StackPanel>
                         </Grid>
 
+                        <TextBlock Text="Custom Backup Directory" Style="{StaticResource FormLabel}" Margin="0,3,0,0"/>
+                        <Grid Margin="0,1,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="TxtCustomBackupDir" Style="{StaticResource FormInput}" ToolTip="Leave empty for default (&lt;app&gt;\Backups). Supports local drives or UNC network shares (e.g. \\NAS\backups)."/>
+                            <Button x:Name="BtnBrowseBackupDir" Grid.Column="1" Content="📁" Width="26" Margin="4,0,0,0" Style="{StaticResource BtnSecondary}" Click="BtnBrowseBackupDir_Click" ToolTip="Browse Backup Directory"/>
+                        </Grid>
+
                         <TextBlock Text="Pre/Post Script Execution" Style="{StaticResource FormLabel}" Margin="0,2,0,0"/>
                         <ComboBox x:Name="CmbBackupScriptMode" Style="{StaticResource FormCombo}">
                             <ComboBoxItem Content="Don't Run Scripts" IsSelected="True"/>
@@ -529,14 +539,17 @@
 
             <!-- Action Buttons Bar -->
             <Border Style="{StaticResource GlassPanel}" Margin="2,2,2,3">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
-                    <Button x:Name="BtnStart" Content="▶ Update &amp; Start Server" Style="{StaticResource BtnPrimary}" Click="BtnStart_Click" Margin="0,0,8,0"/>
-                    <Button x:Name="BtnStop" Content="■ Stop Server" Style="{StaticResource BtnDanger}" Click="BtnStop_Click" Margin="0,0,8,0"/>
-                    <Button x:Name="BtnBackup" Content="💾 Hot SQLite Backup" Style="{StaticResource BtnSecondary}" Click="BtnBackup_Click" Margin="0,0,8,0"/>
-                    <Button x:Name="BtnSaveConfig" Content="✔ Save Configuration" Style="{StaticResource BtnSuccess}" Click="BtnSaveConfig_Click" Margin="0,0,8,0"/>
-                    <Button x:Name="BtnTestPorts" Content="🔍 Test Port Accessibility" Style="{StaticResource BtnSecondary}" Click="BtnTestPorts_Click" Margin="0,0,8,0"/>
-                    <Button x:Name="BtnCheckAppUpdate" Content="⚡ Check App Updates" Style="{StaticResource BtnSecondary}" Click="BtnCheckAppUpdate_Click"/>
-                </StackPanel>
+                <WrapPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                    <Button x:Name="BtnStart" Content="🚀 Update &amp; Start Server" Style="{StaticResource BtnPrimary}" Click="BtnStart_Click" Margin="0,0,6,2"/>
+                    <Button x:Name="BtnStartNoUpdate" Content="▶ Start (No Update)" Style="{StaticResource BtnSuccess}" Click="BtnStartNoUpdate_Click" Margin="0,0,6,2"/>
+                    <Button x:Name="BtnRestart" Content="🔄 Update &amp; Restart" Style="{StaticResource BtnSecondary}" Click="BtnRestart_Click" Margin="0,0,6,2"/>
+                    <Button x:Name="BtnRestartNoUpdate" Content="⚡ Restart (No Update)" Style="{StaticResource BtnSecondary}" Click="BtnRestartNoUpdate_Click" Margin="0,0,6,2"/>
+                    <Button x:Name="BtnStop" Content="🛑 Stop Server" Style="{StaticResource BtnDanger}" Click="BtnStop_Click" Margin="0,0,6,2"/>
+                    <Button x:Name="BtnBackup" Content="💾 Hot SQLite Backup" Style="{StaticResource BtnSecondary}" Click="BtnBackup_Click" Margin="0,0,6,2"/>
+                    <Button x:Name="BtnSaveConfig" Content="💾 Save Configuration" Style="{StaticResource BtnSecondary}" Click="BtnSaveConfig_Click" Margin="0,0,6,2"/>
+                    <Button x:Name="BtnTestPorts" Content="🔌 Test Ports" Style="{StaticResource BtnSecondary}" Click="BtnTestPorts_Click" Margin="0,0,6,2"/>
+                    <Button x:Name="BtnCheckAppUpdate" Content="🔄 Check App Updates" Style="{StaticResource BtnSecondary}" Click="BtnCheckAppUpdate_Click" Margin="0,0,0,2"/>
+                </WrapPanel>
             </Border>
         </StackPanel>
 

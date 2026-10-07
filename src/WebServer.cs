@@ -244,6 +244,8 @@ namespace ConanServerManager
                     latestAppVersion = _engine.LatestAppUpdate?.TagName ?? "",
                     updateAvailable = _engine.LatestAppUpdate?.IsNewer ?? false,
                     updateNotes = _engine.LatestAppUpdate?.ReleaseNotes ?? "",
+                    backupDir = _engine.BackupDir,
+                    activeGameDb = Path.GetFileName(_engine.GetActiveGameDbPath()),
                     steamOnline = _engine.SteamStatus.IsOnline,
                     steamServerName = _engine.SteamStatus.ServerName,
                     steamMap = _engine.SteamStatus.Map,
@@ -295,6 +297,12 @@ namespace ConanServerManager
                 _ = Task.Run(async () => await _engine.RunFullUpdateAndStartAsync());
                 await SendHttpResponseAsync(stream, 200, "application/json", "{\"success\": true, \"message\": \"Start sequence initiated.\"}");
             }
+            else if (path == "/api/control/start-noupdate" && method == "POST")
+            {
+                _startTime = DateTime.Now;
+                _ = Task.Run(async () => await _engine.StartServerWithoutUpdateAsync());
+                await SendHttpResponseAsync(stream, 200, "application/json", "{\"success\": true, \"message\": \"Start (no update) sequence initiated.\"}");
+            }
             else if (path == "/api/control/stop" && method == "POST")
             {
                 _ = Task.Run(async () => await _engine.StopServerAsync());
@@ -302,19 +310,18 @@ namespace ConanServerManager
             }
             else if (path == "/api/control/restart" && method == "POST")
             {
-                _ = Task.Run(async () =>
-                {
-                    await _engine.StopServerAsync();
-                    await Task.Delay(3000);
-                    _startTime = DateTime.Now;
-                    await _engine.RunFullUpdateAndStartAsync();
-                });
+                _ = Task.Run(async () => await _engine.RestartServerAsync());
                 await SendHttpResponseAsync(stream, 200, "application/json", "{\"success\": true, \"message\": \"Restart sequence initiated.\"}");
+            }
+            else if (path == "/api/control/restart-noupdate" && method == "POST")
+            {
+                _ = Task.Run(async () => await _engine.RestartServerWithoutUpdateAsync());
+                await SendHttpResponseAsync(stream, 200, "application/json", "{\"success\": true, \"message\": \"Restart (no update) sequence initiated.\"}");
             }
             else if (path == "/api/control/backup" && method == "POST")
             {
                 string res = await _engine.CreateHotBackupAsync();
-                await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = true, result = res }));
+                await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = true, result = res, backupDir = _engine.BackupDir }));
             }
             else if (path == "/api/control/rcon" && method == "POST")
             {
@@ -698,8 +705,10 @@ namespace ConanServerManager
         button { border: none; border-radius: 8px; padding: 12px; font-weight: bold; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; }
         button:active { transform: scale(0.98); }
         .btn-start { background: #6366f1; color: white; }
+        .btn-start-noupdate { background: #10b981; color: white; }
         .btn-stop { background: #ef4444; color: white; }
         .btn-restart { background: #f59e0b; color: white; }
+        .btn-restart-noupdate { background: #475569; color: white; }
         .btn-backup { background: #334155; color: #e2e8f0; }
         .btn-send { background: #10b981; color: white; padding: 10px 18px; }
 
@@ -819,9 +828,11 @@ namespace ConanServerManager
     <div class=""card"">
         <div class=""subtitle"" style=""margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;"">Remote Server Controls</div>
         <div class=""btn-grid"">
-            <button class=""btn-start"" onclick=""triggerAction('start')"">▶ Start Server</button>
-            <button class=""btn-stop"" onclick=""triggerAction('stop')"">■ Stop Server</button>
-            <button class=""btn-restart"" onclick=""triggerAction('restart')"">🔄 Restart</button>
+            <button class=""btn-start"" onclick=""triggerAction('start')"">🚀 Update &amp; Start</button>
+            <button class=""btn-start-noupdate"" onclick=""triggerAction('start-noupdate')"">▶ Start (No Update)</button>
+            <button class=""btn-restart"" onclick=""triggerAction('restart')"">🔄 Update &amp; Restart</button>
+            <button class=""btn-restart-noupdate"" onclick=""triggerAction('restart-noupdate')"">⚡ Restart (No Update)</button>
+            <button class=""btn-stop"" onclick=""triggerAction('stop')"">🛑 Stop Server</button>
             <button class=""btn-backup"" onclick=""triggerAction('backup')"">💾 Hot Backup</button>
         </div>
     </div>

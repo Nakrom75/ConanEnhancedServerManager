@@ -103,6 +103,7 @@ namespace ConanServerManager
         public bool OnShutdownBackup { get; set; } = true;
         public string BackupScriptMode { get; set; } = "Don't Run Scripts";
         public int BackupLimitDays { get; set; } = 7;
+        public string CustomBackupDir { get; set; } = "";
 
         // Application Auto-Update & GitHub Releases
         public string GitHubRepo { get; set; } = "Nakrom75/ConanEnhancedServerManager";
@@ -230,6 +231,11 @@ namespace ConanServerManager
         private System.Threading.Timer? _watchdogTimer;
         private System.Threading.Timer? _appUpdateTimer;
         private System.Threading.Timer? _steamQueryTimer;
+        private System.Threading.Timer? _autoRestartTimer;
+        private bool _warn1Sent = false;
+        private bool _warn2Sent = false;
+        private bool _warn3Sent = false;
+        private DateTime _lastRestartTriggeredSlot = DateTime.MinValue;
 
         public const string WorkshopAppId = "440900";
         public const string ServerAppId = "443030";
@@ -252,7 +258,7 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.1.11";
+            return "1.1.12";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
@@ -280,6 +286,7 @@ namespace ConanServerManager
             StartWatchdogTimer();
             StartAppUpdateTimer();
             StartSteamQueryTimer();
+            StartAutoRestartTimer();
         }
 
         public bool DetectAndAdoptRunningServerProcess()
@@ -436,6 +443,210 @@ namespace ConanServerManager
                     OnSteamStatusChanged?.Invoke(SteamStatus);
                 }
             }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5));
+        }
+
+        private void StartAutoRestartTimer()
+        {
+            // Recurring schedule evaluator: checks every 20 seconds
+            _autoRestartTimer = new System.Threading.Timer(async _ =>
+            {
+                try
+                {
+                    await CheckAutoRestartScheduleAsync();
+                }
+                catch (Exception ex)
+                {
+                    Log($"[Auto-Restart Scheduler Error]: {ex.Message}");
+                }
+            }, null, TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(20));
+        }
+
+        private async Task CheckAutoRestartScheduleAsync()
+        {
+            if (!Config.EnableDailyRestart) return;
+            if (ServerStatus != "RUNNING" || ServerProcess == null || ServerProcess.HasExited) return;
+            if (ServerStartTime == DateTime.MinValue) return;
+
+            // Check Minimum Uptime requirement
+            TimeSpan minUptime = TimeSpan.FromHours(2);
+            if (!string.IsNullOrWhiteSpace(Config.MinimumUptime))
+            {
+                if (TimeSpan.TryParse(Config.MinimumUptime.Trim(), out var parsedUptime))
+                {
+                    minUptime = parsedUptime;
+                }
+            }
+
+            TimeSpan uptime = DateTime.Now - ServerStartTime;
+            if (uptime < minUptime)
+            {
+                return;
+            }
+
+            // Parse daily restart base time
+            TimeSpan baseTime = new TimeSpan(6, 0, 0);
+            if (!string.IsNullOrWhiteSpace(Config.DailyRestartTime))
+            {
+                string dt = Config.DailyRestartTime.Trim();
+                var parts = dt.Split(':');
+                if (parts.Length >= 2 && int.TryParse(parts[0], out int h) && int.TryParse(parts[1], out int m))
+                {
+                    int s = (parts.Length >= 3 && int.TryParse(parts[2], out int sec)) ? sec : 0;
+                    baseTime = new TimeSpan(h, m, s);
+                }
+                else if (TimeSpan.TryParse(dt, out var parsedBase))
+                {
+                    baseTime = parsedBase;
+                }
+            }
+
+            int restartsPerDay = Math.Max(1, Math.Min(24, Config.RestartsPerDay));
+            double intervalHours = 24.0 / restartsPerDay;
+
+            // Find scheduled slots for yesterday, today, and tomorrow
+            DateTime now = DateTime.Now;
+            DateTime? activeSlot = null;
+            TimeSpan smallestRemaining = TimeSpan.MaxValue;
+
+            for (int dayOffset = -1; dayOffset <= 1; dayOffset++)
+            {
+                DateTime dayBase = DateTime.Today.AddDays(dayOffset).Add(baseTime);
+                for (int slotIdx = 0; slotIdx < restartsPerDay; slotIdx++)
+                {
+                    DateTime candidateSlot = dayBase.AddHours(slotIdx * intervalHours);
+                    TimeSpan diff = candidateSlot - now;
+
+                    // Slot is relevant if within 30 minutes in the future, or up to 2 minutes in the past
+                    if (diff.TotalMinutes >= -2.0 && diff.TotalMinutes <= 30.0)
+                    {
+                        if (Math.Abs(diff.TotalSeconds) < Math.Abs(smallestRemaining.TotalSeconds))
+                        {
+                            smallestRemaining = diff;
+                            activeSlot = candidateSlot;
+                        }
+                    }
+                }
+            }
+
+            if (!activeSlot.HasValue)
+            {
+                // No active restart slot approaching; reset warning triggers
+                _warn1Sent = false;
+                _warn2Sent = false;
+                _warn3Sent = false;
+                return;
+            }
+
+            DateTime target = activeSlot.Value;
+
+            // Don't restart twice for the same scheduled slot
+            if (Math.Abs((target - _lastRestartTriggeredSlot).TotalMinutes) < 15.0)
+            {
+                return;
+            }
+
+            double warn1Min = ParseWarningMinutes(Config.FirstWarningTime, 10.0);
+            double warn2Min = ParseWarningMinutes(Config.SecondWarningTime, 5.0);
+            double warn3Min = ParseWarningMinutes(Config.ThirdWarningTime, 2.0);
+
+            TimeSpan timeRemaining = target - now;
+
+            // Warning 1
+            if (timeRemaining.TotalMinutes <= warn1Min && timeRemaining.TotalSeconds > 0 && !_warn1Sent && !string.IsNullOrWhiteSpace(Config.FirstWarningMsg))
+            {
+                _warn1Sent = true;
+                await BroadcastRconAsync(Config.FirstWarningMsg);
+                Log($"[Auto-Restart Scheduler] Warning 1 broadcast sent: '{Config.FirstWarningMsg}' ({Math.Ceiling(timeRemaining.TotalMinutes)}m remaining)");
+            }
+
+            // Warning 2
+            if (timeRemaining.TotalMinutes <= warn2Min && timeRemaining.TotalSeconds > 0 && !_warn2Sent && !string.IsNullOrWhiteSpace(Config.SecondWarningMsg))
+            {
+                _warn2Sent = true;
+                await BroadcastRconAsync(Config.SecondWarningMsg);
+                Log($"[Auto-Restart Scheduler] Warning 2 broadcast sent: '{Config.SecondWarningMsg}' ({Math.Ceiling(timeRemaining.TotalMinutes)}m remaining)");
+            }
+
+            // Warning 3
+            if (timeRemaining.TotalMinutes <= warn3Min && timeRemaining.TotalSeconds > 0 && !_warn3Sent && !string.IsNullOrWhiteSpace(Config.ThirdWarningMsg))
+            {
+                _warn3Sent = true;
+                await BroadcastRconAsync(Config.ThirdWarningMsg);
+                Log($"[Auto-Restart Scheduler] Warning 3 broadcast sent: '{Config.ThirdWarningMsg}' ({Math.Ceiling(timeRemaining.TotalMinutes)}m remaining)");
+            }
+
+            // Fast Restart if 0 Connected Players
+            if (Config.FastRestartZeroPlayers && timeRemaining.TotalMinutes <= Math.Max(warn1Min, 10.0) && timeRemaining.TotalSeconds > 0)
+            {
+                int playerCount = (SteamStatus != null && SteamStatus.IsOnline) ? SteamStatus.Players : ConnectedPlayers.Count;
+                if (playerCount == 0)
+                {
+                    Log($"[Auto-Restart Scheduler] Fast restart triggered: 0 active players connected during restart countdown window. Restarting immediately...");
+                    _lastRestartTriggeredSlot = target;
+                    _warn1Sent = false;
+                    _warn2Sent = false;
+                    _warn3Sent = false;
+                    await ExecuteScheduledRestartAsync();
+                    return;
+                }
+            }
+
+            // Scheduled Time Reached!
+            if (timeRemaining.TotalSeconds <= 2.0)
+            {
+                Log($"[Auto-Restart Scheduler] Scheduled restart target reached ({target:yyyy-MM-dd HH:mm:ss}). Initiating restart sequence...");
+                _lastRestartTriggeredSlot = target;
+                _warn1Sent = false;
+                _warn2Sent = false;
+                _warn3Sent = false;
+                await ExecuteScheduledRestartAsync();
+            }
+        }
+
+        private async Task ExecuteScheduledRestartAsync()
+        {
+            if (Config.AutoUpdateRestartMode == "Don't Auto-Update on Restart")
+            {
+                await RestartServerWithoutUpdateAsync();
+            }
+            else
+            {
+                await RestartServerAsync();
+            }
+        }
+
+        public async Task<bool> BroadcastRconAsync(string message)
+        {
+            if (!Config.RconEnabled || string.IsNullOrWhiteSpace(Config.RconPassword) || Config.RconPort <= 0) return false;
+            try
+            {
+                using var rcon = new ValveRconClient("127.0.0.1", Config.RconPort, Config.RconPassword);
+                await rcon.ConnectAsync(3000);
+                await rcon.ExecuteAsync($"broadcast {message.Trim()}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log($"[RCON Broadcast Warning]: Could not send broadcast '{message}': {ex.Message}");
+                return false;
+            }
+        }
+
+        private double ParseWarningMinutes(string? val, double fallback)
+        {
+            if (string.IsNullOrWhiteSpace(val)) return fallback;
+            string t = val.Trim();
+            var parts = t.Split(':');
+            if (parts.Length == 2 && double.TryParse(parts[0], out double m) && double.TryParse(parts[1], out double s))
+            {
+                return m + (s / 60.0);
+            }
+            if (parts.Length == 3 && double.TryParse(parts[0], out double h) && double.TryParse(parts[1], out double min) && double.TryParse(parts[2], out double sec))
+            {
+                return (h * 60.0) + min + (sec / 60.0);
+            }
+            if (double.TryParse(t, out double d)) return d;
+            return fallback;
         }
 
         public async Task<List<SteamPlayerInfo>> QueryRconPlayersAsync()
@@ -834,8 +1045,53 @@ namespace ConanServerManager
         public string GameIni => Path.Combine(ConfigDir, "Game.ini");
         public string ModsDir => Path.Combine(ServerRootDir, "ConanSandbox", "Mods");
         public string ModlistTxt => Path.Combine(ModsDir, "modlist.txt");
-        public string GameDbPath => Path.Combine(ServerRootDir, "ConanSandbox", "Saved", "game.db");
-        public string BackupDir => Path.Combine(AppWorkingDir, "Backups");
+        public string BackupDir => !string.IsNullOrWhiteSpace(Config.CustomBackupDir) ? Config.CustomBackupDir : Path.Combine(AppWorkingDir, "Backups");
+        public string GameDbPath => GetActiveGameDbPath();
+
+        public string GetActiveGameDbPath()
+        {
+            string savedDir = Path.Combine(ServerRootDir, "ConanSandbox", "Saved");
+            if (!Directory.Exists(savedDir))
+            {
+                return Path.Combine(savedDir, "game_0.db");
+            }
+
+            // 1. Primary Conan Exiles dedicated database
+            string game0 = Path.Combine(savedDir, "game_0.db");
+            if (File.Exists(game0)) return game0;
+
+            // 2. Standard game.db
+            string gameDefault = Path.Combine(savedDir, "game.db");
+            if (File.Exists(gameDefault)) return gameDefault;
+
+            // 3. Search for any valid *.db in Saved directory (excluding rolling backups and upgrade tags)
+            try
+            {
+                var dbFiles = Directory.GetFiles(savedDir, "*.db")
+                    .Where(f =>
+                    {
+                        string name = Path.GetFileName(f);
+                        if (name.Contains("_backup_", StringComparison.OrdinalIgnoreCase)) return false;
+                        if (name.Contains("_upgrade_tags_", StringComparison.OrdinalIgnoreCase)) return false;
+                        if (name.EndsWith("-wal", StringComparison.OrdinalIgnoreCase) || name.EndsWith("-shm", StringComparison.OrdinalIgnoreCase)) return false;
+                        return true;
+                    })
+                    .Select(f => new FileInfo(f))
+                    .OrderByDescending(f => f.LastWriteTimeUtc)
+                    .ToList();
+
+                if (dbFiles.Count > 0)
+                {
+                    return dbFiles[0].FullName;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[Database Discovery] Warning scanning {savedDir}: {ex.Message}");
+            }
+
+            return game0;
+        }
 
         public string ConfigJsonPath
         {
@@ -1362,6 +1618,55 @@ namespace ConanServerManager
             CurrentDownloadProgress = new DownloadProgressInfo { IsActive = false };
             OnDownloadProgress?.Invoke(CurrentDownloadProgress);
 
+            LaunchServerProcess();
+        }
+
+        public async Task StartServerWithoutUpdateAsync()
+        {
+            if (DetectAndAdoptRunningServerProcess() || ServerStatus == "RUNNING" || ServerStatus == "UPDATING")
+            {
+                Log("[Server Control] Dedicated Server is already running or updating. Duplicate launch blocked.");
+                return;
+            }
+
+            SetStatus("STARTING");
+            Log("=== STARTING CONAN DEDICATED SERVER (NO UPDATE) ===");
+
+            SyncIniSettings();
+
+            await Task.Run(() =>
+            {
+                GenerateModlistFile();
+            });
+
+            LaunchServerProcess();
+        }
+
+        public async Task RestartServerWithoutUpdateAsync()
+        {
+            Log("[Server Control] Initiating server restart without update check...");
+            await StopServerAsync();
+            await Task.Delay(2500);
+            await StartServerWithoutUpdateAsync();
+        }
+
+        public async Task RestartServerAsync()
+        {
+            Log("[Server Control] Initiating server restart...");
+            await StopServerAsync();
+            await Task.Delay(2500);
+            if (Config.AutoUpdateRestartMode == "Don't Auto-Update on Restart")
+            {
+                await StartServerWithoutUpdateAsync();
+            }
+            else
+            {
+                await RunFullUpdateAndStartAsync();
+            }
+        }
+
+        private void LaunchServerProcess()
+        {
             if (!File.Exists(ExecutablePath))
             {
                 Log($"ERROR: Executable not found at {ExecutablePath}");
@@ -1772,23 +2077,25 @@ namespace ConanServerManager
 
         public async Task<string> CreateHotBackupAsync()
         {
-            if (!File.Exists(GameDbPath))
+            string activeDb = GetActiveGameDbPath();
+            if (!File.Exists(activeDb))
             {
-                Log("Backup skipped: game.db does not exist yet.");
-                return "game.db not found.";
+                Log($"Backup skipped: Active database does not exist yet at {activeDb}");
+                return "Active game database not found.";
             }
-
-            Directory.CreateDirectory(BackupDir);
-            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            string backupPath = Path.Combine(BackupDir, $"game_{timestamp}.db");
-
-            Log($"Starting SQLite Online Hot Backup: {Path.GetFileName(GameDbPath)} -> {Path.GetFileName(backupPath)}...");
 
             try
             {
+                Directory.CreateDirectory(BackupDir);
+                string dbBaseName = Path.GetFileNameWithoutExtension(activeDb);
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string backupPath = Path.Combine(BackupDir, $"{dbBaseName}_{timestamp}.db");
+
+                Log($"[Hot SQLite Backup] Backing up '{Path.GetFileName(activeDb)}' to '{backupPath}'...");
+
                 await Task.Run(() =>
                 {
-                    string srcConnStr = $"Data Source={GameDbPath};Mode=ReadOnly;";
+                    string srcConnStr = $"Data Source={activeDb};Mode=ReadOnly;";
                     string destConnStr = $"Data Source={backupPath};";
 
                     using var srcConn = new Microsoft.Data.Sqlite.SqliteConnection(srcConnStr);
@@ -1802,12 +2109,12 @@ namespace ConanServerManager
 
                 var fi = new FileInfo(backupPath);
                 double mb = Math.Round((double)fi.Length / (1024 * 1024), 2);
-                Log($"Backup created successfully: {fi.Name} ({mb} MB)");
+                Log($"[Hot SQLite Backup] Backup created successfully: {fi.Name} ({mb} MB) at {BackupDir}");
                 return $"Backup created: {fi.Name} ({mb} MB)";
             }
             catch (Exception ex)
             {
-                Log($"Hot backup error: {ex.Message}");
+                Log($"[Hot SQLite Backup] Error: {ex.Message}");
                 return $"Backup error: {ex.Message}";
             }
         }
