@@ -1133,14 +1133,22 @@ With **v1.2.0**, both the Windows Desktop Host application and the Android Compa
 
 ---
 
-### 2. Windows Desktop Architecture (`Microsoft.Web.WebView2`)
-- **Integration**:
-  - Embedded Microsoft Edge Chromium WebView2 control via `Microsoft.Web.WebView2` (v1.0.4258.31) inside a dedicated tab (`TabModBrowser` labeled `🌐 Workshop Browser`).
-  - Added XAML namespace `xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"`.
+### 2. Windows Desktop Architecture (`Microsoft.Web.WebView2` Full-Page Overlay Experience)
+- **Full-Page Overlay Experience (`PnlFullPageBrowser`)**:
+  - Replaced the cramped bottom console tab (`TabModBrowser`) with a dedicated full-page overlay covering the entire application window (`Grid.Row="0" Grid.RowSpan="5" Panel.ZIndex="1000"`).
+  - Eliminates the need to constantly scroll in a restricted sub-panel, providing an expansive, immersive Steam Workshop browsing experience matching the full-page presentation of the Android companion app.
+  - Includes a prominent `◀ Back to Server Manager` button (`BtnCloseFullPageBrowser`) in the top toolbar to immediately return to the server dashboard.
+  - Native `Escape` key shortcut (`Window_KeyDown`) instantly closes the browser overlay and returns to the main manager dashboard.
+  - Accessible from multiple intuitive locations:
+    - Top Window Header (Row 0, next to Steam visibility badge): `BtnOpenWorkshopBrowser` (`🌐 Browse Workshop`)
+    - Main Action Controls Bar (Row 2): `BtnOpenWorkshopBrowser` (`🌐 Workshop Browser`)
+    - Mods Panel (Row 3): `BtnOpenModBrowser` (`🌐 Browse Workshop`)
+    - Mod List Context Menu: `MnuViewInModBrowser` (`🌐 View in Workshop Browser`)
 - **Startup Resilience & Lazy Initialization**:
-  - To maintain instant WPF application launch times and prevent unnecessary Edge renderer subprocess initialization when the user is simply monitoring server logs, `EnsureCoreWebView2Async()` is invoked lazily upon the user selecting the `TabModBrowser` tab or clicking the "🌐 Browse Workshop" button.
+  - To maintain instant WPF application launch times and prevent unnecessary Edge renderer subprocess initialization when the user is simply monitoring server logs, `EnsureCoreWebView2Async()` is invoked lazily on first invocation of `OpenFullPageBrowser()`.
   - Wrapped inside robust try/catch guards. If the Windows machine lacks the Microsoft Edge WebView2 runtime (legacy or custom Windows Server environments), the application gracefully displays an in-app error panel (`PnlWebView2Error`) offering an immediate official runtime download link (`https://go.microsoft.com/fwlink/p/?LinkId=2124703`) alongside an external browser fallback button.
 - **Navigation Toolbar**:
+  - `BtnCloseFullPageBrowser` (◀ Back to Server Manager): Closes overlay.
   - `BtnBrowserBack` (◀): Navigates backward through browsing history.
   - `BtnBrowserForward` (▶): Navigates forward through browsing history.
   - `BtnBrowserRefresh` (🔄): Reloads the current page.

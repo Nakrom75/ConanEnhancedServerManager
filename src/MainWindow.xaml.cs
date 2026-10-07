@@ -1381,12 +1381,60 @@ namespace ConanServerManager
             }
         }
 
-        private void MainTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void Window_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Source == MainTabControl && MainTabControl.SelectedItem == TabModBrowser && !_isModBrowserInitialized)
+            if (e.Key == Key.Escape && PnlFullPageBrowser.Visibility == Visibility.Visible)
             {
-                _ = InitializeModBrowserAsync();
+                CloseFullPageBrowser();
+                e.Handled = true;
             }
+        }
+
+        public void OpenFullPageBrowser(string? initialUrlOrModId = null)
+        {
+            PnlFullPageBrowser.Visibility = Visibility.Visible;
+            if (!string.IsNullOrWhiteSpace(initialUrlOrModId))
+            {
+                string trimmed = initialUrlOrModId.Trim();
+                if (Regex.IsMatch(trimmed, @"^\d{6,12}$"))
+                {
+                    NavigateBrowserToUrl($"https://steamcommunity.com/sharedfiles/filedetails/?id={trimmed}");
+                }
+                else if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                {
+                    NavigateBrowserToUrl(trimmed);
+                }
+                else
+                {
+                    NavigateBrowserToUrl($"https://steamcommunity.com/workshop/browse/?appid=440900&searchtext={Uri.EscapeDataString(trimmed)}&browsesort=textsearch&section=readytouseitems");
+                }
+            }
+            else
+            {
+                if (!_isModBrowserInitialized)
+                {
+                    _ = InitializeModBrowserAsync();
+                }
+                else if (string.IsNullOrWhiteSpace(TxtBrowserUrl.Text))
+                {
+                    NavigateBrowserToUrl(ConanWorkshopHomeUrl);
+                }
+            }
+        }
+
+        public void CloseFullPageBrowser()
+        {
+            PnlFullPageBrowser.Visibility = Visibility.Collapsed;
+        }
+
+        private void BtnCloseFullPageBrowser_Click(object sender, RoutedEventArgs e)
+        {
+            CloseFullPageBrowser();
+        }
+
+        private void BtnOpenWorkshopBrowser_Click(object sender, RoutedEventArgs e)
+        {
+            OpenFullPageBrowser();
         }
 
         private async Task InitializeModBrowserAsync()
@@ -1583,19 +1631,8 @@ namespace ConanServerManager
 
         private void BtnOpenModBrowser_Click(object sender, RoutedEventArgs e)
         {
-            MainTabControl.SelectedItem = TabModBrowser;
             var mod = GetSelectedOrClickedMod(sender);
-            if (mod != null && !string.IsNullOrWhiteSpace(mod.Id))
-            {
-                NavigateBrowserToUrl($"https://steamcommunity.com/sharedfiles/filedetails/?id={mod.Id.Trim()}");
-            }
-            else
-            {
-                if (!_isModBrowserInitialized)
-                {
-                    _ = InitializeModBrowserAsync();
-                }
-            }
+            OpenFullPageBrowser(mod?.Id);
         }
 
         private void MnuViewInModBrowser_Click(object sender, RoutedEventArgs e)
@@ -1607,8 +1644,7 @@ namespace ConanServerManager
                 return;
             }
 
-            MainTabControl.SelectedItem = TabModBrowser;
-            NavigateBrowserToUrl($"https://steamcommunity.com/sharedfiles/filedetails/?id={mod.Id.Trim()}");
+            OpenFullPageBrowser(mod.Id);
         }
 
         private void BtnAddBrowserModToServer_Click(object sender, RoutedEventArgs e)
