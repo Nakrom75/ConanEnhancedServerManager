@@ -240,6 +240,8 @@ namespace ConanServerManager
                     downloadPercent = prog?.Percent ?? 0,
                     downloadSpeedMBs = prog?.SpeedMBs ?? 0,
                     downloadEtaString = prog?.Eta != null && prog.Eta > TimeSpan.Zero ? prog.Eta.ToString(@"hh\:mm\:ss") : "--:--:--",
+                    isPreDownloading = _engine.IsModPreDownloading,
+                    preDownloadingModId = _engine.CurrentPreDownloadingModId ?? "",
                     appVersion = ServerEngine.CurrentAppVersion,
                     latestAppVersion = _engine.LatestAppUpdate?.TagName ?? "",
                     updateAvailable = _engine.LatestAppUpdate?.IsNewer ?? false,
@@ -509,6 +511,7 @@ namespace ConanServerManager
                     if (modMap.TryGetValue(modId, out var details))
                     {
                         details.IsInstalled = true;
+                        details.IsDownloaded = _engine.IsModDownloaded(modId);
                         modList.Add(details);
                     }
                     else
@@ -517,7 +520,8 @@ namespace ConanServerManager
                         {
                             Id = modId,
                             Title = $"Mod #{modId}",
-                            IsInstalled = true
+                            IsInstalled = true,
+                            IsDownloaded = _engine.IsModDownloaded(modId)
                         });
                     }
                 }
@@ -542,10 +546,33 @@ namespace ConanServerManager
                         _engine.SaveConfig();
                         _engine.SyncIniSettings();
                         _engine.GenerateModlistFile();
-                        _engine.Log($"[Remote Admin] Added Steam Workshop Mod #{modId} to server mod list.");
+                        _engine.Log($"[Remote Admin] Added Steam Workshop Mod #{modId} to server mod list. Triggering background pre-download...");
+                        _ = Task.Run(async () => await _engine.PreDownloadModAsync(modId));
                     }
 
-                    await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = true, mods = _engine.Config.Mods }));
+                    await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = true, preDownloading = true, mods = _engine.Config.Mods }));
+                }
+                catch (Exception ex)
+                {
+                    await SendHttpResponseAsync(stream, 400, "application/json", JsonSerializer.Serialize(new { success = false, error = ex.Message }));
+                }
+            }
+            else if (path == "/api/mods/predownload" && method == "POST")
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    string modId = doc.RootElement.GetProperty("modId").GetString()?.Trim() ?? "";
+
+                    if (string.IsNullOrWhiteSpace(modId))
+                    {
+                        await SendHttpResponseAsync(stream, 400, "application/json", "{\"success\": false, \"error\": \"modId is required.\"}");
+                        return;
+                    }
+
+                    _engine.Log($"[Remote Admin] Triggering background pre-download for Mod #{modId}...");
+                    _ = Task.Run(async () => await _engine.PreDownloadModAsync(modId));
+                    await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = true, modId, message = "Background pre-download initiated." }));
                 }
                 catch (Exception ex)
                 {

@@ -21,6 +21,7 @@ namespace ConanServerManager
         public long FileSize { get; set; } = 0;
         public int Subscriptions { get; set; } = 0;
         public bool IsInstalled { get; set; } = false;
+        public bool IsDownloaded { get; set; } = false;
     }
 
     public static class SteamWorkshopHelper

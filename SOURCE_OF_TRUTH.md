@@ -1,6 +1,6 @@
 # SOURCE OF TRUTH: Conan Exiles Dedicated Server & Manager Architecture
 
-> **Document Version:** 1.2.1  
+> **Document Version:** 1.2.2  
 > **Target Application:** Conan Exiles Dedicated Server (AppID `443030`)  
 > **Date:** October 2026  
 > **Purpose:** Complete reverse-engineered architectural blueprint, specifications, protocol details, and engineering roadmap to build a custom, modern, highly reliable Conan Exiles Dedicated Server Manager.
@@ -53,7 +53,8 @@
 32. [In-App Steam Workshop Chromium & Mobile Browser Engine (v1.2.0)](#32-in-app-steam-workshop-chromium--mobile-browser-engine-v120)
 33. [Strict Version Numbering & Synchronized Dual-Platform Build Policy](#33-strict-version-numbering--synchronized-dual-platform-build-policy)
 34. [Full-Page Workshop Browser Overlay & Dual-Platform Synchronization (v1.2.1)](#34-full-page-workshop-browser-overlay--dual-platform-synchronization-v121)
-35. [Future Roadmap & Upcoming Engineering Tasks (To-Do)](#35-future-roadmap--upcoming-engineering-tasks-to-do)
+35. [Background SteamCMD Mod Pre-Download & Cache Engine (v1.2.2)](#35-background-steamcmd-mod-pre-download--cache-engine-v122)
+36. [Future Roadmap & Upcoming Engineering Tasks (To-Do)](#36-future-roadmap--upcoming-engineering-tasks-to-do)
 
 ---
 
@@ -1278,7 +1279,80 @@ With **v1.2.0**, both the Windows Desktop Host application and the Android Compa
 
 ---
 
-## 35. Future Roadmap & Upcoming Engineering Tasks (To-Do)
+## 35. Background SteamCMD Mod Pre-Download & Cache Engine (v1.2.2)
+
+> **Milestone Version:** 1.2.2 (versionCode `10202`)  
+> **Release Target:** Headless background SteamCMD mod pre-downloading directly to server disk cache, live mod ready/download status indicators, and full dual-platform synchronization.
+
+### 1. Problem Statement & Motivation
+- **Restart Downtime Bottleneck:** In prior versions, adding new mods via the manager or mobile companion app appended the mod ID to `manager_config.json` and `modlist.txt`, but actual `.pak` download only occurred during the server start/update routine (`RunFullUpdateAndStartAsync`). For large mods (such as multi-gigabyte overhaul or asset mods), the server was kept offline while SteamCMD downloaded tens of gigabytes across slow content networks.
+- **Zero Game Conflict Opportunity:** The dedicated server binary (`ConanSandboxServer-Win64-Shipping.exe`) only locks files for `.pak` files actively mounted in memory at boot. New mods residing in unmounted directories (`steamapps\workshop\content\440900\<ModID>\`) have zero file locks, allowing SteamCMD to safely download and validate mod archives in the background while players remain actively connected and playing.
+- **Instant Subsequent Boot:** By pre-downloading mod files into `steamapps\workshop\content\440900\<ModID>\` in the background prior to server restarts, the subsequent startup update check completes in 1–2 seconds via SteamCMD checksum validation rather than waiting 15–30 minutes for fresh downloads.
+
+### 2. Core Architecture (`src/ServerEngine.cs`)
+- **Concurrency Semaphore (`SemaphoreSlim _steamCmdLock`)**:
+  - Guards SteamCMD operations to prevent concurrent process collisions between background mod pre-downloads and the full server update routine.
+  - Initialized with capacity `1, 1`.
+- **Pre-Download Execution Engine (`PreDownloadModAsync`)**:
+  - Headless SteamCMD invocation: `+force_install_dir "<ServerDir>" +login anonymous +workshop_download_item 440900 <modId> validate +quit`.
+  - Up to 3 automatic retries with exponential backoff on download failures or network timeouts.
+  - Automatically regenerates `ConanSandbox\Mods\modlist.txt` upon successful download completion, ensuring newly downloaded `.pak` files are registered.
+  - Exposes `IsModPreDownloading`, `CurrentPreDownloadingModId`, and fires `OnModPreDownloadCompleted` event callbacks.
+- **On-Disk Detection & Validation**:
+  - `IsModDownloaded(string modId)`: Scans `steamapps\workshop\content\440900\<modId>` for any existing `.pak` file > 0 bytes.
+  - `GetModPakPath(string modId)`: Returns the absolute path to the downloaded mod `.pak` file.
+- **Update Prioritization & Clean Preemption**:
+  - If the server administrator clicks **"Update & Start"** (`RunFullUpdateAndStartAsync`) while a mod is pre-downloading in the background, the pre-download task is cleanly aborted and its process terminated.
+  - Full server update acquires `_steamCmdLock` with top priority, and SteamCMD automatically resumes from cached download chunks during the update phase.
+
+### 3. API & Web Service Extensions (`src/WebServer.cs` & `src/SteamWorkshopHelper.cs`)
+- **`GET /api/mods`**:
+  - Enriched with `isDownloaded: bool` for every configured mod.
+- **`POST /api/mods/add`**:
+  - Automatically kicks off background pre-download (`_ = _engine.PreDownloadModAsync(modId)`) immediately upon mod addition.
+- **`POST /api/mods/predownload`**:
+  - Remote endpoint accepting `{"modId": "123456"}` to trigger on-demand background pre-downloading or file verification from companion clients.
+- **`GET /api/status`**:
+  - Exposes `isPreDownloading: bool` and `preDownloadingModId: string` to give mobile clients real-time visibility into server download tasks.
+
+### 4. WPF Desktop UI Enhancements (`src/MainWindow.xaml` / `MainWindow.xaml.cs`)
+- **Live Status Badges**:
+  - Mod list items display `✅ Ready on Disk` (green) or `⏳ Pending Download` (amber) in their subtitle.
+- **Direct Context Menu & Button Controls**:
+  - Added **"📥 Pre-Download / Verify Mod Files Now"** to the Mod list right-click context menu (`MnuPreDownloadMod_Click`).
+  - Added **"📥 Pre-Download Mod"** toolbar button (`BtnPreDownloadMod_Click`) in the Mods tab.
+- **Automatic Browser Pre-Download**:
+  - In the Full-Page Workshop Browser overlay, clicking **"➕ Add This Mod to Server"** automatically launches background pre-downloading for the mod.
+  - Slide-in banner and status text indicate `📥 Mod added & pre-download started in background!`.
+- **Manual Mod ID Prompt**:
+  - Adding a mod via **"➕ Add Mod"** dialog prompts the administrator whether to immediately pre-download the mod files in the background.
+
+### 5. Android Mobile Companion App Updates (`app.js` & `index.html`)
+- **Visual Status Badges**:
+  - `fetchInstalledMods()` renders `✅ On Disk` or `⏳ Pending Download` badges on every mod card.
+- **Mod Details Modal Pre-Download Action**:
+  - Added **"📥 Pre-Download / Validate on Server"** button in `modDetailsModal`.
+  - Tapping invokes `onModalPreDownload()` calling `POST /api/mods/predownload` on the server host.
+- **Automatic Browser Trigger**:
+  - Adding a mod via the mobile Workshop browser informs the user that background pre-downloading has started on the server host.
+
+### 6. Synchronized Dual-Platform Release (`v1.2.2` / `10202`)
+- Synchronized all 7 core version points:
+  1. `version.txt` -> `1.2.2`
+  2. `src/ServerEngine.cs` -> `CurrentAppVersion = "1.2.2"`
+  3. `src/MainWindow.xaml` -> `v1.2.2` (title and header badge)
+  4. `android/app/build.gradle` -> `getAppVersionName() = "1.2.2"`, `getAppVersionCode() = 10202`
+  5. `android/app/src/main/assets/app.js` -> `APP_VERSION = "1.2.2"`
+  6. `android/app/src/main/assets/index.html` -> badge `v1.2.2`
+  7. `android/app/src/main/java/com/conan/servermanager/MainActivity.java` -> fallback `"1.2.2"`, `10202`
+- **Build Status**:
+  - Windows: Self-contained `win-x64` build compiled with 0 Errors / 0 Warnings; packaged `ConanServerManager_v1.2.2.zip` and updated `ConanServerManager_DeployPackage.zip`.
+  - Android: Generated pre-signed `ConanServerManager-v1.2.2.apk` (4.64 MB, versionCode `10202`).
+- **Zero Remote Deployment**: All binaries and packages remain strictly local for manual administrator distribution.
+
+---
+
+## 36. Future Roadmap & Upcoming Engineering Tasks (To-Do)
 
 ### To-Do: Automated Mod Dependency Resolution
 - Investigate querying Steam Workshop item dependencies (e.g. required framework mods like Pippi, ModControlPanel) and prompt users with 1-click batch installation of prerequisite mods when installing an item.

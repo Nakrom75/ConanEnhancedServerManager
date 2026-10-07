@@ -6,7 +6,7 @@ let installedMods = [];
 let savedServers = [];
 let latestApkUrl = "";
 let lastKnownConfig = null;
-let APP_VERSION = "1.2.1";
+let APP_VERSION = "1.2.2";
 if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
 }
@@ -74,6 +74,34 @@ function closeModDetailsModal(e) {
         modal.style.display = "none";
     }
     currentModalMod = null;
+}
+
+function onModalPreDownload() {
+    vibrate(30);
+    if (currentModalMod && currentModalMod.id) {
+        preDownloadMod(currentModalMod.id);
+        closeModDetailsModal();
+    }
+}
+
+async function preDownloadMod(modId) {
+    vibrate(40);
+    try {
+        showToast(`Requesting server pre-download for Mod #${modId}...`);
+        const res = await fetch(`${currentServerUrl}/api/mods/predownload`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ modId })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(`Pre-download started on server for Mod #${modId}!`);
+        } else {
+            showToast("Pre-download request failed: " + (data.error || "Unknown"));
+        }
+    } catch (e) {
+        showToast("Error: " + e.message);
+    }
 }
 
 function onModalOpenWorkshop() {
@@ -486,7 +514,7 @@ async function addModToServer(modId, modTitle) {
         });
         const data = await res.json();
         if (data.success) {
-            showToast(`Added ${modTitle || ('Mod #' + modId)} to server!`);
+            showToast(`Added ${modTitle || ('Mod #' + modId)}! Pre-downloading in background on server...`);
             fetchInstalledMods();
             // Re-render search results to update button state
             searchWorkshop();
@@ -553,7 +581,13 @@ async function fetchInstalledMods() {
                 <img src="${mod.PreviewUrl || 'app.png'}" class="mod-thumb" onerror="this.src='app.png'">
                 <div class="mod-info">
                     <div class="mod-title" style="font-weight:600;color:#f8fafc;">${escapeHtml(mod.Title || ('Mod #' + mod.Id))}</div>
-                    <div class="mod-meta" style="color:#94a3b8;font-size:0.75rem;margin-top:2px;">ID: <strong style="color:#38bdf8;">${mod.Id}</strong></div>
+                    <div class="mod-meta" style="color:#94a3b8;font-size:0.75rem;margin-top:2px;">
+                        ID: <strong style="color:#38bdf8;">${mod.Id}</strong>
+                        ${mod.IsDownloaded ? 
+                            '<span style="margin-left:8px;color:#34d399;font-weight:600;">✅ On Disk</span>' : 
+                            '<span style="margin-left:8px;color:#fbbf24;font-weight:600;">⏳ Pending Download</span>'
+                        }
+                    </div>
                 </div>
                 <div class="mod-actions">
                     ${idx > 0 ? `<button class="btn-icon" onclick="reorderMod(${idx}, -1)" title="Move Up">▲</button>` : ''}
@@ -1364,6 +1398,8 @@ window.openModDetailsModal = showModDetailsModal;
 window.closeModDetailsModal = closeModDetailsModal;
 window.onModalOpenWorkshop = onModalOpenWorkshop;
 window.onModalCopyLink = onModalCopyLink;
+window.onModalPreDownload = onModalPreDownload;
+window.preDownloadMod = preDownloadMod;
 window.openSteamWorkshopBrowser = openSteamWorkshopBrowser;
 window.addModToServer = addModToServer;
 

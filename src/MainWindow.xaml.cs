@@ -46,6 +46,24 @@ namespace ConanServerManager
             _engine.OnSteamStatusChanged += UpdateSteamVisibilityUi;
             _engine.OnPlayersChanged += (players) => Dispatcher.Invoke(() => UpdatePlayersListUi(players));
             _engine.OnConfigSaved += () => Dispatcher.Invoke(LoadUiFromConfig);
+            _engine.OnModPreDownloadCompleted += (modId, success, msg) =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    RefreshModListDownloadedStatus();
+                    if (_currentDetectedModId != null && _currentDetectedModId.Equals(modId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (success)
+                        {
+                            TxtBrowserModStatus.Text = "✅ Pre-download complete! Ready on disk for server restart.";
+                        }
+                        else
+                        {
+                            TxtBrowserModStatus.Text = $"⚠️ Pre-download incomplete ({msg}). Will download on server update.";
+                        }
+                    }
+                });
+            };
 
             _remoteTimer.Interval = TimeSpan.FromSeconds(3);
             _remoteTimer.Tick += async (s, e) =>
@@ -861,6 +879,14 @@ namespace ConanServerManager
             PopulateModListUi(_engine.Config.Mods);
         }
 
+        private void RefreshModListDownloadedStatus()
+        {
+            foreach (var item in LstMods.Items.OfType<ModDisplayItem>())
+            {
+                item.IsDownloaded = _engine.IsModDownloaded(item.Id);
+            }
+        }
+
         private void PopulateModListUi(IEnumerable<string>? modIds)
         {
             LstMods.Items.Clear();
@@ -878,7 +904,8 @@ namespace ConanServerManager
                     Title = cached != null && !string.IsNullOrWhiteSpace(cached.Title) && !cached.Title.StartsWith("Mod #")
                         ? cached.Title
                         : $"Loading Mod #{id}...",
-                    PreviewUrl = cached?.PreviewUrl ?? ""
+                    PreviewUrl = cached?.PreviewUrl ?? "",
+                    IsDownloaded = _engine.IsModDownloaded(id)
                 };
                 items.Add(item);
                 LstMods.Items.Add(item);
@@ -1283,10 +1310,20 @@ namespace ConanServerManager
             {
                 Id = newId,
                 Title = cached != null && !string.IsNullOrWhiteSpace(cached.Title) ? cached.Title : $"Loading Mod #{newId}...",
-                PreviewUrl = cached?.PreviewUrl ?? ""
+                PreviewUrl = cached?.PreviewUrl ?? "",
+                IsDownloaded = _engine.IsModDownloaded(newId)
             };
             LstMods.Items.Add(newItem);
             TxtNewModId.Clear();
+
+            if (!newItem.IsDownloaded)
+            {
+                var askPreDownload = MessageBox.Show($"Mod #{newId} added to server list.\nWould you like to pre-download it in the background now so it's ready on disk for server restart?", "Pre-Download Mod", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (askPreDownload == MessageBoxResult.Yes)
+                {
+                    _ = Task.Run(async () => await _engine.PreDownloadModAsync(newId));
+                }
+            }
 
             _ = Task.Run(async () =>
             {
@@ -1338,6 +1375,56 @@ namespace ConanServerManager
                 return new ModDisplayItem { Id = idStr, Title = $"Mod #{idStr}" };
             }
             return null;
+        }
+
+        private void MnuPreDownloadMod_Click(object sender, RoutedEventArgs e)
+        {
+            var mod = GetSelectedOrClickedMod(sender);
+            if (mod == null || string.IsNullOrWhiteSpace(mod.Id))
+            {
+                MessageBox.Show("Please select a mod from the list first.", "Pre-Download Mod", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            TriggerModPreDownload(mod.Id);
+        }
+
+        private void BtnPreDownloadMod_Click(object sender, RoutedEventArgs e)
+        {
+            var mod = GetSelectedOrClickedMod(sender);
+            if (mod == null || string.IsNullOrWhiteSpace(mod.Id))
+            {
+                MessageBox.Show("Please select a mod from the list first.", "Pre-Download Mod", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            TriggerModPreDownload(mod.Id);
+        }
+
+        private void TriggerModPreDownload(string modId)
+        {
+            string trimmed = modId.Trim();
+            if (_engine.IsModPreDownloading)
+            {
+                MessageBox.Show($"SteamCMD is currently busy pre-downloading Mod #{_engine.CurrentPreDownloadingModId}.\nPlease wait for it to finish.", "Pre-Download Active", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (_engine.ServerStatus == "UPDATING")
+            {
+                MessageBox.Show("Server is currently performing a full update. Please wait for the update to complete.", "Server Updating", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            bool alreadyDownloaded = _engine.IsModDownloaded(trimmed);
+            if (alreadyDownloaded)
+            {
+                var prompt = MessageBox.Show($"Workshop Mod #{trimmed} is already downloaded and present on disk.\nDo you want to run SteamCMD verification in the background to ensure it is up to date?", "Mod Already On Disk", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (prompt != MessageBoxResult.Yes) return;
+            }
+
+            _engine.Log($"[Mods] Initiating background pre-download / validation for Mod #{trimmed}...");
+            _ = Task.Run(async () => await _engine.PreDownloadModAsync(trimmed));
         }
 
         private void MnuOpenWorkshopPage_Click(object sender, RoutedEventArgs e)
@@ -1504,7 +1591,18 @@ namespace ConanServerManager
 
                 if (isInstalled)
                 {
-                    TxtBrowserModStatus.Text = "✅ Already installed on server";
+                    if (_engine.IsModPreDownloading && _engine.CurrentPreDownloadingModId == modId)
+                    {
+                        TxtBrowserModStatus.Text = "📥 Pre-downloading in background...";
+                    }
+                    else if (_engine.IsModDownloaded(modId))
+                    {
+                        TxtBrowserModStatus.Text = "✅ Installed & Ready on Disk";
+                    }
+                    else
+                    {
+                        TxtBrowserModStatus.Text = "⚠️ Installed on server (Files not pre-downloaded yet)";
+                    }
                     BtnAddBrowserModToServer.Visibility = Visibility.Collapsed;
                     BtnRemoveBrowserModFromServer.Visibility = Visibility.Visible;
                 }
@@ -1672,7 +1770,8 @@ namespace ConanServerManager
                 {
                     Id = modId,
                     Title = cached != null && !string.IsNullOrWhiteSpace(cached.Title) ? cached.Title : $"Loading Mod #{modId}...",
-                    PreviewUrl = cached?.PreviewUrl ?? ""
+                    PreviewUrl = cached?.PreviewUrl ?? "",
+                    IsDownloaded = _engine.IsModDownloaded(modId)
                 };
                 LstMods.Items.Add(newItem);
 
@@ -1694,7 +1793,16 @@ namespace ConanServerManager
                 });
             }
 
-            TxtBrowserModStatus.Text = "✅ Installed on server!";
+            bool isDownloaded = _engine.IsModDownloaded(modId);
+            if (isDownloaded)
+            {
+                TxtBrowserModStatus.Text = "✅ Installed & Ready on Disk";
+            }
+            else
+            {
+                TxtBrowserModStatus.Text = "📥 Added! Pre-downloading in background...";
+                _ = Task.Run(async () => await _engine.PreDownloadModAsync(modId));
+            }
             BtnAddBrowserModToServer.Visibility = Visibility.Collapsed;
             BtnRemoveBrowserModFromServer.Visibility = Visibility.Visible;
         }
@@ -2120,6 +2228,7 @@ namespace ConanServerManager
         private string _id = "";
         private string _title = "";
         private string _previewUrl = "";
+        private bool _isDownloaded = false;
 
         public string Id
         {
@@ -2139,7 +2248,13 @@ namespace ConanServerManager
             set { _previewUrl = value; OnPropertyChanged(nameof(PreviewUrl)); }
         }
 
-        public string Subtitle => $"ID: {Id}";
+        public bool IsDownloaded
+        {
+            get => _isDownloaded;
+            set { _isDownloaded = value; OnPropertyChanged(nameof(IsDownloaded)); OnPropertyChanged(nameof(Subtitle)); }
+        }
+
+        public string Subtitle => $"ID: {Id} • {(IsDownloaded ? "✅ Ready on Disk" : "⏳ Pending Download")}";
 
         public override string ToString() => $"{Title} ({Id})";
 

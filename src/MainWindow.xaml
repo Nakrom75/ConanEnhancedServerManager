@@ -119,9 +119,9 @@
                     <StackPanel Orientation="Vertical">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Image Source="app.png" Width="22" Height="22" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.2.1" Style="{StaticResource HeaderTitle}"/>
+                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.2.2" Style="{StaticResource HeaderTitle}"/>
                             <Border CornerRadius="8" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" Margin="10,0,0,0" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="✨ v1.2.1" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="✨ v1.2.2" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="TxtServerPathInfo" Text="Mode: Local Server Host | Embedded Web Console: http://0.0.0.0:8088" Foreground="#94A3B8" FontSize="11"/>
@@ -720,6 +720,7 @@
                                      PreviewMouseRightButtonDown="LstMods_PreviewMouseRightButtonDown">
                                 <ListBox.ContextMenu>
                                     <ContextMenu>
+                                        <MenuItem Header="📥 Pre-Download / Verify Mod Files Now" Click="MnuPreDownloadMod_Click"/>
                                         <MenuItem Header="🌐 View in Workshop Browser" Click="MnuViewInModBrowser_Click"/>
                                         <MenuItem Header="🌐 Open in External Browser" Click="MnuOpenWorkshopPage_Click"/>
                                         <MenuItem Header="📋 Copy Workshop URL" Click="MnuCopyWorkshopUrl_Click"/>
@@ -751,7 +752,8 @@
 
                             <StackPanel Grid.Column="2">
                                 <Button Content="Move Up ▲" Style="{StaticResource BtnSecondary}" Click="BtnModMoveUp_Click" Margin="0,0,0,6"/>
-                                <Button Content="Move Down ▼" Style="{StaticResource BtnSecondary}" Click="BtnModMoveDown_Click" Margin="0,0,0,12"/>
+                                <Button Content="Move Down ▼" Style="{StaticResource BtnSecondary}" Click="BtnModMoveDown_Click" Margin="0,0,0,6"/>
+                                <Button x:Name="BtnPreDownloadMod" Content="📥 Pre-Download Mod" Style="{StaticResource BtnSecondary}" Click="BtnPreDownloadMod_Click" Margin="0,0,0,10" ToolTip="Pre-download or verify the selected mod's files via SteamCMD in the background"/>
                                 <Button x:Name="BtnOpenModBrowser" Content="🌐 Browse Workshop" Style="{StaticResource BtnSuccess}" Click="BtnOpenModBrowser_Click" Margin="0,0,0,12" ToolTip="Open the integrated Steam Workshop browser to search and add mods"/>
                                 <TextBlock Text="Add Mod ID" Style="{StaticResource FormLabel}"/>
                                 <TextBox x:Name="TxtNewModId" Style="{StaticResource FormInput}" Margin="0,0,0,6"/>

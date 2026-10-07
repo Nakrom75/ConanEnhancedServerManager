@@ -258,7 +258,7 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.2.1";
+            return "1.2.2";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
@@ -271,6 +271,11 @@ namespace ConanServerManager
         public AppUpdateInfo? LatestAppUpdate { get; private set; }
         public event Action<AppUpdateInfo>? OnAppUpdateDiscovered;
         public event Action? OnConfigSaved;
+
+        public bool IsModPreDownloading { get; private set; } = false;
+        public string? CurrentPreDownloadingModId { get; private set; } = null;
+        public event Action<string, bool, string>? OnModPreDownloadCompleted;
+        private readonly SemaphoreSlim _steamCmdLock = new SemaphoreSlim(1, 1);
 
         public ServerEngine()
         {
@@ -1048,6 +1053,32 @@ namespace ConanServerManager
         public string BackupDir => !string.IsNullOrWhiteSpace(Config.CustomBackupDir) ? Config.CustomBackupDir : Path.Combine(AppWorkingDir, "Backups");
         public string GameDbPath => GetActiveGameDbPath();
 
+        public bool IsModDownloaded(string modId)
+        {
+            if (string.IsNullOrWhiteSpace(modId)) return false;
+            string workshopContentDir = Path.Combine(ServerRootDir, "steamapps", "workshop", "content", WorkshopAppId);
+            string modFolder = Path.Combine(workshopContentDir, modId.Trim());
+            if (Directory.Exists(modFolder))
+            {
+                var paks = Directory.GetFiles(modFolder, "*.pak");
+                return paks.Length > 0;
+            }
+            return false;
+        }
+
+        public string? GetModPakPath(string modId)
+        {
+            if (string.IsNullOrWhiteSpace(modId)) return null;
+            string workshopContentDir = Path.Combine(ServerRootDir, "steamapps", "workshop", "content", WorkshopAppId);
+            string modFolder = Path.Combine(workshopContentDir, modId.Trim());
+            if (Directory.Exists(modFolder))
+            {
+                var paks = Directory.GetFiles(modFolder, "*.pak");
+                if (paks.Length > 0) return paks[0];
+            }
+            return null;
+        }
+
         public string GetActiveGameDbPath()
         {
             string savedDir = Path.Combine(ServerRootDir, "ConanSandbox", "Saved");
@@ -1595,25 +1626,39 @@ namespace ConanServerManager
                 return;
             }
 
+            if (IsModPreDownloading)
+            {
+                Log("[Server Control] Halting active background mod pre-download to prioritize full server update...");
+                KillAllSteamCmdProcesses();
+            }
+
             SetStatus("UPDATING");
             Log("=== STARTING CONAN DEDICATED SERVER UPDATE & DEPLOYMENT ===");
 
             SyncIniSettings();
 
-            await Task.Run(() =>
+            await _steamCmdLock.WaitAsync();
+            try
             {
-                if (Config.AutoUpdateRestartMode != "Don't Auto-Update on Restart")
+                await Task.Run(() =>
                 {
-                    DownloadServerBase();
-
-                    for (int i = 0; i < Config.Mods.Count; i++)
+                    if (Config.AutoUpdateRestartMode != "Don't Auto-Update on Restart")
                     {
-                        DownloadModResilient(Config.Mods[i], i);
-                    }
-                }
+                        DownloadServerBase();
 
-                GenerateModlistFile();
-            });
+                        for (int i = 0; i < Config.Mods.Count; i++)
+                        {
+                            DownloadModResilient(Config.Mods[i], i);
+                        }
+                    }
+
+                    GenerateModlistFile();
+                });
+            }
+            finally
+            {
+                _steamCmdLock.Release();
+            }
 
             CurrentDownloadProgress = new DownloadProgressInfo { IsActive = false };
             OnDownloadProgress?.Invoke(CurrentDownloadProgress);
@@ -1781,6 +1826,85 @@ namespace ConanServerManager
             }
 
             Log($"WARNING: Mod {modId} failed to complete after {maxRetries} attempts.");
+        }
+
+        public async Task<bool> PreDownloadModAsync(string modId, int maxRetries = 3)
+        {
+            if (string.IsNullOrWhiteSpace(modId)) return false;
+            string trimmedId = modId.Trim();
+
+            if (ServerStatus == "UPDATING")
+            {
+                Log($"[Pre-Download] Server is currently running a full update. Skipping background pre-download for Mod #{trimmedId}.");
+                return false;
+            }
+
+            await _steamCmdLock.WaitAsync();
+            try
+            {
+                if (ServerStatus == "UPDATING")
+                {
+                    Log($"[Pre-Download] Server update initiated. Halting pre-download for Mod #{trimmedId}.");
+                    return false;
+                }
+
+                IsModPreDownloading = true;
+                CurrentPreDownloadingModId = trimmedId;
+                _currentDownloadName = $"Workshop Mod #{trimmedId}";
+                _currentDownloadIndex = 1;
+                _totalDownloadCount = 1;
+                _lastProgressTime = DateTime.MinValue;
+                _lastProgressBytes = 0;
+
+                Log($"[Pre-Download] Starting background download for Steam Workshop Mod #{trimmedId}...");
+
+                string args = $"+force_install_dir \"{ServerRootDir}\" +login anonymous +workshop_download_item {WorkshopAppId} {trimmedId} validate +logoff +quit";
+
+                bool success = false;
+                for (int attempt = 1; attempt <= maxRetries; attempt++)
+                {
+                    if (ServerStatus == "UPDATING") break;
+                    Log($"[Pre-Download] Mod #{trimmedId} - Attempt {attempt}/{maxRetries}...");
+                    success = await Task.Run(() => RunSteamCmd(args));
+                    if (success)
+                    {
+                        Log($"[Pre-Download] Workshop Mod #{trimmedId} download/verification completed successfully into workshop cache.");
+                        break;
+                    }
+                    if (attempt < maxRetries)
+                    {
+                        Log($"[Pre-Download] Mod #{trimmedId} attempt {attempt} incomplete. Retrying in 5s (SteamCMD resumes partial chunks)...");
+                        await Task.Delay(5000);
+                    }
+                }
+
+                if (success)
+                {
+                    GenerateModlistFile();
+                    OnModPreDownloadCompleted?.Invoke(trimmedId, true, "Success");
+                    return true;
+                }
+                else
+                {
+                    Log($"[Pre-Download] Mod #{trimmedId} background download did not complete successfully. Will validate on next server update.");
+                    OnModPreDownloadCompleted?.Invoke(trimmedId, false, "Download incomplete or failed");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[Pre-Download] Error downloading Mod #{trimmedId}: {ex.Message}");
+                OnModPreDownloadCompleted?.Invoke(trimmedId, false, ex.Message);
+                return false;
+            }
+            finally
+            {
+                IsModPreDownloading = false;
+                CurrentPreDownloadingModId = null;
+                CurrentDownloadProgress = new DownloadProgressInfo { IsActive = false };
+                OnDownloadProgress?.Invoke(CurrentDownloadProgress);
+                _steamCmdLock.Release();
+            }
         }
 
         private bool RunSteamCmd(string arguments)
