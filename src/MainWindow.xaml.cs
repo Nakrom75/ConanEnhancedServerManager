@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -23,6 +24,10 @@ namespace ConanServerManager
         private bool _hasSyncedRemoteConfig = false;
         private bool _isPopulatingRemoteDropdown = false;
         private int _remoteUptimeSeconds = 0;
+
+        private bool _isModBrowserInitialized = false;
+        private string? _currentDetectedModId = null;
+        private const string ConanWorkshopHomeUrl = "https://steamcommunity.com/app/440900/workshop/";
 
         public bool IsRemoteMode => RadRemoteMode != null && RadRemoteMode.IsChecked == true;
 
@@ -1374,6 +1379,341 @@ namespace ConanServerManager
             {
                 MessageBox.Show($"Could not open browser:\n{ex.Message}", "Browser Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private void MainTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (e.Source == MainTabControl && MainTabControl.SelectedItem == TabModBrowser && !_isModBrowserInitialized)
+            {
+                _ = InitializeModBrowserAsync();
+            }
+        }
+
+        private async Task InitializeModBrowserAsync()
+        {
+            if (_isModBrowserInitialized) return;
+            try
+            {
+                await WvModBrowser.EnsureCoreWebView2Async();
+                _isModBrowserInitialized = true;
+                Dispatcher.Invoke(() =>
+                {
+                    PnlWebView2Error.Visibility = Visibility.Collapsed;
+                    WvModBrowser.Visibility = Visibility.Visible;
+
+                    WvModBrowser.SourceChanged += (s, e) => OnModBrowserSourceChanged();
+                    WvModBrowser.NavigationCompleted += (s, e) => OnModBrowserNavigationCompleted();
+
+                    WvModBrowser.CoreWebView2.Navigate(ConanWorkshopHomeUrl);
+                    TxtBrowserUrl.Text = ConanWorkshopHomeUrl;
+                });
+                _engine.Log("[ModBrowser] In-app Chromium WebView2 initialized successfully.");
+            }
+            catch (Exception ex)
+            {
+                _engine.Log($"[ModBrowser] WebView2 initialization failed: {ex.Message}");
+                Dispatcher.Invoke(() =>
+                {
+                    PnlWebView2Error.Visibility = Visibility.Visible;
+                    WvModBrowser.Visibility = Visibility.Collapsed;
+                });
+            }
+        }
+
+        private void OnModBrowserSourceChanged()
+        {
+            string url = WvModBrowser.Source?.ToString() ?? "";
+            TxtBrowserUrl.Text = url;
+            CheckModUrlAndSyncBanner(url);
+        }
+
+        private void OnModBrowserNavigationCompleted()
+        {
+            string url = WvModBrowser.Source?.ToString() ?? "";
+            TxtBrowserUrl.Text = url;
+            CheckModUrlAndSyncBanner(url);
+        }
+
+        private void CheckModUrlAndSyncBanner(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                PnlBrowserModBanner.Visibility = Visibility.Collapsed;
+                _currentDetectedModId = null;
+                return;
+            }
+
+            var match = Regex.Match(url, @"steamcommunity\.com/sharedfiles/filedetails/\?id=(?<id>\d+)", RegexOptions.IgnoreCase);
+            if (match.Success)
+            {
+                string modId = match.Groups["id"].Value;
+                _currentDetectedModId = modId;
+                TxtBrowserModId.Text = $"Mod ID: {modId}";
+
+                bool isInstalled = _engine.Config.Mods.Any(m => m.Equals(modId, StringComparison.OrdinalIgnoreCase))
+                    || LstMods.Items.OfType<ModDisplayItem>().Any(m => m.Id.Equals(modId, StringComparison.OrdinalIgnoreCase))
+                    || LstMods.Items.OfType<string>().Any(s => s.Equals(modId, StringComparison.OrdinalIgnoreCase));
+
+                if (isInstalled)
+                {
+                    TxtBrowserModStatus.Text = "✅ Already installed on server";
+                    BtnAddBrowserModToServer.Visibility = Visibility.Collapsed;
+                    BtnRemoveBrowserModFromServer.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    TxtBrowserModStatus.Text = "Not installed on server";
+                    BtnAddBrowserModToServer.Visibility = Visibility.Visible;
+                    BtnRemoveBrowserModFromServer.Visibility = Visibility.Collapsed;
+                }
+                PnlBrowserModBanner.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                _currentDetectedModId = null;
+                PnlBrowserModBanner.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void NavigateBrowserToUrl(string url)
+        {
+            TxtBrowserUrl.Text = url;
+            if (!_isModBrowserInitialized)
+            {
+                _ = Task.Run(async () =>
+                {
+                    await InitializeModBrowserAsync();
+                    if (_isModBrowserInitialized)
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            WvModBrowser.CoreWebView2?.Navigate(url);
+                        });
+                    }
+                });
+                return;
+            }
+
+            WvModBrowser.CoreWebView2?.Navigate(url);
+        }
+
+        private void NavigateToUserUrl()
+        {
+            string input = TxtBrowserUrl.Text.Trim();
+            if (string.IsNullOrWhiteSpace(input)) return;
+
+            if (Regex.IsMatch(input, @"^\d{6,12}$"))
+            {
+                NavigateBrowserToUrl($"https://steamcommunity.com/sharedfiles/filedetails/?id={input}");
+            }
+            else if (input.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || input.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                NavigateBrowserToUrl(input);
+            }
+            else
+            {
+                NavigateBrowserToUrl($"https://steamcommunity.com/workshop/browse/?appid=440900&searchtext={Uri.EscapeDataString(input)}&browsesort=textsearch&section=readytouseitems");
+            }
+        }
+
+        private void PerformBrowserSearch()
+        {
+            string query = TxtBrowserSearchQuery.Text.Trim();
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                NavigateBrowserToUrl(ConanWorkshopHomeUrl);
+                return;
+            }
+
+            if (Regex.IsMatch(query, @"^\d{6,12}$"))
+            {
+                NavigateBrowserToUrl($"https://steamcommunity.com/sharedfiles/filedetails/?id={query}");
+            }
+            else
+            {
+                NavigateBrowserToUrl($"https://steamcommunity.com/workshop/browse/?appid=440900&searchtext={Uri.EscapeDataString(query)}&browsesort=textsearch&section=readytouseitems");
+            }
+        }
+
+        private void BtnBrowserBack_Click(object sender, RoutedEventArgs e)
+        {
+            if (WvModBrowser.CanGoBack) WvModBrowser.GoBack();
+        }
+
+        private void BtnBrowserForward_Click(object sender, RoutedEventArgs e)
+        {
+            if (WvModBrowser.CanGoForward) WvModBrowser.GoForward();
+        }
+
+        private void BtnBrowserRefresh_Click(object sender, RoutedEventArgs e)
+        {
+            WvModBrowser.Reload();
+        }
+
+        private void BtnBrowserHome_Click(object sender, RoutedEventArgs e)
+        {
+            NavigateBrowserToUrl(ConanWorkshopHomeUrl);
+        }
+
+        private void BtnBrowserGo_Click(object sender, RoutedEventArgs e)
+        {
+            NavigateToUserUrl();
+        }
+
+        private void TxtBrowserUrl_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                NavigateToUserUrl();
+            }
+        }
+
+        private void BtnBrowserSearch_Click(object sender, RoutedEventArgs e)
+        {
+            PerformBrowserSearch();
+        }
+
+        private void TxtBrowserSearchQuery_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                PerformBrowserSearch();
+            }
+        }
+
+        private void BtnOpenModBrowser_Click(object sender, RoutedEventArgs e)
+        {
+            MainTabControl.SelectedItem = TabModBrowser;
+            var mod = GetSelectedOrClickedMod(sender);
+            if (mod != null && !string.IsNullOrWhiteSpace(mod.Id))
+            {
+                NavigateBrowserToUrl($"https://steamcommunity.com/sharedfiles/filedetails/?id={mod.Id.Trim()}");
+            }
+            else
+            {
+                if (!_isModBrowserInitialized)
+                {
+                    _ = InitializeModBrowserAsync();
+                }
+            }
+        }
+
+        private void MnuViewInModBrowser_Click(object sender, RoutedEventArgs e)
+        {
+            var mod = GetSelectedOrClickedMod(sender);
+            if (mod == null || string.IsNullOrWhiteSpace(mod.Id))
+            {
+                MessageBox.Show("Please select a mod first.", "Mod Browser", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            MainTabControl.SelectedItem = TabModBrowser;
+            NavigateBrowserToUrl($"https://steamcommunity.com/sharedfiles/filedetails/?id={mod.Id.Trim()}");
+        }
+
+        private void BtnAddBrowserModToServer_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(_currentDetectedModId)) return;
+            string modId = _currentDetectedModId.Trim();
+
+            bool exists = _engine.Config.Mods.Any(m => m.Equals(modId, StringComparison.OrdinalIgnoreCase));
+            if (!exists)
+            {
+                _engine.Config.Mods.Add(modId);
+                _engine.SaveConfig();
+                _engine.SyncIniSettings();
+                _engine.GenerateModlistFile();
+                _engine.Log($"[ModBrowser] Added mod {modId} to server mods.");
+            }
+
+            bool uiExists = LstMods.Items.OfType<ModDisplayItem>().Any(m => m.Id.Equals(modId, StringComparison.OrdinalIgnoreCase))
+                || LstMods.Items.OfType<string>().Any(s => s.Equals(modId, StringComparison.OrdinalIgnoreCase));
+
+            if (!uiExists)
+            {
+                var cached = SteamWorkshopHelper.GetCachedMod(modId);
+                var newItem = new ModDisplayItem
+                {
+                    Id = modId,
+                    Title = cached != null && !string.IsNullOrWhiteSpace(cached.Title) ? cached.Title : $"Loading Mod #{modId}...",
+                    PreviewUrl = cached?.PreviewUrl ?? ""
+                };
+                LstMods.Items.Add(newItem);
+
+                _ = Task.Run(async () =>
+                {
+                    var detail = await SteamWorkshopHelper.GetModDetailsAsync(modId);
+                    Dispatcher.Invoke(() =>
+                    {
+                        if (detail != null && !string.IsNullOrWhiteSpace(detail.Title))
+                        {
+                            newItem.Title = detail.Title;
+                            newItem.PreviewUrl = detail.PreviewUrl;
+                        }
+                        else if (newItem.Title.StartsWith("Loading"))
+                        {
+                            newItem.Title = $"Mod #{modId}";
+                        }
+                    });
+                });
+            }
+
+            TxtBrowserModStatus.Text = "✅ Installed on server!";
+            BtnAddBrowserModToServer.Visibility = Visibility.Collapsed;
+            BtnRemoveBrowserModFromServer.Visibility = Visibility.Visible;
+        }
+
+        private void BtnRemoveBrowserModFromServer_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(_currentDetectedModId)) return;
+            string modId = _currentDetectedModId.Trim();
+
+            _engine.Config.Mods.RemoveAll(x => x.Equals(modId, StringComparison.OrdinalIgnoreCase));
+            _engine.SaveConfig();
+            _engine.SyncIniSettings();
+            _engine.GenerateModlistFile();
+            _engine.Log($"[ModBrowser] Removed mod {modId} from server mods.");
+
+            var toRemove = LstMods.Items.OfType<ModDisplayItem>().FirstOrDefault(m => m.Id.Equals(modId, StringComparison.OrdinalIgnoreCase));
+            if (toRemove != null)
+            {
+                LstMods.Items.Remove(toRemove);
+            }
+            else
+            {
+                var strRemove = LstMods.Items.OfType<string>().FirstOrDefault(s => s.Equals(modId, StringComparison.OrdinalIgnoreCase));
+                if (strRemove != null) LstMods.Items.Remove(strRemove);
+            }
+
+            TxtBrowserModStatus.Text = "Removed from server";
+            BtnAddBrowserModToServer.Visibility = Visibility.Visible;
+            BtnRemoveBrowserModFromServer.Visibility = Visibility.Collapsed;
+        }
+
+        private void BtnDownloadWebView2_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "https://go.microsoft.com/fwlink/p/?LinkId=2124703",
+                    UseShellExecute = true
+                });
+            }
+            catch { }
+        }
+
+        private void BtnOpenWorkshopExternal_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = ConanWorkshopHomeUrl,
+                    UseShellExecute = true
+                });
+            }
+            catch { }
         }
 
         private void MnuCopyWorkshopUrl_Click(object sender, RoutedEventArgs e)

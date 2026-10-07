@@ -1,6 +1,7 @@
 <Window x:Class="ConanServerManager.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="Conan Exiles Dedicated Server Manager &amp; Remote Console (C# Native Engine)" Height="960" Width="1400"
         Icon="app.ico"
         Background="#0F172A" WindowStartupLocation="CenterScreen">
@@ -117,9 +118,9 @@
                     <StackPanel Orientation="Vertical">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Image Source="app.png" Width="22" Height="22" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.1.12" Style="{StaticResource HeaderTitle}"/>
+                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.2.0" Style="{StaticResource HeaderTitle}"/>
                             <Border CornerRadius="8" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" Margin="10,0,0,0" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="✨ v1.1.12" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="✨ v1.2.0" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="TxtServerPathInfo" Text="Mode: Local Server Host | Embedded Web Console: http://0.0.0.0:8088" Foreground="#94A3B8" FontSize="11"/>
@@ -672,7 +673,7 @@
 
             <!-- Column 2: Multi-Tab Console & Editor Panel -->
             <Border Grid.Column="2" Style="{StaticResource GlassPanel}" Margin="0,0,0,0" VerticalAlignment="Stretch">
-                <TabControl Background="#020617" BorderBrush="#334155" Foreground="#E2E8F0" VerticalAlignment="Stretch">
+                <TabControl x:Name="MainTabControl" Background="#020617" BorderBrush="#334155" Foreground="#E2E8F0" VerticalAlignment="Stretch" SelectionChanged="MainTabControl_SelectionChanged">
                     <!-- Tab 1: Server Log -->
                     <TabItem Header="Server Log">
                         <Grid VerticalAlignment="Stretch">
@@ -714,7 +715,8 @@
                                      PreviewMouseRightButtonDown="LstMods_PreviewMouseRightButtonDown">
                                 <ListBox.ContextMenu>
                                     <ContextMenu>
-                                        <MenuItem Header="🌐 Open Steam Workshop Page" Click="MnuOpenWorkshopPage_Click"/>
+                                        <MenuItem Header="🌐 View in Workshop Browser" Click="MnuViewInModBrowser_Click"/>
+                                        <MenuItem Header="🌐 Open in External Browser" Click="MnuOpenWorkshopPage_Click"/>
                                         <MenuItem Header="📋 Copy Workshop URL" Click="MnuCopyWorkshopUrl_Click"/>
                                         <MenuItem Header="📋 Copy Mod ID" Click="MnuCopyModId_Click"/>
                                         <Separator/>
@@ -724,7 +726,7 @@
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <Border BorderBrush="#1E293B" BorderThickness="0,0,0,1" Padding="6,5" Margin="0,1">
-                                            <Grid>
+                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
@@ -745,12 +747,90 @@
                             <StackPanel Grid.Column="2">
                                 <Button Content="Move Up ▲" Style="{StaticResource BtnSecondary}" Click="BtnModMoveUp_Click" Margin="0,0,0,6"/>
                                 <Button Content="Move Down ▼" Style="{StaticResource BtnSecondary}" Click="BtnModMoveDown_Click" Margin="0,0,0,12"/>
+                                <Button x:Name="BtnOpenModBrowser" Content="🌐 Browse Workshop" Style="{StaticResource BtnSuccess}" Click="BtnOpenModBrowser_Click" Margin="0,0,0,12" ToolTip="Open the integrated Steam Workshop browser to search and add mods"/>
                                 <TextBlock Text="Add Mod ID" Style="{StaticResource FormLabel}"/>
                                 <TextBox x:Name="TxtNewModId" Style="{StaticResource FormInput}" Margin="0,0,0,6"/>
                                 <Button Content="Add Mod" Style="{StaticResource BtnPrimary}" Click="BtnAddMod_Click" Margin="0,0,0,6"/>
                                 <Button Content="Remove Mod" Style="{StaticResource BtnDanger}" Click="BtnRemoveMod_Click" Margin="0,0,0,10"/>
                                 <Button Content="🌐 View on Workshop" Style="{StaticResource BtnSecondary}" Click="BtnViewModWorkshop_Click" Margin="0,0,0,6" ToolTip="Open the selected mod's Steam Workshop page in browser"/>
                             </StackPanel>
+                        </Grid>
+                    </TabItem>
+
+                    <!-- Tab: Workshop Browser (Integrated Chromium WebView2) -->
+                    <TabItem x:Name="TabModBrowser" Header="🌐 Workshop Browser">
+                        <Grid VerticalAlignment="Stretch">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/> <!-- Toolbar: Nav buttons, Address bar, Search box -->
+                                <RowDefinition Height="Auto"/> <!-- Smart Mod Detection Banner -->
+                                <RowDefinition Height="*"/>    <!-- WebView2 container -->
+                            </Grid.RowDefinitions>
+
+                            <!-- Row 0: Navigation Toolbar -->
+                            <Border Grid.Row="0" Background="#0F172A" BorderBrush="#334155" BorderThickness="0,0,0,1" Padding="6,6">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/> <!-- Nav buttons -->
+                                        <ColumnDefinition Width="*"/>    <!-- URL Bar -->
+                                        <ColumnDefinition Width="Auto"/> <!-- Go button -->
+                                        <ColumnDefinition Width="Auto"/> <!-- Workshop Search -->
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,8,0">
+                                        <Button x:Name="BtnBrowserBack" Content="◀" Style="{StaticResource BtnSecondary}" Width="32" Padding="0" Click="BtnBrowserBack_Click" ToolTip="Go Back" Margin="0,0,4,0"/>
+                                        <Button x:Name="BtnBrowserForward" Content="▶" Style="{StaticResource BtnSecondary}" Width="32" Padding="0" Click="BtnBrowserForward_Click" ToolTip="Go Forward" Margin="0,0,4,0"/>
+                                        <Button x:Name="BtnBrowserRefresh" Content="🔄" Style="{StaticResource BtnSecondary}" Width="32" Padding="0" Click="BtnBrowserRefresh_Click" ToolTip="Reload" Margin="0,0,4,0"/>
+                                        <Button x:Name="BtnBrowserHome" Content="🏠 Workshop" Style="{StaticResource BtnSecondary}" Padding="8,4" Click="BtnBrowserHome_Click" ToolTip="Conan Exiles Workshop Home" Margin="0,0,4,0"/>
+                                    </StackPanel>
+
+                                    <TextBox Grid.Column="1" x:Name="TxtBrowserUrl" Style="{StaticResource FormInput}" Margin="0,0,6,0" KeyDown="TxtBrowserUrl_KeyDown" ToolTip="Enter URL or Workshop Mod ID and press Enter"/>
+                                    <Button Grid.Column="2" x:Name="BtnBrowserGo" Content="Go" Style="{StaticResource BtnSecondary}" Click="BtnBrowserGo_Click" Margin="0,0,8,0"/>
+
+                                    <StackPanel Grid.Column="3" Orientation="Horizontal">
+                                        <TextBox x:Name="TxtBrowserSearchQuery" Style="{StaticResource FormInput}" Width="160" Margin="0,0,4,0" KeyDown="TxtBrowserSearchQuery_KeyDown" ToolTip="Search Steam Workshop for Conan mods"/>
+                                        <Button x:Name="BtnBrowserSearch" Content="🔍 Search" Style="{StaticResource BtnPrimary}" Click="BtnBrowserSearch_Click" ToolTip="Search Conan Exiles Workshop"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- Row 1: Smart Mod Item Detection Banner -->
+                            <Border Grid.Row="1" x:Name="PnlBrowserModBanner" Visibility="Collapsed" Background="#1E1B4B" BorderBrush="#6366F1" BorderThickness="0,0,0,1" Padding="10,6">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0" Text="🧩 Workshop Mod Detected:" Foreground="#A5B4FC" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock x:Name="TxtBrowserModId" Foreground="#38BDF8" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                        <TextBlock x:Name="TxtBrowserModStatus" Foreground="#94A3B8" FontSize="11" VerticalAlignment="Center"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                        <Button x:Name="BtnAddBrowserModToServer" Content="➕ Add This Mod to Server" Style="{StaticResource BtnSuccess}" Click="BtnAddBrowserModToServer_Click" Margin="0,0,6,0"/>
+                                        <Button x:Name="BtnRemoveBrowserModFromServer" Content="🗑️ Remove from Server" Style="{StaticResource BtnDanger}" Visibility="Collapsed" Click="BtnRemoveBrowserModFromServer_Click"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- Row 2: WebView2 Browser Control -->
+                            <Grid Grid.Row="2">
+                                <wv2:WebView2 x:Name="WvModBrowser" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+
+                                <!-- Fallback panel if WebView2 runtime is missing -->
+                                <Border x:Name="PnlWebView2Error" Visibility="Collapsed" Background="#0F172A" Padding="24" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="8" BorderBrush="#EF4444" BorderThickness="1">
+                                    <StackPanel MaxWidth="480" HorizontalAlignment="Center">
+                                        <TextBlock Text="⚠️ WebView2 Runtime Required" FontSize="16" FontWeight="Bold" Foreground="#EF4444" Margin="0,0,0,8" TextAlignment="Center"/>
+                                        <TextBlock Text="The in-app browser uses Microsoft Edge WebView2. It could not be initialized (the runtime may not be installed on this Windows system)." TextWrapping="Wrap" Foreground="#94A3B8" Margin="0,0,0,16" TextAlignment="Center"/>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                            <Button Content="📥 Download WebView2" Style="{StaticResource BtnPrimary}" Click="BtnDownloadWebView2_Click" Margin="0,0,8,0"/>
+                                            <Button Content="🌐 Open Workshop in External Browser" Style="{StaticResource BtnSecondary}" Click="BtnOpenWorkshopExternal_Click"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
                         </Grid>
                     </TabItem>
 

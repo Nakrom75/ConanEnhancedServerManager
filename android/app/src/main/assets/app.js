@@ -6,12 +6,25 @@ let installedMods = [];
 let savedServers = [];
 let latestApkUrl = "";
 let lastKnownConfig = null;
-let APP_VERSION = "1.1.12";
+let APP_VERSION = "1.2.0";
 if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
 }
 
 let currentModalMod = null;
+
+function openSteamWorkshopBrowser(url) {
+    const targetUrl = url || "https://steamcommunity.com/app/440900/workshop/";
+    try {
+        if (window.Android && typeof Android.openWorkshopBrowser === "function") {
+            Android.openWorkshopBrowser(targetUrl);
+        } else {
+            openExternalBrowser(targetUrl);
+        }
+    } catch (e) {
+        openExternalBrowser(targetUrl);
+    }
+}
 
 function openExternalBrowser(url) {
     if (!url) return;
@@ -66,7 +79,7 @@ function closeModDetailsModal(e) {
 function onModalOpenWorkshop() {
     vibrate(30);
     if (currentModalMod && currentModalMod.url) {
-        openExternalBrowser(currentModalMod.url);
+        openSteamWorkshopBrowser(currentModalMod.url);
         closeModDetailsModal();
     }
 }
@@ -1351,4 +1364,6 @@ window.openModDetailsModal = showModDetailsModal;
 window.closeModDetailsModal = closeModDetailsModal;
 window.onModalOpenWorkshop = onModalOpenWorkshop;
 window.onModalCopyLink = onModalCopyLink;
+window.openSteamWorkshopBrowser = openSteamWorkshopBrowser;
+window.addModToServer = addModToServer;
 

@@ -1,6 +1,6 @@
 # SOURCE OF TRUTH: Conan Exiles Dedicated Server & Manager Architecture
 
-> **Document Version:** 1.1.12  
+> **Document Version:** 1.2.0  
 > **Target Application:** Conan Exiles Dedicated Server (AppID `443030`)  
 > **Date:** October 2026  
 > **Purpose:** Complete reverse-engineered architectural blueprint, specifications, protocol details, and engineering roadmap to build a custom, modern, highly reliable Conan Exiles Dedicated Server Manager.
@@ -45,12 +45,13 @@
 24. [SteamCMD Automated Deployment & Error Resilience (v1.1.5)](#24-steamcmd-automated-deployment--error-resilience-v115)
 25. [Steam Workshop Mod Title Resolution & Local Cache (v1.1.6)](#25-steam-workshop-mod-title-resolution--local-cache-v116)
 26. [Mod Steam Workshop Webpage Context Actions (v1.1.7)](#26-mod-steam-workshop-webpage-context-actions-v117)
-27. [XAML Style Hierarchy & Startup Crash Elimination (v1.1.8)](#27-xaml-style-hierarchy--startup-crash-elimination-v118)
+27: [XAML Style Hierarchy & Startup Crash Elimination (v1.1.8)](#27-xaml-style-hierarchy--startup-crash-elimination-v118)
 28. [Steam Master Server Announcement, FLS Registration & RCON Mapping Architecture (v1.1.9)](#28-steam-master-server-announcement-fls-registration--rcon-mapping-architecture-v119)
 29. [Self-Contained Deployment & .NET Runtime Independence (v1.1.10)](#29-self-contained-deployment--net-runtime-independence-v1110)
 30. [Zero-Data-Loss Architecture: Configuration Ingestion, Packaging Isolation & INI Integrity (v1.1.11)](#30-zero-data-loss-architecture-configuration-ingestion-packaging-isolation--ini-integrity-v1111)
 31. [Instant Launch Controls, Hot Backup Multi-DB, Custom Paths & Auto-Restart Scheduler (v1.1.12)](#31-instant-launch-controls-hot-backup-multi-db-custom-paths--auto-restart-scheduler-v1112)
-32. [Future Roadmap & Upcoming Engineering Tasks (To-Do)](#32-future-roadmap--upcoming-engineering-tasks-to-do)
+32. [In-App Steam Workshop Chromium & Mobile Browser Engine (v1.2.0)](#32-in-app-steam-workshop-chromium--mobile-browser-engine-v120)
+33. [Future Roadmap & Upcoming Engineering Tasks (To-Do)](#33-future-roadmap--upcoming-engineering-tasks-to-do)
 
 ---
 
@@ -1114,27 +1115,91 @@ Follow this step-by-step roadmap when developing your custom manager on your dev
 
 ---
 
-## 32. Future Roadmap & Upcoming Engineering Tasks (To-Do)
+## 32. In-App Steam Workshop Chromium & Mobile Browser Engine (v1.2.0)
 
-### To-Do: In-App Web Browser Interface for Mod Searches
-- **Feature Request / Requirement**:
-  - Implement an integrated in-app web browser interface directly inside the Conan Enhanced Server Manager (WPF Windows Desktop app and Android mobile companion client) specifically dedicated to searching, browsing, and inspecting Steam Workshop mods (`appid=440900`).
-- **Architectural Scope & Technical Design**:
-  1. **Windows Desktop Implementation (`Microsoft.Web.WebView2`)**:
-     - Integrate Microsoft Edge Chromium WebView2 control (`Microsoft.Web.WebView2` NuGet package) inside a dedicated tab or modal view (`TabModBrowser`).
-     - Points by default to Conan Exiles Steam Workshop hub: `https://steamcommunity.com/app/440900/workshop/`.
-     - Provides standard browser navigation toolbar: `◀ Back`, `▶ Forward`, `🔄 Refresh`, `🏠 Workshop Home`, and search input query bar.
-     - **Seamless 1-Click Mod Addition**:
-       - Injects JavaScript DOM bridge or hooks `NavigationStarting` / `SourceChanged` events to detect Steam Workshop item URLs matching `*steamcommunity.com/sharedfiles/filedetails/?id=*`.
-       - Renders an interactive action overlay (e.g., **"➕ Add This Mod to Server"**) whenever the user is viewing an item page.
-       - Automatically parses the Workshop PublishedFileId (`id`), queries metadata via `SteamWorkshopHelper`, appends the mod to `Config.Mods`, regenerates `modlist.txt`, and triggers `ServerSettings.ini` synchronization without requiring manual copy-pasting of 10-digit IDs.
-  2. **Android Mobile Implementation (`WebView`)**:
-     - Embed Android `android.webkit.WebView` within the mobile client (`TabModBrowser` in `index.html` / `app.js`).
-     - Supports full HTML5 responsive navigation of Steam Community Workshop.
-     - Android JS Bridge detects active mod page URL and displays a floating action button (FAB) **"➕ Add Mod to Server"** to install directly to the remote server host via `POST /api/mods/add`.
-- **Key Benefits**:
-  - Eliminates external browser switching and manual copy-pasting of numeric IDs.
-  - Allows full review of screenshots, patch notes, mod compatibility requirements, and community discussions directly within the manager environment before installing.
+> **Milestone Version:** 1.2.0  
+> **Release Target:** Full-featured in-app web browsing with 1-click mod installation across Windows Desktop and Android Mobile Companion.
+
+### 1. Overview & Architectural Motivation
+Prior to v1.2.0, discovering and adding Steam Workshop mods required users to switch to an external web browser, search the Steam Community Workshop, copy the 9-to-10 digit Workshop `PublishedFileId` from the address bar, switch back to the Conan Server Manager (or Android Companion App), and paste the ID into the input field.
+
+With **v1.2.0**, both the Windows Desktop Host application and the Android Companion Client feature native, integrated web browsing engines specifically tailored to the Conan Exiles Steam Workshop (`appid=440900`), featuring real-time mod detection and zero-copy 1-click installation.
+
+---
+
+### 2. Windows Desktop Architecture (`Microsoft.Web.WebView2`)
+- **Integration**:
+  - Embedded Microsoft Edge Chromium WebView2 control via `Microsoft.Web.WebView2` (v1.0.4258.31) inside a dedicated tab (`TabModBrowser` labeled `🌐 Workshop Browser`).
+  - Added XAML namespace `xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"`.
+- **Startup Resilience & Lazy Initialization**:
+  - To maintain instant WPF application launch times and prevent unnecessary Edge renderer subprocess initialization when the user is simply monitoring server logs, `EnsureCoreWebView2Async()` is invoked lazily upon the user selecting the `TabModBrowser` tab or clicking the "🌐 Browse Workshop" button.
+  - Wrapped inside robust try/catch guards. If the Windows machine lacks the Microsoft Edge WebView2 runtime (legacy or custom Windows Server environments), the application gracefully displays an in-app error panel (`PnlWebView2Error`) offering an immediate official runtime download link (`https://go.microsoft.com/fwlink/p/?LinkId=2124703`) alongside an external browser fallback button.
+- **Navigation Toolbar**:
+  - `BtnBrowserBack` (◀): Navigates backward through browsing history.
+  - `BtnBrowserForward` (▶): Navigates forward through browsing history.
+  - `BtnBrowserRefresh` (🔄): Reloads the current page.
+  - `BtnBrowserHome` (🏠 Workshop): Returns directly to `https://steamcommunity.com/app/440900/workshop/`.
+  - Address Bar (`TxtBrowserUrl` + `BtnBrowserGo`): Accepts direct URLs, search strings, or raw numeric mod IDs (auto-routing numeric inputs directly to `filedetails/?id={id}`).
+  - Quick Search Bar (`TxtBrowserSearchQuery` + `BtnBrowserSearch`): Performs direct keyword searches across Conan Exiles Workshop items.
+- **Smart Mod Detection Banner (`PnlBrowserModBanner`)**:
+  - Subscribes to `SourceChanged` and `NavigationCompleted` events.
+  - Parses the current URI using the pattern: `steamcommunity\.com/sharedfiles/filedetails/\?id=(?<id>\d+)`.
+  - When the user navigates to any Workshop item detail page:
+    - Banner slides into view showing `🧩 Workshop Mod Detected: Mod ID: <id>`.
+    - Automatically checks `_engine.Config.Mods` and `LstMods` to determine installation status.
+    - If already installed: displays `✅ Already installed on server` and renders `🗑️ Remove from Server`.
+    - If not installed: displays `Not installed on server` and renders a prominent green `➕ Add This Mod to Server` button.
+- **1-Click Mod Installation & Removal**:
+  - Clicking `➕ Add This Mod to Server` automatically:
+    1. Appends the mod ID to `_engine.Config.Mods`.
+    2. Writes updated `manager_config.json`.
+    3. Triggers `_engine.SyncIniSettings()`.
+    4. Regenerates `modlist.txt` in server directory.
+    5. Adds a new `ModDisplayItem` to the `LstMods` UI list.
+    6. Asynchronously queries `SteamWorkshopHelper.GetModDetailsAsync(modId)` to resolve the real mod title and thumbnail preview.
+    7. Updates the banner state immediately to `✅ Installed on server!`.
+  - Clicking `🗑️ Remove from Server` cleanly removes the mod ID from `_engine.Config.Mods`, regenerates `modlist.txt`, and updates the UI.
+
+---
+
+### 3. Android Mobile Companion Architecture (`android.webkit.WebView`)
+- **Native Full-Screen Overlay Dialog**:
+  - Implemented `showWorkshopBrowser(String initialUrl)` within `MainActivity.java`.
+  - Builds a programmatic full-screen dark-themed `Dialog` (`#0F172A`) containing:
+    - Top Navigation Bar: Close button (`✕`), Back (`◀`), Forward (`▶`), URL/Title display, Reload (`🔄`), and Open in External Browser (`🌐`).
+    - Core Mobile Browser: Hardware-accelerated `android.webkit.WebView` with DOM storage, database, pinch-to-zoom, and overview mode enabled.
+    - Hardware Back-Button Handling: `setOnKeyListener` intercepts the device's physical back button, calling `workshopWebView.goBack()` if history exists, or cleanly dismissing the dialog when at the root page.
+- **Smart Mobile Mod Detection Banner**:
+  - `WebViewClient.onPageFinished` and `onPageStarted` evaluate loaded URLs against the regex `steamcommunity\.com/sharedfiles/filedetails/\?id=(\d+)`.
+  - When on a Workshop item page, reveals a high-contrast indigo action bar (`#1E1B4B`) with:
+    - Text: `🧩 Mod ID: <id>`
+    - Button: `➕ Add to Server` (Emerald Green `#10B981`)
+  - Tapping `➕ Add to Server` executes `webView.evaluateJavascript("addModToServer('" + detectedModId + "');")` on the companion web view, immediately posting `POST /api/mods/add` to the remote server host, displaying a native Android toast, and updating button feedback.
+- **JavaScript Bridge Integration**:
+  - Exposed `@JavascriptInterface public void openWorkshopBrowser(String url)` on `AndroidBridge`.
+  - Added "🌐 Open Steam Workshop Browser" button inside `tab-mods` in `index.html` and wired mod detail modal actions in `app.js` to seamlessly trigger the in-app browser without ever leaving the companion app.
+
+---
+
+### 4. Unified Version Synchronization (`v1.2.0` / `10200`)
+- Synchronized version numbering across all 7 project layers:
+  1. `version.txt` -> `1.2.0`
+  2. `src/ServerEngine.cs` -> `CurrentAppVersion = "1.2.0"`
+  3. `src/MainWindow.xaml` -> `v1.2.0` (title and header badge)
+  4. `android/app/build.gradle` -> reads `version.txt`, fallback `"1.2.0"`, `versionCode = 10200`
+  5. `android/app/src/main/java/com/conan/servermanager/MainActivity.java` -> fallback `"1.2.0"`, `10200`
+  6. `android/app/src/main/assets/app.js` -> `APP_VERSION = "1.2.0"`
+  7. `android/app/src/main/assets/index.html` -> badge `v1.2.0`
+- Compiled and verified release APK (`assembleRelease`), generating pre-signed `ConanServerManager-v1.2.0.apk` (4.63 MB) with versionCode `10200`.
+- Published standalone win-x64 binaries (`dotnet publish`) to `ServerManager/`, packaged `ConanServerManager_v1.2.0.zip` and `ConanServerManager_DeployPackage.zip`.
+- Deployed APKs and update archives to live server `\\192.168.0.5\ConanServerManager\`.
+
+---
+
+## 33. Future Roadmap & Upcoming Engineering Tasks (To-Do)
+
+### To-Do: Automated Mod Dependency Resolution
+- Investigate querying Steam Workshop item dependencies (e.g. required framework mods like Pippi, ModControlPanel) and prompt users with 1-click batch installation of prerequisite mods when installing an item.
 
 ---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
