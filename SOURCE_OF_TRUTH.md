@@ -1,6 +1,6 @@
 # SOURCE OF TRUTH: Conan Exiles Dedicated Server & Manager Architecture
 
-> **Document Version:** 1.2.0  
+> **Document Version:** 1.2.1  
 > **Target Application:** Conan Exiles Dedicated Server (AppID `443030`)  
 > **Date:** October 2026  
 > **Purpose:** Complete reverse-engineered architectural blueprint, specifications, protocol details, and engineering roadmap to build a custom, modern, highly reliable Conan Exiles Dedicated Server Manager.
@@ -51,7 +51,9 @@
 30. [Zero-Data-Loss Architecture: Configuration Ingestion, Packaging Isolation & INI Integrity (v1.1.11)](#30-zero-data-loss-architecture-configuration-ingestion-packaging-isolation--ini-integrity-v1111)
 31. [Instant Launch Controls, Hot Backup Multi-DB, Custom Paths & Auto-Restart Scheduler (v1.1.12)](#31-instant-launch-controls-hot-backup-multi-db-custom-paths--auto-restart-scheduler-v1112)
 32. [In-App Steam Workshop Chromium & Mobile Browser Engine (v1.2.0)](#32-in-app-steam-workshop-chromium--mobile-browser-engine-v120)
-33. [Future Roadmap & Upcoming Engineering Tasks (To-Do)](#33-future-roadmap--upcoming-engineering-tasks-to-do)
+33. [Strict Version Numbering & Synchronized Dual-Platform Build Policy](#33-strict-version-numbering--synchronized-dual-platform-build-policy)
+34. [Full-Page Workshop Browser Overlay & Dual-Platform Synchronization (v1.2.1)](#34-full-page-workshop-browser-overlay--dual-platform-synchronization-v121)
+35. [Future Roadmap & Upcoming Engineering Tasks (To-Do)](#35-future-roadmap--upcoming-engineering-tasks-to-do)
 
 ---
 
@@ -1210,7 +1212,68 @@ With **v1.2.0**, both the Windows Desktop Host application and the Android Compa
 
 ---
 
-## 33. Future Roadmap & Upcoming Engineering Tasks (To-Do)
+## 33. Strict Version Numbering & Synchronized Dual-Platform Build Policy
+
+> **Policy File:** [`VERSIONING_RULES.md`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/VERSIONING_RULES.md) & [`GEMINI.md`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/GEMINI.md)  
+> **Enforcement:** Mandatory on every single build, compile, bug fix, or feature addition.
+
+### 1. Core Mandates
+1. **Never Compile Without Bumping the Version**:
+   - The version number **MUST ALWAYS** be incremented whenever a compile or build is run.
+   - Building packages on identical or stale version numbers is strictly prohibited.
+2. **Mandatory Synchronization Between Windows & Android**:
+   - Both the Windows desktop manager and the Android mobile companion app **MUST ALWAYS** be synchronized at the exact same version number and version code.
+   - When one platform is compiled or updated, the other platform must be updated and compiled in lockstep.
+3. **Android Version Code Formula**:
+   - Monotonically increasing formula:
+     $$\text{versionCode} = (\text{MAJOR} \times 10000) + (\text{MINOR} \times 100) + \text{PATCH}$$
+   - Example: `v1.2.1` $\rightarrow$ $1 \times 10000 + 2 \times 100 + 1 = 10201$.
+4. **The 7 Mandatory Synchronization Points**:
+   1. `version.txt`
+   2. `src/ServerEngine.cs` (fallback in `GetAppVersion()`)
+   3. `src/MainWindow.xaml` (`TxtAppHeaderTitle` & `TxtAppHeaderVersionBadge`)
+   4. `android/app/build.gradle` (fallback in `getAppVersionName()` & `getAppVersionCode()`)
+   5. `android/app/src/main/assets/app.js` (`let APP_VERSION`)
+   6. `android/app/src/main/assets/index.html` (`#appInstalledVersion`)
+   7. `android/app/src/main/java/com/conan/servermanager/MainActivity.java` (fallback in `getAppVersion()` & `getAppVersionCode()`)
+
+---
+
+## 34. Full-Page Workshop Browser Overlay & Dual-Platform Synchronization (v1.2.1)
+
+> **Milestone Version:** 1.2.1 (versionCode `10201`)  
+> **Release Target:** Full-page Workshop browser overlay experience and synchronized dual-platform release pipeline.
+
+### 1. Windows Desktop Full-Page Browser Overlay (`PnlFullPageBrowser`)
+- **Immersive Full-Window Layout**:
+  - Replaced the cramped bottom console tab (`TabModBrowser`) with a dedicated full-page overlay covering the entire 1400x960 window area (`Grid.Row="0" Grid.RowSpan="5" Panel.ZIndex="1000"`).
+  - Eliminates vertical scrolling constraints and enables comfortable viewing of long Workshop descriptions, mod requirement lists, and changelogs.
+- **Header & Action Bar Shortcuts**:
+  - Window Header (Row 0): `BtnOpenWorkshopBrowser` (`🌐 Browse Workshop`) directly adjacent to the Steam status indicator.
+  - Action Controls Bar (Row 2): `BtnOpenWorkshopBrowser` (`🌐 Workshop Browser`).
+  - Mods Management Panel (Row 3): `BtnOpenModBrowser` (`🌐 Browse Workshop`).
+  - Mod List Context Menu: `MnuViewInModBrowser` (`🌐 View in Workshop Browser`).
+- **Seamless Navigation & Dismissal**:
+  - `BtnCloseFullPageBrowser` (◀ Back to Server Manager) button pinned to the top navigation toolbar.
+  - Native <kbd>Esc</kbd> key interceptor (`Window_KeyDown`) instantly dismisses the overlay and restores view of server logs and controls.
+- **Smart Mod Detection & 1-Click Server Installation**:
+  - Dynamically detects Workshop detail pages (`steamcommunity.com/sharedfiles/filedetails/?id=...`).
+  - Slide-in action banner indicates if the mod is already installed on the server, with 1-click `➕ Add This Mod to Server` or `🗑️ Remove from Server`.
+
+### 2. Android Mobile Companion App Synchronized Release (`ConanServerManager-v1.2.1.apk`)
+- **Version Code 10201 Alignment**:
+  - Built with OpenJDK 17, Android SDK API 34, and Gradle 8.5 (`assembleRelease`).
+  - Verified pre-signed APK generated: `ConanServerManager-v1.2.1.apk` (4.63 MB).
+  - Embedded WebView assets updated with synchronized `APP_VERSION = "1.2.1"` and badge `#appInstalledVersion`.
+
+### 3. Local Release Artifacts
+- **Windows Self-Contained Release**: Published to `ServerManager/` via `dotnet publish -c Release -r win-x64 --self-contained true`.
+- **Release Archives**: Created `ConanServerManager_v1.2.1.zip` (121.6 MB) and refreshed `ConanServerManager_DeployPackage.zip`.
+- **Zero Live Server Deployment**: All binaries, APKs, and archives remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
+
+---
+
+## 35. Future Roadmap & Upcoming Engineering Tasks (To-Do)
 
 ### To-Do: Automated Mod Dependency Resolution
 - Investigate querying Steam Workshop item dependencies (e.g. required framework mods like Pippi, ModControlPanel) and prompt users with 1-click batch installation of prerequisite mods when installing an item.
