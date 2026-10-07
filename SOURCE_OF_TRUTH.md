@@ -57,6 +57,12 @@
 
 ## 1. Executive Overview & Server Topology
 
+> [!CAUTION]
+> **CRITICAL OPERATIONAL CONSTRAINT — ZERO DIRECT LIVE DEPLOYMENTS:**  
+> The agent must **NEVER** attempt to copy, deploy, overwrite, or update files on the live server (`\\192.168.0.5\ConanServerManager\` or any remote host environment).  
+> All live server updates, file transfers, binary installations, and maintenance are handled strictly and exclusively by the user manually.  
+> The agent's scope is strictly confined to the local development repository (`F:\Projects\Conan Exiles Dedicated Server`), producing local builds (`ServerManager/`, release ZIP archives, and release APKs).
+
 Conan Exiles Dedicated Server is built on **Unreal Engine 4 (UE4)** with custom persistent game subsystems maintained by Funcom. The server runs as a headless Windows console/service application interacting with Steam via the **Steamworks SDK** and SteamCMD.
 
 ### High-Level System Topology
@@ -1191,8 +1197,8 @@ With **v1.2.0**, both the Windows Desktop Host application and the Android Compa
   6. `android/app/src/main/assets/app.js` -> `APP_VERSION = "1.2.0"`
   7. `android/app/src/main/assets/index.html` -> badge `v1.2.0`
 - Compiled and verified release APK (`assembleRelease`), generating pre-signed `ConanServerManager-v1.2.0.apk` (4.63 MB) with versionCode `10200`.
-- Published standalone win-x64 binaries (`dotnet publish`) to `ServerManager/`, packaged `ConanServerManager_v1.2.0.zip` and `ConanServerManager_DeployPackage.zip`.
-- Deployed APKs and update archives to live server `\\192.168.0.5\ConanServerManager\`.
+- Published standalone win-x64 binaries (`dotnet publish`) to `ServerManager/`, packaged `ConanServerManager_v1.2.0.zip` and `ConanServerManager_DeployPackage.zip` locally.
+- **Strict User-Only Deployment**: All release artifacts (ZIP packages, APKs) remain strictly in the local development workspace (`F:\Projects\Conan Exiles Dedicated Server\`) for manual deployment by the user. Direct deployment to the live server is strictly prohibited.
 
 ---
 
