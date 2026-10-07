@@ -98,3 +98,10 @@ git add .
 git commit -m "v{MAJOR}.{MINOR}.{PATCH}: <description of changes>"
 git push origin main
 ```
+
+### Step 6: Create & Push Git Tag to GitHub (MANDATORY)
+```powershell
+git tag -a v{MAJOR}.{MINOR}.{PATCH} -m "Release v{MAJOR}.{MINOR}.{PATCH}: <description>"
+git push origin v{MAJOR}.{MINOR}.{PATCH}
+```
+*Never skip this step: The git tag is required for the user to upload release packages and publish GitHub Releases.*

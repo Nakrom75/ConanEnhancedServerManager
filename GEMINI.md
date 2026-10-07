@@ -23,3 +23,10 @@
 
 ### 3. ALWAYS KEEP `SOURCE_OF_TRUTH.md` UP TO DATE
 - On every version increment and architectural change, document the changes in `SOURCE_OF_TRUTH.md`.
+
+### 4. ALWAYS CREATE & PUSH GIT TAG TO GITHUB ON EVERY COMPILE / BUILD
+- Every time a new version is built, committed, and pushed to main, you **MUST IMMEDIATELY** create an annotated Git tag:
+  `git tag -a v{MAJOR}.{MINOR}.{PATCH} -m "Release v{MAJOR}.{MINOR}.{PATCH}: <summary>"`
+  and push it to GitHub:
+  `git push origin v{MAJOR}.{MINOR}.{PATCH}`
+- This is required so the user can create and upload compiled binaries (Windows ZIP and Android APK) to the GitHub release.

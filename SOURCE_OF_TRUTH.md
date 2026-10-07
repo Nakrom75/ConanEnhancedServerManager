@@ -1236,6 +1236,11 @@ With **v1.2.0**, both the Windows Desktop Host application and the Android Compa
    5. `android/app/src/main/assets/app.js` (`let APP_VERSION`)
    6. `android/app/src/main/assets/index.html` (`#appInstalledVersion`)
    7. `android/app/src/main/java/com/conan/servermanager/MainActivity.java` (fallback in `getAppVersion()` & `getAppVersionCode()`)
+5. **Mandatory Git Tag Creation & GitHub Push**:
+   - Every compile and release must immediately produce an annotated Git tag pushed to GitHub:
+     `git tag -a v{MAJOR}.{MINOR}.{PATCH} -m "Release v{MAJOR}.{MINOR}.{PATCH}: <summary>"`
+     `git push origin v{MAJOR}.{MINOR}.{PATCH}`
+   - This enables the user to upload the compiled Windows ZIP and Android APK directly to the GitHub release.
 
 ---
 
