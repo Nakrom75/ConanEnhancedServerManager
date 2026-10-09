@@ -194,7 +194,12 @@ namespace ConanServerManager
             }
             else if (path == "/api/status" && method == "GET")
             {
-                TimeSpan uptime = _engine.ServerStatus == "RUNNING" ? DateTime.Now - _startTime : TimeSpan.Zero;
+                TimeSpan srvUptime = _engine.ServerProcessUptime;
+                TimeSpan appUptime = _engine.AppUptime;
+                TimeSpan sysUptime = _engine.SystemUptime;
+                var memInfo = ServerEngine.GetSystemMemoryStatus();
+                double srvRamMb = _engine.ServerRamMb;
+                double appRamMb = _engine.AppRamMb;
                 var prog = _engine.CurrentDownloadProgress;
                 var cfg = _engine.Config;
                 var statusObj = new
@@ -231,8 +236,20 @@ namespace ConanServerManager
                         enableVAC = cfg.EnableVAC
                     },
                     activeModsCount = cfg.Mods.Count,
-                    uptimeSeconds = (int)uptime.TotalSeconds,
-                    uptimeString = $"{uptime.Hours:D2}:{uptime.Minutes:D2}:{uptime.Seconds:D2}",
+                    uptimeSeconds = (int)srvUptime.TotalSeconds,
+                    uptimeString = ServerEngine.FormatUptime(srvUptime),
+                    serverUptimeSeconds = (int)srvUptime.TotalSeconds,
+                    serverUptimeString = ServerEngine.FormatUptime(srvUptime),
+                    appUptimeSeconds = (int)appUptime.TotalSeconds,
+                    appUptimeString = ServerEngine.FormatUptime(appUptime),
+                    systemUptimeSeconds = (int)sysUptime.TotalSeconds,
+                    systemUptimeString = ServerEngine.FormatUptime(sysUptime),
+                    serverRamMb = srvRamMb,
+                    appRamMb = appRamMb,
+                    systemRamUsedGb = memInfo.UsedPhysGb,
+                    systemRamTotalGb = memInfo.TotalPhysGb,
+                    systemRamPercent = memInfo.MemoryLoadPercent,
+                    ramSummary = $"Conan: {srvRamMb:N0} MB | App: {appRamMb:N0} MB | System: {memInfo.UsedPhysGb:F1}/{memInfo.TotalPhysGb:F1} GB ({memInfo.MemoryLoadPercent}%)",
                     executableExists = File.Exists(_engine.ExecutablePath),
                     steamCmdExists = File.Exists(_engine.SteamCmdExe),
                     downloadActive = prog != null && prog.IsActive,
@@ -295,13 +312,11 @@ namespace ConanServerManager
             }
             else if (path == "/api/control/start" && method == "POST")
             {
-                _startTime = DateTime.Now;
                 _ = Task.Run(async () => await _engine.RunFullUpdateAndStartAsync());
                 await SendHttpResponseAsync(stream, 200, "application/json", "{\"success\": true, \"message\": \"Start sequence initiated.\"}");
             }
             else if (path == "/api/control/start-noupdate" && method == "POST")
             {
-                _startTime = DateTime.Now;
                 _ = Task.Run(async () => await _engine.StartServerWithoutUpdateAsync());
                 await SendHttpResponseAsync(stream, 200, "application/json", "{\"success\": true, \"message\": \"Start (no update) sequence initiated.\"}");
             }
@@ -764,8 +779,20 @@ namespace ConanServerManager
                 <div class=""metric-val"" id=""valPlayers"">0 / 40</div>
             </div>
             <div class=""metric-box"">
-                <div class=""metric-lbl"">Uptime</div>
+                <div class=""metric-lbl"">Conan Server Uptime</div>
                 <div class=""metric-val"" id=""valUptime"">00:00:00</div>
+            </div>
+            <div class=""metric-box"">
+                <div class=""metric-lbl"">Manager App Uptime</div>
+                <div class=""metric-val"" id=""valAppUptime"">00:00:00</div>
+            </div>
+            <div class=""metric-box"">
+                <div class=""metric-lbl"">Windows Host Uptime</div>
+                <div class=""metric-val"" id=""valSystemUptime"">00:00:00</div>
+            </div>
+            <div class=""metric-box"">
+                <div class=""metric-lbl"">RAM (Server / App / Host)</div>
+                <div class=""metric-val"" id=""valRamUsage"" style=""font-size: 0.92rem; line-height: 1.3;"">--</div>
             </div>
             <div class=""metric-box"">
                 <div class=""metric-lbl"">Game Port</div>
@@ -889,7 +916,22 @@ namespace ConanServerManager
                 document.getElementById('valGamePort').innerText = data.gamePort;
                 document.getElementById('valRconPort').innerText = data.rconPort;
                 document.getElementById('valMods').innerText = data.activeModsCount;
-                document.getElementById('valUptime').innerText = data.uptimeString || '00:00:00';
+                const srvUp = data.serverUptimeString || data.uptimeString || '00:00:00';
+                const appUp = data.appUptimeString || '00:00:00';
+                const sysUp = data.systemUptimeString || '00:00:00';
+                document.getElementById('valUptime').innerText = srvUp;
+                if (document.getElementById('valAppUptime')) document.getElementById('valAppUptime').innerText = appUp;
+                if (document.getElementById('valSystemUptime')) document.getElementById('valSystemUptime').innerText = sysUp;
+
+                if (document.getElementById('valRamUsage')) {
+                    const srvRam = data.serverRamMb != null ? `${Math.round(data.serverRamMb)} MB` : '--';
+                    const appRam = data.appRamMb != null ? `${Math.round(data.appRamMb)} MB` : '--';
+                    const sysUsed = data.systemRamUsedGb != null ? `${data.systemRamUsedGb.toFixed(1)}` : '--';
+                    const sysTot = data.systemRamTotalGb != null ? `${data.systemRamTotalGb.toFixed(1)} GB` : '--';
+                    const sysPct = data.systemRamPercent != null ? `(${data.systemRamPercent}%)` : '';
+                    document.getElementById('valRamUsage').innerText = `Srv: ${srvRam} | Sys: ${sysUsed}/${sysTot}`;
+                    document.getElementById('valRamUsage').title = `Conan Server: ${srvRam} | Manager App: ${appRam} | Windows Host: ${sysUsed}/${sysTot} ${sysPct}`;
+                }
 
                 if (data.appVersion) {
                     document.getElementById('appVerBadge').innerText = 'v' + data.appVersion;

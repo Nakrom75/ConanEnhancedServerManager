@@ -50,8 +50,20 @@
                         <div class="metric-val" id="dashValPlayers">0 / 40</div>
                     </div>
                     <div class="metric-box">
-                        <div class="metric-lbl">Server Uptime</div>
+                        <div class="metric-lbl">Conan Server Uptime</div>
                         <div class="metric-val" id="dashValUptime">00:00:00</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-lbl">Manager App Uptime</div>
+                        <div class="metric-val" id="dashValAppUptime">00:00:00</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-lbl">Windows Host Uptime</div>
+                        <div class="metric-val" id="dashValSystemUptime">00:00:00</div>
+                    </div>
+                    <div class="metric-box" style="grid-column: span 2;">
+                        <div class="metric-lbl">RAM (Server / App / Host)</div>
+                        <div class="metric-val" id="dashValRam" style="font-size:0.85rem;line-height:1.2;">--</div>
                     </div>
                     <div class="metric-box">
                         <div class="metric-lbl">Steam Master</div>
@@ -226,7 +238,7 @@
             <div class="card">
                 <div class="card-title">✨ Application Updates</div>
                 <div style="font-size:0.85rem;color:#cbd5e1;margin-bottom:12px;">
-                    <div>App Version: <strong class="badge badge-ver" id="appInstalledVersion">v1.3.1</strong></div>
+                    <div>App Version: <strong class="badge badge-ver" id="appInstalledVersion">v1.3.2</strong></div>
                     <div style="margin-top:6px;">Server Manager Version: <strong id="serverInstalledVersion" style="color:#38bdf8;">--</strong></div>
                 </div>
 

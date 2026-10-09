@@ -105,6 +105,7 @@
             <RowDefinition Height="Auto"/> <!-- 2: Action Control Buttons Bar -->
             <RowDefinition Height="*"/>    <!-- 3: Main Multi-Tab Log & Config Panel (Takes all remaining vertical space!) -->
             <RowDefinition Height="Auto"/> <!-- 4: RCON Input Bar -->
+            <RowDefinition Height="Auto"/> <!-- 5: System Metrics & Uptime Status Bar -->
         </Grid.RowDefinitions>
 
         <!-- Header & App Update Banner -->
@@ -119,9 +120,9 @@
                     <StackPanel Orientation="Vertical">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Image Source="app.png" Width="22" Height="22" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.3.1" Style="{StaticResource HeaderTitle}"/>
+                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.3.2" Style="{StaticResource HeaderTitle}"/>
                             <Border CornerRadius="8" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" Margin="10,0,0,0" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="✨ v1.3.1" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="✨ v1.3.2" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="TxtServerPathInfo" Text="Mode: Local Server Host | Embedded Web Console: http://0.0.0.0:8088" Foreground="#94A3B8" FontSize="11"/>
@@ -839,8 +840,57 @@
             </Grid>
         </Border>
 
+        <!-- Row 5: System Metrics & Multi-Tier Uptime Status Bar -->
+        <Border Grid.Row="5" Style="{StaticResource GlassPanel}" Margin="2,1,2,2" Padding="8,4">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Left: Multi-Tier Uptimes -->
+                <WrapPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Conan Server Process Uptime -->
+                    <Border CornerRadius="6" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" Padding="8,3" Margin="0,0,8,0"
+                            ToolTip="True Conan Sandbox Server Process Uptime (Tracks the actual ConanSandboxServer-Win64-Shipping.exe process lifetime)">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="⏱️ Server Uptime:" Foreground="#94A3B8" FontSize="11" Margin="0,0,5,0"/>
+                            <TextBlock x:Name="TxtStatusServerUptime" Text="00:00:00" Foreground="#38BDF8" FontWeight="Bold" FontSize="11"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Server Manager Application Uptime -->
+                    <Border CornerRadius="6" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" Padding="8,3" Margin="0,0,8,0"
+                            ToolTip="Server Manager Application Uptime (Tracks how long ConanServerManager.exe has been running)">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="🕒 App Uptime:" Foreground="#94A3B8" FontSize="11" Margin="0,0,5,0"/>
+                            <TextBlock x:Name="TxtStatusAppUptime" Text="00:00:00" Foreground="#A78BFA" FontWeight="Bold" FontSize="11"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Windows Host OS Uptime -->
+                    <Border CornerRadius="6" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" Padding="8,3" Margin="0,0,8,0"
+                            ToolTip="Windows Host Operating System Uptime (Elapsed time since host machine was booted)">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="💻 Windows Host:" Foreground="#94A3B8" FontSize="11" Margin="0,0,5,0"/>
+                            <TextBlock x:Name="TxtStatusSystemUptime" Text="00:00:00" Foreground="#34D399" FontWeight="Bold" FontSize="11"/>
+                        </StackPanel>
+                    </Border>
+                </WrapPanel>
+
+                <!-- Right: Dedicated RAM Metrics -->
+                <Border Grid.Column="1" CornerRadius="6" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" Padding="8,3" VerticalAlignment="Center"
+                        ToolTip="Live RAM Usage: Conan Server Process Working Set | Manager App Working Set | Total Windows Host Physical RAM">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="🧠 RAM Usage:" Foreground="#94A3B8" FontSize="11" Margin="0,0,6,0"/>
+                        <TextBlock x:Name="TxtStatusRamUsage" Text="Conan: -- MB | App: -- MB | System: -- / -- GB (--%)" Foreground="#FBBF24" FontWeight="Bold" FontSize="11"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
         <!-- Full-Page Steam Workshop Browser Overlay (Spans entire application window) -->
-        <Grid x:Name="PnlFullPageBrowser" Grid.Row="0" Grid.RowSpan="5" Background="#0F172A" Visibility="Collapsed" Panel.ZIndex="1000">
+        <Grid x:Name="PnlFullPageBrowser" Grid.Row="0" Grid.RowSpan="6" Background="#0F172A" Visibility="Collapsed" Panel.ZIndex="1000">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/> <!-- Top Navigation Bar -->
                 <RowDefinition Height="Auto"/> <!-- Smart Mod Detection Banner -->

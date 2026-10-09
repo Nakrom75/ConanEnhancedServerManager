@@ -6,7 +6,7 @@ let installedMods = [];
 let savedServers = [];
 let latestApkUrl = "";
 let lastKnownConfig = null;
-let APP_VERSION = "1.3.1";
+let APP_VERSION = "1.3.2";
 if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
 }
@@ -289,7 +289,23 @@ async function pollServer() {
 
         // Dashboard Metrics
         document.getElementById("dashServerName").innerText = data.serverName || "Conan Exiles Server";
-        document.getElementById("dashValUptime").innerText = data.uptimeString || "00:00:00";
+        const srvUp = data.serverUptimeString || data.uptimeString || "00:00:00";
+        const appUp = data.appUptimeString || "00:00:00";
+        const sysUp = data.systemUptimeString || "00:00:00";
+        if (document.getElementById("dashValUptime")) document.getElementById("dashValUptime").innerText = srvUp;
+        if (document.getElementById("dashValServerUptime")) document.getElementById("dashValServerUptime").innerText = srvUp;
+        if (document.getElementById("dashValAppUptime")) document.getElementById("dashValAppUptime").innerText = appUp;
+        if (document.getElementById("dashValSystemUptime")) document.getElementById("dashValSystemUptime").innerText = sysUp;
+
+        if (document.getElementById("dashValRam")) {
+            const srvRam = data.serverRamMb != null ? `${Math.round(data.serverRamMb)} MB` : "--";
+            const appRam = data.appRamMb != null ? `${Math.round(data.appRamMb)} MB` : "--";
+            const sysUsed = data.systemRamUsedGb != null ? `${data.systemRamUsedGb.toFixed(1)}` : "--";
+            const sysTot = data.systemRamTotalGb != null ? `${data.systemRamTotalGb.toFixed(1)} GB` : "--";
+            const sysPct = data.systemRamPercent != null ? `(${data.systemRamPercent}%)` : "";
+            document.getElementById("dashValRam").innerText = `Srv: ${srvRam} | App: ${appRam} | Host: ${sysUsed}/${sysTot} ${sysPct}`;
+        }
+
         document.getElementById("dashValGamePort").innerText = data.gamePort || "7777";
         document.getElementById("dashValRconPort").innerText = data.rconPort || "25575";
         document.getElementById("dashValMods").innerText = data.activeModsCount || 0;

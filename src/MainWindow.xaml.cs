@@ -20,6 +20,7 @@ namespace ConanServerManager
         private readonly ServerEngine _engine;
         private readonly HttpClient _httpClient = new HttpClient();
         private readonly DispatcherTimer _remoteTimer = new DispatcherTimer();
+        private readonly DispatcherTimer _metricsTimer = new DispatcherTimer();
         private bool _isInitialized = false;
         private bool _hasSyncedRemoteConfig = false;
         private bool _isPopulatingRemoteDropdown = false;
@@ -74,6 +75,9 @@ namespace ConanServerManager
                 }
             };
 
+            _metricsTimer.Interval = TimeSpan.FromSeconds(1);
+            _metricsTimer.Tick += (s, e) => RefreshLiveMetricsUi();
+
             Loaded += async (s, e) =>
             {
                 Activate();
@@ -82,6 +86,9 @@ namespace ConanServerManager
                 TxtAppHeaderVersionBadge.Text = $"✨ v{ServerEngine.CurrentAppVersion}";
                 _engine.Log($"[System] Conan Enhanced Server Manager v{ServerEngine.CurrentAppVersion} initialized successfully.");
                 LoadUiFromConfig();
+
+                _metricsTimer.Start();
+                RefreshLiveMetricsUi();
 
                 if (!IsRemoteMode)
                 {
@@ -100,6 +107,51 @@ namespace ConanServerManager
                     }
                 }
             };
+        }
+
+        private void RefreshLiveMetricsUi()
+        {
+            if (!IsRemoteMode)
+            {
+                var srvUptime = _engine.ServerProcessUptime;
+                var appUptime = _engine.AppUptime;
+                var sysUptime = _engine.SystemUptime;
+                var mem = ServerEngine.GetSystemMemoryStatus();
+                double srvRam = _engine.ServerRamMb;
+                double appRam = _engine.AppRamMb;
+
+                string srvUpStr = ServerEngine.FormatUptime(srvUptime);
+                string appUpStr = ServerEngine.FormatUptime(appUptime);
+                string sysUpStr = ServerEngine.FormatUptime(sysUptime);
+
+                if (TxtStatusServerUptime != null)
+                {
+                    if (_engine.ServerStatus == "RUNNING")
+                    {
+                        TxtStatusServerUptime.Text = srvUpStr;
+                        TxtStatusServerUptime.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#38BDF8"));
+                    }
+                    else
+                    {
+                        TxtStatusServerUptime.Text = $"00:00:00 ({_engine.ServerStatus})";
+                        TxtStatusServerUptime.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#94A3B8"));
+                    }
+                }
+
+                if (TxtStatusAppUptime != null) TxtStatusAppUptime.Text = appUpStr;
+                if (TxtStatusSystemUptime != null) TxtStatusSystemUptime.Text = sysUpStr;
+
+                if (TxtStatusRamUsage != null)
+                {
+                    TxtStatusRamUsage.Text = $"Conan: {srvRam:N0} MB | App: {appRam:N0} MB | System: {mem.UsedPhysGb:F1}/{mem.TotalPhysGb:F1} GB ({mem.MemoryLoadPercent}%)";
+                }
+
+                if (TxtServerPathInfo != null)
+                {
+                    int webPort = _engine.Config.WebPagePort;
+                    TxtServerPathInfo.Text = $"Mode: Local Server Host | Web: http://0.0.0.0:{webPort} | Server: {srvUpStr} | App: {appUpStr} | Win: {sysUpStr}";
+                }
+            }
         }
 
         private async Task UpdatePortStatusLedsAsync()
@@ -185,6 +237,7 @@ namespace ConanServerManager
                 PopulateUiFromConfig(_engine.Config);
                 LoadIniFilesToTabs();
                 UpdateStatusUi(_engine.ServerStatus);
+                RefreshLiveMetricsUi();
             }
         }
 
@@ -383,7 +436,16 @@ namespace ConanServerManager
                 using (var doc = JsonDocument.Parse(statusJson))
                 {
                     string status = doc.RootElement.GetProperty("status").GetString() ?? "STOPPED";
-                    string uptime = doc.RootElement.GetProperty("uptimeString").GetString() ?? "00:00:00";
+                    string uptime = doc.RootElement.TryGetProperty("serverUptimeString", out var suProp) ? suProp.GetString() ?? "" :
+                        (doc.RootElement.TryGetProperty("uptimeString", out var upStrProp) ? upStrProp.GetString() ?? "00:00:00" : "00:00:00");
+                    string appUptime = doc.RootElement.TryGetProperty("appUptimeString", out var auProp) ? auProp.GetString() ?? "00:00:00" : "00:00:00";
+                    string sysUptime = doc.RootElement.TryGetProperty("systemUptimeString", out var syProp) ? syProp.GetString() ?? "00:00:00" : "00:00:00";
+
+                    double srvRamMb = doc.RootElement.TryGetProperty("serverRamMb", out var srmProp) ? srmProp.GetDouble() : 0.0;
+                    double appRamMb = doc.RootElement.TryGetProperty("appRamMb", out var armProp) ? armProp.GetDouble() : 0.0;
+                    double sysUsedGb = doc.RootElement.TryGetProperty("systemRamUsedGb", out var suGbProp) ? suGbProp.GetDouble() : 0.0;
+                    double sysTotGb = doc.RootElement.TryGetProperty("systemRamTotalGb", out var stGbProp) ? stGbProp.GetDouble() : 0.0;
+                    int sysPct = doc.RootElement.TryGetProperty("systemRamPercent", out var spPctProp) ? spPctProp.GetInt32() : 0;
                     string srvName = doc.RootElement.GetProperty("serverName").GetString() ?? "";
 
                     bool steamOnline = doc.RootElement.TryGetProperty("steamOnline", out var soProp) && soProp.GetBoolean();
@@ -391,7 +453,30 @@ namespace ConanServerManager
                     int steamMaxPlayers = doc.RootElement.TryGetProperty("steamMaxPlayers", out var smpProp) ? smpProp.GetInt32() : 0;
                     int steamPing = doc.RootElement.TryGetProperty("steamPing", out var pingProp) ? pingProp.GetInt32() : 0;
                     string steamErr = doc.RootElement.TryGetProperty("steamError", out var seProp) ? seProp.GetString() ?? "" : "";
-                    int uptimeSec = doc.RootElement.TryGetProperty("uptimeSeconds", out var upProp) ? upProp.GetInt32() : 0;
+                    int uptimeSec = doc.RootElement.TryGetProperty("serverUptimeSeconds", out var supProp) ? supProp.GetInt32() :
+                        (doc.RootElement.TryGetProperty("uptimeSeconds", out var upProp) ? upProp.GetInt32() : 0);
+
+                    if (TxtStatusServerUptime != null)
+                    {
+                        if (status == "RUNNING")
+                        {
+                            TxtStatusServerUptime.Text = uptime;
+                            TxtStatusServerUptime.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#38BDF8"));
+                        }
+                        else
+                        {
+                            TxtStatusServerUptime.Text = $"00:00:00 ({status})";
+                            TxtStatusServerUptime.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#94A3B8"));
+                        }
+                    }
+
+                    if (TxtStatusAppUptime != null) TxtStatusAppUptime.Text = appUptime;
+                    if (TxtStatusSystemUptime != null) TxtStatusSystemUptime.Text = sysUptime;
+
+                    if (TxtStatusRamUsage != null)
+                    {
+                        TxtStatusRamUsage.Text = $"Conan: {srvRamMb:N0} MB | App: {appRamMb:N0} MB | System: {sysUsedGb:F1}/{sysTotGb:F1} GB ({sysPct}%)";
+                    }
 
                     var remoteSteam = new SteamServerInfo
                     {
@@ -435,7 +520,7 @@ namespace ConanServerManager
                     }
 
                     if (TxtServerPathInfo != null)
-                        TxtServerPathInfo.Text = $"Remote Host: {srvName} ({status}) | Uptime: {uptime} | URL: {baseUrl}";
+                        TxtServerPathInfo.Text = $"Remote Host: {srvName} ({status}) | Server: {uptime} | App: {appUptime} | Win: {sysUptime} | URL: {baseUrl}";
 
                     SetRemoteConnectionStatus(true, $"CONNECTED to {srvName} ({status})");
 
@@ -475,6 +560,16 @@ namespace ConanServerManager
                 UpdateStatusUi("OFFLINE");
                 UpdateSteamVisibilityUi(new SteamServerInfo { IsOnline = false, ErrorMessage = "Remote server unreachable" });
                 string errorMsg = ex is TaskCanceledException ? "Connection timed out (4s limit)" : ex.Message;
+
+                if (TxtStatusServerUptime != null)
+                {
+                    TxtStatusServerUptime.Text = "--:--:-- (Offline)";
+                    TxtStatusServerUptime.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#94A3B8"));
+                }
+                if (TxtStatusAppUptime != null) TxtStatusAppUptime.Text = "--:--:--";
+                if (TxtStatusSystemUptime != null) TxtStatusSystemUptime.Text = "--:--:--";
+                if (TxtStatusRamUsage != null) TxtStatusRamUsage.Text = "Disconnected";
+
                 if (TxtServerPathInfo != null)
                     TxtServerPathInfo.Text = $"Remote Connection Error: Cannot reach {baseUrl} ({errorMsg})";
 

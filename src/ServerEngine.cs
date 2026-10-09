@@ -10,6 +10,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 
 namespace ConanServerManager
 {
@@ -258,10 +259,118 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.3.1";
+            return "1.3.2";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
+        public static readonly DateTime AppStartTime = DateTime.Now;
+
+        public TimeSpan AppUptime => DateTime.Now - AppStartTime;
+
+        public TimeSpan ServerProcessUptime
+        {
+            get
+            {
+                if (ServerStatus == "RUNNING" && ServerStartTime > DateTime.MinValue)
+                {
+                    return DateTime.Now >= ServerStartTime ? DateTime.Now - ServerStartTime : TimeSpan.Zero;
+                }
+                return TimeSpan.Zero;
+            }
+        }
+
+        public TimeSpan SystemUptime => TimeSpan.FromMilliseconds((double)Environment.TickCount64);
+
+        public static string FormatUptime(TimeSpan ts)
+        {
+            if (ts <= TimeSpan.Zero) return "00:00:00";
+            if (ts.TotalDays >= 1)
+            {
+                return $"{(int)ts.TotalDays}d {ts.Hours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}";
+            }
+            return $"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}";
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        private struct MEMORYSTATUSEX
+        {
+            public uint dwLength;
+            public uint dwMemoryLoad;
+            public ulong ullTotalPhys;
+            public ulong ullAvailPhys;
+            public ulong ullTotalPageFile;
+            public ulong ullAvailPageFile;
+            public ulong ullTotalVirtual;
+            public ulong ullAvailVirtual;
+            public ulong ullAvailExtendedVirtual;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
+
+        public class SystemMemoryInfo
+        {
+            public double TotalPhysGb { get; set; }
+            public double AvailPhysGb { get; set; }
+            public double UsedPhysGb { get; set; }
+            public int MemoryLoadPercent { get; set; }
+        }
+
+        public static SystemMemoryInfo GetSystemMemoryStatus()
+        {
+            try
+            {
+                var memStatus = new MEMORYSTATUSEX();
+                memStatus.dwLength = (uint)Marshal.SizeOf(typeof(MEMORYSTATUSEX));
+                if (GlobalMemoryStatusEx(ref memStatus))
+                {
+                    double totalGb = Math.Round(memStatus.ullTotalPhys / (1024.0 * 1024.0 * 1024.0), 2);
+                    double availGb = Math.Round(memStatus.ullAvailPhys / (1024.0 * 1024.0 * 1024.0), 2);
+                    double usedGb = Math.Max(0, Math.Round(totalGb - availGb, 2));
+                    return new SystemMemoryInfo
+                    {
+                        TotalPhysGb = totalGb,
+                        AvailPhysGb = availGb,
+                        UsedPhysGb = usedGb,
+                        MemoryLoadPercent = (int)memStatus.dwMemoryLoad
+                    };
+                }
+            }
+            catch { }
+            return new SystemMemoryInfo();
+        }
+
+        public double ServerRamMb
+        {
+            get
+            {
+                try
+                {
+                    if (ServerProcess != null && !ServerProcess.HasExited)
+                    {
+                        ServerProcess.Refresh();
+                        return Math.Round(ServerProcess.WorkingSet64 / (1024.0 * 1024.0), 1);
+                    }
+                }
+                catch { }
+                return 0.0;
+            }
+        }
+
+        public double AppRamMb
+        {
+            get
+            {
+                try
+                {
+                    using var cur = Process.GetCurrentProcess();
+                    return Math.Round(cur.WorkingSet64 / (1024.0 * 1024.0), 1);
+                }
+                catch { }
+                return 0.0;
+            }
+        }
         public SteamServerInfo SteamStatus { get; private set; } = new SteamServerInfo();
         public event Action<SteamServerInfo>? OnSteamStatusChanged;
 
@@ -312,9 +421,17 @@ namespace ConanServerManager
 
                     var primaryProc = procs[0];
                     ServerProcess = primaryProc;
-                    if (ServerStartTime == DateTime.MinValue) ServerStartTime = DateTime.Now;
+                    try
+                    {
+                        ServerStartTime = primaryProc.StartTime;
+                    }
+                    catch (Exception exTime)
+                    {
+                        Log($"[Process Monitor] Note reading process start time: {exTime.Message}");
+                        if (ServerStartTime == DateTime.MinValue) ServerStartTime = DateTime.Now;
+                    }
                     SetStatus("RUNNING");
-                    Log($"[Process Monitor] Attached to running Conan Dedicated Server process (PID {primaryProc.Id}). Status: RUNNING.");
+                    Log($"[Process Monitor] Attached to running Conan Dedicated Server process (PID {primaryProc.Id}, Started: {ServerStartTime:yyyy-MM-dd HH:mm:ss}, Process Uptime: {FormatUptime(ServerProcessUptime)}). Status: RUNNING.");
                     return true;
                 }
             }
@@ -757,6 +874,7 @@ namespace ConanServerManager
                         Log("[Watchdog] WARNING: Server process terminated unexpectedly! Executing auto-restart...");
                         SetStatus("STOPPED");
                         ServerProcess = null;
+                        ServerStartTime = DateTime.MinValue;
                         _ = Task.Run(async () => await RunFullUpdateAndStartAsync());
                         return;
                     }
@@ -1773,9 +1891,16 @@ namespace ConanServerManager
                         Log($"Priority/Affinity assignment note: {exPriority.Message}");
                     }
 
-                    ServerStartTime = DateTime.Now;
+                    try
+                    {
+                        ServerStartTime = ServerProcess.StartTime;
+                    }
+                    catch
+                    {
+                        ServerStartTime = DateTime.Now;
+                    }
                     SetStatus("RUNNING");
-                    Log($"Server launched successfully! Process PID: {ServerProcess.Id}");
+                    Log($"Server launched successfully! Process PID: {ServerProcess.Id}, Process Start: {ServerStartTime:yyyy-MM-dd HH:mm:ss}");
                     Log($"Launch Command: {ExecutablePath} {arguments}");
 
                     _ = Task.Run(async () => await SendDiscordNotificationAsync(Config.ReadyDiscordMsg));

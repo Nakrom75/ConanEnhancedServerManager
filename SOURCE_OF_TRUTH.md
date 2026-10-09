@@ -1411,7 +1411,75 @@ With **v1.2.0**, both the Windows Desktop Host application and the Android Compa
 
 ---
 
-## 37. Future Roadmap & Upcoming Engineering Tasks (To-Do)
+## 37. Multi-Tier Uptime Architecture & Live System RAM Monitoring (v1.3.2)
+
+> **Milestone Version:** 1.3.2 (versionCode `10302`)  
+> **Release Target:** Multi-tier uptime monitoring (Conan Server Process, Manager App, and Windows Host OS) and live RAM telemetry across Desktop UI, Web Dashboard, Mobile App, and REST API.
+
+### 1. The Uptime Problem & Root Cause Analysis
+- **Incident / User Observation**: The manager displayed `00:03:37` uptime even though the Conan Dedicated Server process had been running continuously without restart.
+- **Root Cause Identified**:
+  1. `WebServer._startTime` was initialized when the manager launched and was used to calculate `/api/status` uptime (`DateTime.Now - _startTime`).
+  2. In `ServerEngine.DetectAndAdoptRunningServerProcess()`, upon adopting an existing running server process (`ConanSandboxServer-Win64-Shipping.exe`), the engine did:
+     `if (ServerStartTime == DateTime.MinValue) ServerStartTime = DateTime.Now;`
+     instead of interrogating the operating system process start time.
+  3. Consequently, anytime the manager was started, restarted, or updated while the game server process remained alive, the uptime counter reset back to zero.
+
+### 2. Multi-Tier Uptime Architecture
+- **True Conan Server Process Lifetime (`ServerProcessUptime`)**:
+  - In `DetectAndAdoptRunningServerProcess()`, the engine now reads `primaryProc.StartTime`.
+  - In `StartServerProcess()`, the engine records `ServerProcess.StartTime`.
+  - On unexpected exit or stop, `ServerStartTime` is reset to `DateTime.MinValue`.
+  - `ServerProcessUptime` calculates `DateTime.Now - ServerStartTime` when `ServerStatus == "RUNNING"`, or `TimeSpan.Zero` when stopped.
+  - `FormatUptime`: Formats as `"{d}d {hh}:{mm}:{ss}"` when running for 24+ hours (e.g. `14d 06:12:05`), or `"{hh}:{mm}:{ss}"` when under 24 hours.
+- **Manager Application Uptime (`AppUptime`)**:
+  - Tracks `DateTime.Now - AppStartTime` from the static initialization timestamp of `ConanServerManager.exe`.
+- **Windows Host OS Uptime (`SystemUptime`)**:
+  - Interrogates `TimeSpan.FromMilliseconds((double)Environment.TickCount64)` for zero-overhead, 64-bit non-wrapping Windows host uptime.
+
+### 3. Real-Time RAM Telemetry Engine
+- **Conan Server Working Set**:
+  - Reads `ServerProcess.WorkingSet64 / (1024 * 1024)` on demand (`ServerRamMb`).
+- **Manager Application Working Set**:
+  - Reads current process `WorkingSet64` (`AppRamMb`).
+- **Windows Host Physical RAM**:
+  - Sourced via Win32 `GlobalMemoryStatusEx` (`MEMORYSTATUSEX` struct) in `kernel32.dll`.
+  - Returns `TotalPhysGb`, `AvailPhysGb`, `UsedPhysGb`, and `MemoryLoadPercent`.
+
+### 4. Cross-Platform UI & REST API Synchronization
+- **REST API (`/api/status`)**:
+  - Exposes `serverUptimeSeconds`, `serverUptimeString`, `appUptimeSeconds`, `appUptimeString`, `systemUptimeSeconds`, `systemUptimeString`, `serverRamMb`, `appRamMb`, `systemRamUsedGb`, `systemRamTotalGb`, `systemRamPercent`, and `ramSummary`.
+  - Retains backwards-compatible `uptimeSeconds` and `uptimeString` mapped directly to true Conan server process uptime.
+- **Desktop UI (`MainWindow.xaml` & `MainWindow.xaml.cs`)**:
+  - Added **Row 5 System Metrics & Status Bar** with glassmorphic status chips:
+    - ⏱️ **Server Uptime**: Cyan highlight when running (`TxtStatusServerUptime`), dimmed when stopped.
+    - 🕒 **App Uptime**: Violet highlight (`TxtStatusAppUptime`).
+    - 💻 **Windows Host**: Emerald highlight (`TxtStatusSystemUptime`).
+    - 🧠 **RAM Usage**: Amber breakdown (`TxtStatusRamUsage`) showing Conan server MB, Manager MB, and Host System Used / Total GB + %.
+  - Header info (`TxtServerPathInfo`) updated dynamically in both Local and Remote modes.
+  - 1-second `_metricsTimer` updates UI smoothly without blocking.
+- **Embedded Web Dashboard (`src/WebServer.cs`)**:
+  - Expanded `metrics-grid` with dedicated boxes for Conan Server Uptime, Manager App Uptime, Windows Host Uptime, and RAM (Server / App / Host).
+- **Android Companion Mobile App (`index.html` & `app.js`)**:
+  - Updated mobile status dashboard cards to render Conan Server Uptime, App Uptime, Windows Host Uptime, and Host/Server RAM breakdown.
+
+### 5. Synchronized Dual-Platform Release (`v1.3.2` / `10302`)
+- Synchronized all 7 core version locations:
+  1. `version.txt` -> `1.3.2`
+  2. `src/ServerEngine.cs` -> `CurrentAppVersion = "1.3.2"`
+  3. `src/MainWindow.xaml` -> `v1.3.2` (title and header badge)
+  4. `android/app/build.gradle` -> `getAppVersionName() = "1.3.2"`, `getAppVersionCode() = 10302`
+  5. `android/app/src/main/assets/app.js` -> `APP_VERSION = "1.3.2"`
+  6. `android/app/src/main/assets/index.html` -> badge `v1.3.2`
+  7. `android/app/src/main/java/com/conan/servermanager/MainActivity.java` -> fallback `"1.3.2"`, `10302`
+- **Build Status**:
+  - Windows: Self-contained `win-x64` build compiled with 0 Errors / 0 Warnings; packaged `ConanServerManager_v1.3.2.zip` and updated `ConanServerManager_DeployPackage.zip`.
+  - Android: Generated pre-signed `ConanServerManager-v1.3.2.apk` (4.64 MB, versionCode `10302`).
+- **Zero Remote Deployment**: All binaries and packages remain strictly local for manual administrator distribution.
+
+---
+
+## 38. Future Roadmap & Upcoming Engineering Tasks (To-Do)
 
 ### To-Do: Automated Mod Dependency Resolution
 - Investigate querying Steam Workshop item dependencies (e.g. required framework mods like Pippi, ModControlPanel) and prompt users with 1-click batch installation of prerequisite mods when installing an item.
