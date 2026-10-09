@@ -6,7 +6,7 @@ let installedMods = [];
 let savedServers = [];
 let latestApkUrl = "";
 let lastKnownConfig = null;
-let APP_VERSION = "1.3.0";
+let APP_VERSION = "1.3.1";
 if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
 }

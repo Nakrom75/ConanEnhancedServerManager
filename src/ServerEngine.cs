@@ -258,7 +258,7 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.3.0";
+            return "1.3.1";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
@@ -2287,14 +2287,34 @@ namespace ConanServerManager
 
                 if (root.TryGetProperty("assets", out var assetsProp) && assetsProp.ValueKind == JsonValueKind.Array)
                 {
+                    // 1st priority: Canonical Windows release zip (e.g. ConanServerManager_v1.3.1.zip)
                     foreach (var asset in assetsProp.EnumerateArray())
                     {
                         string name = asset.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "" : "";
-                        if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                        if (name.StartsWith("ConanServerManager_v", StringComparison.OrdinalIgnoreCase) &&
+                            name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) &&
+                            !name.Contains("linux", StringComparison.OrdinalIgnoreCase))
                         {
                             downloadUrl = asset.TryGetProperty("browser_download_url", out var dlProp) ? dlProp.GetString() ?? "" : "";
                             assetSize = asset.TryGetProperty("size", out var sizeProp) ? sizeProp.GetInt64() : 0;
                             break;
+                        }
+                    }
+
+                    // 2nd priority fallback: any Windows zip that is not DeployPackage or linux
+                    if (string.IsNullOrEmpty(downloadUrl))
+                    {
+                        foreach (var asset in assetsProp.EnumerateArray())
+                        {
+                            string name = asset.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "" : "";
+                            if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) &&
+                                !name.Contains("linux", StringComparison.OrdinalIgnoreCase) &&
+                                !name.Contains("DeployPackage", StringComparison.OrdinalIgnoreCase))
+                            {
+                                downloadUrl = asset.TryGetProperty("browser_download_url", out var dlProp) ? dlProp.GetString() ?? "" : "";
+                                assetSize = asset.TryGetProperty("size", out var sizeProp) ? sizeProp.GetInt64() : 0;
+                                break;
+                            }
                         }
                     }
                 }
@@ -2468,6 +2488,14 @@ tasklist /fi ""PID eq %~2"" 2>nul | find ""%~2"" > nul
 if not errorlevel 1 (
     timeout /t 1 /nobreak > nul
     goto WAIT_PID
+)
+
+if not exist ""%~dp0Updates\staged\ConanServerManager.exe"" (
+    echo [ERROR] ConanServerManager.exe was not found in the extracted update files!
+    echo Aborting update to protect the existing server manager installation.
+    timeout /t 5 > nul
+    start """" ""%TARGET%\ConanServerManager.exe""
+    exit /b 1
 )
 
 echo Applying updated binaries...

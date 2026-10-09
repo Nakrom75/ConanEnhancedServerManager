@@ -6,10 +6,8 @@ Backups/
 Errors/
 Updates/
 /ServerManager/
-/ServerManager-Linux/
 /ConanServerManager_DeployPackage/
 ConanServerManager*.zip
-ConanServerManager*.tar.gz
 conan.apk
 ConanServerManager-v1.1.*.apk
 !ConanServerManager-v1.1.11.apk

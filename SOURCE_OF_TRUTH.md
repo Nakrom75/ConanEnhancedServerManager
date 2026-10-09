@@ -1,6 +1,6 @@
 # SOURCE OF TRUTH: Conan Exiles Dedicated Server & Manager Architecture
 
-> **Document Version:** 1.3.0  
+> **Document Version:** 1.3.1  
 > **Target Application:** Conan Exiles Dedicated Server (AppID `443030`)  
 > **Date:** October 2026  
 > **Purpose:** Complete reverse-engineered architectural blueprint, specifications, protocol details, and engineering roadmap to build a custom, modern, highly reliable Conan Exiles Dedicated Server Manager.
@@ -54,7 +54,7 @@
 33. [Strict Version Numbering & Synchronized Dual-Platform Build Policy](#33-strict-version-numbering--synchronized-dual-platform-build-policy)
 34. [Full-Page Workshop Browser Overlay & Dual-Platform Synchronization (v1.2.1)](#34-full-page-workshop-browser-overlay--dual-platform-synchronization-v121)
 35. [Background SteamCMD Mod Pre-Download & Cache Engine (v1.2.2)](#35-background-steamcmd-mod-pre-download--cache-engine-v122)
-36. [Linux Fedora KDE Desktop Client & Cross-Platform Avalonia Architecture (v1.3.0)](#36-linux-fedora-kde-desktop-client--cross-platform-avalonia-architecture-v130)
+36. [Self-Updater Asset Architecture, Windows Binary Guard & Linux Sunset (v1.3.1)](#36-self-updater-asset-architecture-windows-binary-guard--linux-sunset-v131)
 37. [Future Roadmap & Upcoming Engineering Tasks (To-Do)](#37-future-roadmap--upcoming-engineering-tasks-to-do)
 
 ---
@@ -1353,65 +1353,61 @@ With **v1.2.0**, both the Windows Desktop Host application and the Android Compa
 
 ---
 
-## 36. Linux Fedora KDE Desktop Client & Cross-Platform Avalonia Architecture (v1.3.0)
+## 36. Self-Updater Asset Architecture, Windows Binary Guard & Linux Sunset (v1.3.1)
 
-> **Milestone Version:** 1.3.0 (versionCode `10300`)  
-> **Release Target:** Native Linux GUI client for Fedora KDE (built with Avalonia UI), self-contained `linux-x64` packaging, local network UDP auto-discovery, and multi-platform synchronization across Windows, Android, and Linux.
+> **Milestone Version:** 1.3.1 (versionCode `10301`)  
+> **Release Target:** Self-updater multi-asset disambiguation fix, trampoline safety guard protecting Windows binary integrity, complete deprecation/removal of Linux client, and dual-platform synchronization.
 
-### 1. Problem Statement & Motivation
-- **Cross-Platform Administration**: Administrators managing Conan Exiles Dedicated Servers often run Linux workstations (such as Fedora Linux with KDE Plasma) while the game server itself runs on a dedicated Windows host (since Conan Sandbox Server has no native Linux binary).
-- **WPF Limitations**: The primary Windows manager GUI is built with WPF (`net10.0-windows`), which is tied to the Windows DirectX/Win32 subsystem and cannot execute natively on Linux / X11 / Wayland without complex, brittle Wine configurations.
-- **Avalonia UI Solution**: By implementing a dedicated cross-platform client with Avalonia UI 12.x (`client-linux/`), administrators on Fedora KDE get a true native Linux desktop application with hardware acceleration (Vulkan/OpenGL/Wayland/X11), native KDE Plasma window decorations, dark glass styling, and zero external runtime dependencies.
+### 1. Post-Update Launch Failure: Root Cause Analysis
+- **Incident Summary**: Following the previous release, attempting to run or auto-update the Windows application resulted in the manager failing to launch completely.
+- **Root Cause Identified**:
+  1. In the previous release, multiple `.zip` asset packages were attached to the GitHub release (`ConanServerManager-linux-x64-v1.3.0.zip` alongside the Windows package `ConanServerManager_v1.3.0.zip`).
+  2. The auto-update engine in `ServerEngine.cs` (`CheckForAppUpdateAsync`) evaluated GitHub release assets using a naive file extension check: `if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) { ... break; }`.
+  3. Because the Linux archive appeared earlier in asset enumeration, the Windows auto-updater downloaded the Linux client package and extracted Linux ELF binaries over the Windows server host directory.
+  4. The Windows executable `ConanServerManager.exe` was consequently overwritten or missing, leaving the server host unable to start.
 
-### 2. Linux Client Architecture (`client-linux/`)
-- **Modern Avalonia UI 12.x GUI**:
-  - Engineered with dark modern glass styling matching the Windows desktop and Android companion apps.
-  - Full-featured header with live connection indicator, server address input, and 1-click **Scan LAN** auto-discovery.
-- **Top Metrics Dashboard**:
-  - Live Server Status badge (`RUNNING`, `STOPPED`, `UPDATING`), uptime timer, CPU usage %, RAM MB and %, player counter (`0 / 40`), and Steam Workshop mods count.
-  - Active download progress bar showing real-time transfer speed (MB/s) and ETA during updates and mod pre-downloads.
-- **Remote Server Lifecycle Controls**:
-  - ▶ **Start Server** (`POST /api/control/start`)
-  - ■ **Stop Server** (`POST /api/control/stop`)
-  - 🔄 **Clean Restart** (`POST /api/control/restart` with automated player warnings and countdown sequence)
-  - 💾 **Trigger Hot Backup** (`POST /api/control/backup`)
-- **Integrated Multi-Tab Console**:
-  - **Live Server Console**: Real-time streaming log output from `/api/logs` with auto-scroll and clipboard copy.
-  - **RCON Terminal**: Interactive command prompt with instant execution (`/api/control/rcon`) and quick-access macros (`save`, `listplayers`, `broadcast`, `kick`).
-  - **Steam Workshop Mod Manager**: Displays installed mods with on-disk pre-download badges (`✅ Ready on Disk` vs `⏳ Pending Download`), 1-click `➕ Add Mod ID`, `📥 Pre-Download / Validate on Server`, `🗑️ Remove Mod`, and `🌐 Open Steam Workshop in Browser`.
-  - **Live INI Configuration Editor**: Fetches and saves `ServerSettings.ini`, `Engine.ini`, and `Game.ini` directly over the manager REST API (`/api/ini`).
-  - **Remote Settings Form**: Visual editor for server name, passwords, ports, and player caps (`/api/config`).
+### 2. Self-Updater Multi-Asset Disambiguation Engine
+- **Targeted Windows Package Resolution**:
+  - Rewrote asset selection in `ServerEngine.CheckForAppUpdateAsync`:
+    ```csharp
+    // 1st priority: Canonical Windows release zip
+    if (name.StartsWith("ConanServerManager_v", StringComparison.OrdinalIgnoreCase) &&
+        name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) &&
+        !name.Contains("linux", StringComparison.OrdinalIgnoreCase))
+    ```
+  - Added a defensive fallback layer strictly excluding any asset containing `linux`, `DeployPackage`, or foreign platform tags.
 
-### 3. UDP Local Network Auto-Discovery
-- **Cross-Platform LAN Discovery** ([`DiscoveryHelper.cs`](file:///F:/Projects/Conan%20Exiles%20Dedicated%20Server/client-linux/DiscoveryHelper.cs)):
-  - Broadcasts `CONAN_DISCOVER_REQUEST` on UDP port `8089` across all active network interfaces.
-  - Conan Server Manager instances on the local network reply with server name, HTTP port, and game port (`CONAN_DISCOVER_RESPONSE|<name>|<webPort>|<gamePort>`).
-  - Discovered servers populate the dropdown for instantaneous 1-click connection.
-  - Remembers the last connected server address in `~/.config/conanservermanager/client_config.json`.
+### 3. Trampoline Binary Integrity Guard (`update_helper.bat`)
+- **Pre-Copy Validation Guard**:
+  - Upgraded `update_helper.bat` generation in `ServerEngine.DownloadAndApplyAppUpdateAsync` with an affirmative sanity check:
+    ```cmd
+    if not exist "%~dp0Updates\staged\ConanServerManager.exe" (
+        echo [ERROR] ConanServerManager.exe was not found in the extracted update files!
+        echo Aborting update to protect the existing server manager installation.
+        timeout /t 5 > nul
+        start "" "%TARGET%\ConanServerManager.exe"
+        exit /b 1
+    )
+    ```
+  - If any corrupt, incomplete, or foreign platform archive is ever extracted to `Updates\staged`, the trampoline script **aborts immediately**, leaves the working directory untouched, and cleanly restarts the existing `ConanServerManager.exe`.
 
-### 4. Fedora KDE Plasma Desktop Integration & Packaging
-- **Self-Contained `linux-x64` Binary**:
-  - Compiled and published with `--self-contained true -r linux-x64`.
-  - Bundles the complete .NET runtime and native Linux graphics libraries. Runs immediately on any fresh Fedora KDE installation without requiring `dnf install dotnet`.
-- **KDE Plasma Integration Files**:
-  - `conan-server-manager.desktop`: Standard FreeDesktop / XDG desktop entry with application categories and icon association.
-  - `install-kde-desktop.sh`: 1-click installer script copying desktop launcher to `~/.local/share/applications/` and icon to `~/.local/share/icons/hicolor/256x256/apps/`, refreshing KDE menu cache via `kbuildsycoca6` / `kbuildsycoca5`.
-  - `run.sh`: Convenient executable launcher script.
-- **Release Packages**:
-  - `ConanServerManager-linux-x64-v1.3.0.tar.gz` (45.4 MB, preserves Linux executable permissions `+x`)
-  - `ConanServerManager-linux-x64-v1.3.0.zip` (47.3 MB)
+### 4. Deprecation & Sunset of Linux Client
+- As requested, the cross-platform Linux client experiment (`client-linux/`) has been completely scrapped from the codebase.
+- Development remains 100% focused on the Windows Dedicated Server Host application and the Android Companion Mobile App.
 
-### 5. Multi-Platform Release Synchronization (`v1.3.0` / `10300`)
-- Synchronized all platform layers:
-  1. `version.txt` -> `1.3.0`
-  2. `src/ServerEngine.cs` -> `CurrentAppVersion = "1.3.0"`
-  3. `src/MainWindow.xaml` -> `v1.3.0`
-  4. `android/app/build.gradle` -> `1.3.0`, `10300`
-  5. `android/app/src/main/assets/app.js` -> `APP_VERSION = "1.3.0"`
-  6. `android/app/src/main/assets/index.html` -> `v1.3.0`
-  7. `android/app/src/main/java/com/conan/servermanager/MainActivity.java` -> `1.3.0`, `10300`
-  8. `client-linux/` -> `v1.3.0`
-- **Zero Remote Deployment**: All binaries, archives, and APKs remain strictly local in the project workspace for manual administrator deployment.
+### 5. Synchronized Dual-Platform Release (`v1.3.1` / `10301`)
+- Synchronized all 7 core version points:
+  1. `version.txt` -> `1.3.1`
+  2. `src/ServerEngine.cs` -> `CurrentAppVersion = "1.3.1"`
+  3. `src/MainWindow.xaml` -> `v1.3.1` (title and header badge)
+  4. `android/app/build.gradle` -> `getAppVersionName() = "1.3.1"`, `getAppVersionCode() = 10301`
+  5. `android/app/src/main/assets/app.js` -> `APP_VERSION = "1.3.1"`
+  6. `android/app/src/main/assets/index.html` -> badge `v1.3.1`
+  7. `android/app/src/main/java/com/conan/servermanager/MainActivity.java` -> fallback `"1.3.1"`, `10301`
+- **Build Status**:
+  - Windows: Self-contained `win-x64` build compiled with 0 Errors / 0 Warnings; packaged `ConanServerManager_v1.3.1.zip` and updated `ConanServerManager_DeployPackage.zip`.
+  - Android: Generated pre-signed `ConanServerManager-v1.3.1.apk` (4.64 MB, versionCode `10301`).
+- **Zero Remote Deployment**: All binaries and packages remain strictly local for manual administrator distribution.
 
 ---
 
