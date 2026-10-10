@@ -1664,6 +1664,51 @@ The following items were identified during the v1.3.2 feature audit and schedule
 - **Zero Remote Deployment Compliance**: All binaries, APKs, and packages remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\` for manual administrator release and distribution.
 
 ---
+
+## 42. Inactive / Disabled Mods UI Persistence & Dual-Platform Release (`v1.3.5`)
+
+### 1. Issue Analysis & Root Cause Diagnosis
+- **Reported Bug**:
+  - When disabling a mod, it was correctly moved to the Inactive Mods list. However, performing any subsequent action in the application (such as starting the server, saving configuration, running a hot backup, or restarting the server or application) emptied the Inactive Mods list entirely, and restarting the application did not restore the disabled mods.
+- **Root Cause**:
+  1. `GetConfigFromUi()` in `src/MainWindow.xaml.cs` populated `cfg.Mods` from `LstMods.Items`, but omitted `cfg.DisabledMods`, `cfg.ModInstalledTimestamps`, and `cfg.RecentRemoteServers`. Consequently, `cfg.DisabledMods` defaulted to an empty list `new List<string>()`.
+  2. Any action calling `SaveConfigFromUi()` (`BtnStart_Click`, `BtnStartNoUpdate_Click`, `BtnRestart_Click`, `BtnRestartNoUpdate_Click`, `BtnSaveConfig_Click`, `BtnBackup_Click`) invoked `GetConfigFromUi()`, generating a config with an empty `DisabledMods` list.
+  3. `_engine.UpdateConfig(newConfig)` assigned `Config = newConfig;` without defensive checks for `DisabledMods`, overwriting the existing active list with the empty list.
+  4. `SaveConfig()` serialized `manager_config.json` with an empty `DisabledMods: []` array and invoked `OnConfigSaved`, which triggered `LoadUiFromConfig()` -> `PopulateDisabledModListUi(cfg.DisabledMods)`, immediately clearing `LstDisabledMods` in the UI.
+  5. Upon application restart, `manager_config.json` was read from disk with `DisabledMods: []`, causing the inactive mods list to remain empty.
+  6. In Remote Client Mode, `GET /api/config` did not include `disabledMods`, and `POST /api/config` sent an unpopulated disabled mods list.
+
+### 2. Architectural Fixes & Implementation
+- **UI State Extraction (`MainWindow.xaml.cs -> GetConfigFromUi`)**:
+  - Added extraction of `cfg.DisabledMods` from `LstDisabledMods.Items` (extracting `ModDisplayItem.Id` or string items) with case-insensitive deduplication and whitespace trimming.
+  - Added fallback preservation from `_engine.Config.DisabledMods` if the UI visual tree is in an uninitialized state.
+  - Preserved `ModInstalledTimestamps` and `RecentRemoteServers` from `_engine.Config`.
+- **Defensive Preservation Guards (`ServerEngine.cs -> UpdateConfig`)**:
+  - Added defensive preservation: if `newConfig.DisabledMods` is null, preserve `Config.DisabledMods`.
+  - Guaranteed `Config.DisabledMods` is never null.
+  - Automatically preserved `ModInstalledTimestamps` and `RecentRemoteServers` dictionaries/lists across UI updates.
+  - Dispatched `OnDisabledModsChanged?.Invoke(Config.DisabledMods)` to guarantee UI synchronization.
+- **Mod Addition Reconciliation (`MainWindow.xaml.cs`)**:
+  - Updated both `BtnAddMod_Click` and `BtnAddBrowserModToServer_Click` so that if an administrator re-adds a mod that was previously in the inactive/disabled list, it is automatically removed from `Config.DisabledMods` and `PopulateDisabledModListUi` is called to prevent duplicate active/disabled states.
+- **Remote API Synchronization (`WebServer.cs` & `ServerEngine.cs`)**:
+  - Updated `GET /api/config` in `WebServer.cs` to return both `disabledMods` and `DisabledMods`.
+  - Updated `UpdateSettingsFromRemote(JsonElement root)` in `ServerEngine.cs` to parse `disabledMods` / `DisabledMods` from incoming JSON payloads.
+
+### 3. Synchronized Dual-Platform Release (`v1.3.5` / `10305`)
+- Synchronized all 7 core version locations:
+  1. `version.txt` -> `1.3.5`
+  2. `src/ServerEngine.cs` -> fallback `GetAppVersion()` = `"1.3.5"`
+  3. `src/MainWindow.xaml` -> `TxtAppHeaderTitle` = `"Conan Enhanced Server Manager v1.3.5"`, `TxtAppHeaderVersionBadge` = `"🚀 v1.3.5"`
+  4. `android/app/build.gradle` -> `getAppVersionName() = "1.3.5"`, `getAppVersionCode() = 10305`
+  5. `android/app/src/main/assets/app.js` -> `APP_VERSION = "1.3.5"`
+  6. `android/app/src/main/assets/index.html` -> badge `#appInstalledVersion` = `v1.3.5`
+  7. `android/app/src/main/java/com/conan/servermanager/MainActivity.java` -> fallback `"1.3.5"`, `10305`
+- **Build Status**:
+  - Windows: Self-contained `win-x64` build compiled with 0 Errors / 0 Warnings; packaged `ConanServerManager_v1.3.5.zip` (136.7 MB) and updated `ConanServerManager_DeployPackage.zip`.
+  - Android: Generated pre-signed `ConanServerManager-v1.3.5.apk` (4.64 MB, versionCode `10305`).
+- **Zero Remote Deployment Compliance**: All binaries, APKs, and packages remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\` for manual administrator release and distribution.
+
+---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
 
 

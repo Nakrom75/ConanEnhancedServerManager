@@ -414,7 +414,9 @@ namespace ConanServerManager
                     ["EnableBattlEye"] = cfg.EnableBattlEye,
                     ["EnableVAC"] = cfg.EnableVAC,
                     ["mods"] = cfg.Mods,
-                    ["Mods"] = cfg.Mods
+                    ["Mods"] = cfg.Mods,
+                    ["disabledMods"] = cfg.DisabledMods,
+                    ["DisabledMods"] = cfg.DisabledMods
                 };
                 await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(res));
             }

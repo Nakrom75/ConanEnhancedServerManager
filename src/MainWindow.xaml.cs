@@ -894,6 +894,32 @@ namespace ConanServerManager
                 .Where(id => !string.IsNullOrWhiteSpace(id))
                 .ToList();
 
+            if (LstDisabledMods != null && LstDisabledMods.Items.Count > 0)
+            {
+                cfg.DisabledMods = LstDisabledMods.Items.Cast<object>()
+                    .Select(item => item is ModDisplayItem m ? m.Id : item?.ToString()?.Trim() ?? "")
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+            else if (_engine?.Config?.DisabledMods != null && _engine.Config.DisabledMods.Count > 0 && (LstDisabledMods == null || !_isInitialized))
+            {
+                cfg.DisabledMods = new List<string>(_engine.Config.DisabledMods);
+            }
+            else
+            {
+                cfg.DisabledMods = new List<string>();
+            }
+
+            if (_engine?.Config?.ModInstalledTimestamps != null)
+            {
+                cfg.ModInstalledTimestamps = new Dictionary<string, long>(_engine.Config.ModInstalledTimestamps);
+            }
+            if (_engine?.Config?.RecentRemoteServers != null)
+            {
+                cfg.RecentRemoteServers = new List<string>(_engine.Config.RecentRemoteServers);
+            }
+
             cfg.IsRemoteClientMode = RadRemoteMode.IsChecked == true;
             cfg.RemoteServerUrl = TxtRemoteUrl.Text.Trim();
 
@@ -1682,10 +1708,12 @@ namespace ConanServerManager
             if (!_engine.Config.Mods.Contains(newId, StringComparer.OrdinalIgnoreCase))
             {
                 _engine.Config.Mods.Add(newId);
+                _engine.Config.DisabledMods.RemoveAll(x => x.Equals(newId, StringComparison.OrdinalIgnoreCase));
                 _engine.SaveConfig();
                 _engine.SyncIniSettings();
                 _engine.GenerateModlistFile();
                 _engine.TriggerModsChanged();
+                PopulateDisabledModListUi(_engine.Config.DisabledMods);
             }
 
             var cached = SteamWorkshopHelper.GetCachedMod(newId);
@@ -2354,10 +2382,12 @@ namespace ConanServerManager
             if (!exists)
             {
                 _engine.Config.Mods.Add(modId);
+                _engine.Config.DisabledMods.RemoveAll(x => x.Equals(modId, StringComparison.OrdinalIgnoreCase));
                 _engine.SaveConfig();
                 _engine.SyncIniSettings();
                 _engine.GenerateModlistFile();
                 _engine.Log($"[ModBrowser] Added mod {modId} to server mods.");
+                PopulateDisabledModListUi(_engine.Config.DisabledMods);
             }
 
             bool uiExists = LstMods.Items.OfType<ModDisplayItem>().Any(m => m.Id.Equals(modId, StringComparison.OrdinalIgnoreCase))

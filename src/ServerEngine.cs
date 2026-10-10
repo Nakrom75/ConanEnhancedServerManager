@@ -286,7 +286,7 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.3.4";
+            return "1.3.5";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
@@ -2065,6 +2065,9 @@ namespace ConanServerManager
             if (newConfig == null) return;
             bool localRemoteMode = Config.IsRemoteClientMode;
             string localRemoteUrl = Config.RemoteServerUrl;
+            var prevDisabled = Config.DisabledMods != null ? new List<string>(Config.DisabledMods) : new List<string>();
+            var prevTimestamps = Config.ModInstalledTimestamps != null ? new Dictionary<string, long>(Config.ModInstalledTimestamps) : new Dictionary<string, long>();
+            var prevRecent = Config.RecentRemoteServers != null ? new List<string>(Config.RecentRemoteServers) : new List<string>();
 
             Config = newConfig;
             Config.IsRemoteClientMode = localRemoteMode;
@@ -2073,7 +2076,25 @@ namespace ConanServerManager
                 Config.RemoteServerUrl = localRemoteUrl;
             }
 
+            if ((Config.DisabledMods == null || Config.DisabledMods.Count == 0) && prevDisabled.Count > 0 && newConfig.DisabledMods == null)
+            {
+                Config.DisabledMods = prevDisabled;
+            }
+            if (Config.DisabledMods == null)
+            {
+                Config.DisabledMods = new List<string>();
+            }
+            if (Config.ModInstalledTimestamps == null || Config.ModInstalledTimestamps.Count == 0)
+            {
+                Config.ModInstalledTimestamps = prevTimestamps;
+            }
+            if (Config.RecentRemoteServers == null || Config.RecentRemoteServers.Count == 0)
+            {
+                Config.RecentRemoteServers = prevRecent;
+            }
+
             SaveConfig();
+            OnDisabledModsChanged?.Invoke(Config.DisabledMods);
         }
 
         public void UpdateSettingsFromRemote(JsonElement root)
@@ -2138,6 +2159,25 @@ namespace ConanServerManager
                     SyncIniSettings();
                     GenerateModlistFile();
                     TriggerModsChanged();
+                    changed = true;
+                }
+            }
+
+            if (root.TryGetProperty("disabledMods", out var dmProp) || root.TryGetProperty("DisabledMods", out dmProp))
+            {
+                if (dmProp.ValueKind == JsonValueKind.Array)
+                {
+                    var newDisabled = new List<string>();
+                    foreach (var el in dmProp.EnumerateArray())
+                    {
+                        string id = el.GetString()?.Trim() ?? "";
+                        if (!string.IsNullOrWhiteSpace(id) && !newDisabled.Contains(id))
+                        {
+                            newDisabled.Add(id);
+                        }
+                    }
+                    Config.DisabledMods = newDisabled;
+                    OnDisabledModsChanged?.Invoke(Config.DisabledMods);
                     changed = true;
                 }
             }
