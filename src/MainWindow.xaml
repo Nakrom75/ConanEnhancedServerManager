@@ -120,9 +120,9 @@
                     <StackPanel Orientation="Vertical">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Image Source="app.png" Width="22" Height="22" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.3.2" Style="{StaticResource HeaderTitle}"/>
+                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.3.3" Style="{StaticResource HeaderTitle}"/>
                             <Border CornerRadius="8" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" Margin="10,0,0,0" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="✨ v1.3.2" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="🚀 v1.3.3" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="TxtServerPathInfo" Text="Mode: Local Server Host | Embedded Web Console: http://0.0.0.0:8088" Foreground="#94A3B8" FontSize="11"/>
@@ -145,6 +145,27 @@
                             <TextBlock x:Name="StatusText" Text="STOPPED" Foreground="#F87171" FontWeight="Bold" FontSize="11"/>
                         </Border>
                     </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Crash Loop Protection Alert Banner -->
+            <Border x:Name="PnlCrashLoopAlert" Style="{StaticResource GlassPanel}" Margin="2,1,2,2" Background="#450A0A" BorderBrush="#EF4444" BorderThickness="1.5" Visibility="Collapsed">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="🚨" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="TxtCrashLoopTitle" Text="CRASH LOOP DETECTED - AUTO-RESTART PAUSED" Foreground="#FCA5A5" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock x:Name="TxtCrashLoopDetails" Text="Server crashed repeatedly. Suspected culprit: Mod #123456" Foreground="#F87171" FontSize="10" Margin="20,1,0,0" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" x:Name="BtnDisableCrashMod" Content="🗑️ Disable Offending Mod &amp; Restart" Style="{StaticResource BtnDanger}" Click="BtnDisableCrashMod_Click" Padding="8,3" FontSize="10" FontWeight="Bold"/>
+                    <Button Grid.Column="3" x:Name="BtnDismissCrashLoop" Content="✕ Dismiss" Style="{StaticResource BtnSecondary}" Click="BtnDismissCrashLoop_Click" Padding="6,2" FontSize="10"/>
                 </Grid>
             </Border>
 
@@ -737,14 +758,21 @@
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
                                                 <Border Grid.Column="0" Width="26" Height="26" CornerRadius="6" Background="#1E293B" BorderBrush="#475569" BorderThickness="1" Margin="0,0,8,0" VerticalAlignment="Center">
                                                     <TextBlock Text="🧩" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                 </Border>
                                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                     <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13" Foreground="#F8FAFC" TextTrimming="CharacterEllipsis"/>
-                                                    <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="#94A3B8" Margin="0,2,0,0"/>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                                        <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="#94A3B8"/>
+                                                        <TextBlock Text="{Binding CategoryName}" FontSize="10" Foreground="#38BDF8" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                                    </StackPanel>
                                                 </StackPanel>
+                                                <Border Grid.Column="2" CornerRadius="6" Background="{Binding BadgeBackground}" BorderBrush="{Binding BadgeBorder}" BorderThickness="1" Padding="6,2" VerticalAlignment="Center" Margin="6,0,2,0">
+                                                    <TextBlock Text="{Binding StatusBadge}" FontSize="10" FontWeight="Bold" Foreground="{Binding BadgeForeground}"/>
+                                                </Border>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
@@ -752,6 +780,7 @@
                             </ListBox>
 
                             <StackPanel Grid.Column="2">
+                                <Button x:Name="BtnAutoSortMods" Content="🪄 Auto-Sort Order" Style="{StaticResource BtnSuccess}" Click="BtnAutoSortMods_Click" Margin="0,0,0,8" ToolTip="Intelligently sort active mods according to recommended Conan Exiles load order rules (Core frameworks 1st, Tweaks, Items, Patches last)"/>
                                 <Button Content="Move Up ▲" Style="{StaticResource BtnSecondary}" Click="BtnModMoveUp_Click" Margin="0,0,0,6"/>
                                 <Button Content="Move Down ▼" Style="{StaticResource BtnSecondary}" Click="BtnModMoveDown_Click" Margin="0,0,0,6"/>
                                 <Button x:Name="BtnPreDownloadMod" Content="📥 Pre-Download Mod" Style="{StaticResource BtnSecondary}" Click="BtnPreDownloadMod_Click" Margin="0,0,0,10" ToolTip="Pre-download or verify the selected mod's files via SteamCMD in the background"/>

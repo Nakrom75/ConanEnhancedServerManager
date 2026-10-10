@@ -6,7 +6,8 @@ let installedMods = [];
 let savedServers = [];
 let latestApkUrl = "";
 let lastKnownConfig = null;
-let APP_VERSION = "1.3.2";
+let lastCrashCulpritModId = "";
+let APP_VERSION = "1.3.3";
 if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
 }
@@ -340,6 +341,32 @@ async function pollServer() {
             steamVal.style.color = "#94a3b8";
         }
 
+        // Crash loop detection
+        const crashBanner = document.getElementById("dashCrashLoopBanner");
+        if (crashBanner) {
+            if (data.crashLoopDetected) {
+                lastCrashCulpritModId = data.crashLoopSuspectModId || "";
+                crashBanner.style.display = "block";
+                const titleEl = document.getElementById("dashCrashLoopTitle");
+                if (titleEl) {
+                    titleEl.innerText = data.crashLoopSuspectModTitle 
+                        ? `CRASH LOOP - SUSPECT: ${data.crashLoopSuspectModTitle.toUpperCase()}`
+                        : "CRASH LOOP DETECTED - AUTO-RESTART PAUSED";
+                }
+                const msgEl = document.getElementById("dashCrashLoopMsg");
+                if (msgEl) {
+                    msgEl.innerText = (data.crashLoopSuspectModId ? `Suspected Mod: ${data.crashLoopSuspectModTitle} (ID: #${data.crashLoopSuspectModId}). ` : "") +
+                        `Watchdog paused restarts. Reason: ${data.crashLoopReason || "Repeated process exit on boot."}`;
+                }
+                const btnDis = document.getElementById("btnDashDisableCrashMod");
+                if (btnDis) {
+                    btnDis.style.display = lastCrashCulpritModId ? "block" : "none";
+                }
+            } else {
+                crashBanner.style.display = "none";
+            }
+        }
+
         // Render connected players
         renderPlayersList(data.players || []);
 
@@ -591,18 +618,33 @@ async function fetchInstalledMods() {
             return;
         }
 
-        container.innerHTML = installedMods.map((mod, idx) => `
+        container.innerHTML = installedMods.map((mod, idx) => {
+            const isLoaded = mod.IsLoaded;
+            const loadStatus = mod.LoadStatus || (mod.IsDownloaded ? "DOWNLOADED" : "MISSING");
+            let badgeStyle = "background:#1e293b;color:#94a3b8;border:1px solid #475569;";
+            if (isLoaded) {
+                badgeStyle = "background:#064e3b;color:#34d399;border:1px solid #10b981;";
+            } else if (loadStatus === "PENDING_RESTART") {
+                badgeStyle = "background:#451a03;color:#fbbf24;border:1px solid #f59e0b;";
+            } else if (loadStatus === "ERROR" || loadStatus === "LOAD_ERROR") {
+                badgeStyle = "background:#450a0a;color:#f87171;border:1px solid #ef4444;";
+            }
+
+            const badgeText = mod.StatusBadge || (mod.IsDownloaded ? "📁 Ready on Disk" : "⏳ Pending Download");
+            const catName = mod.CategoryName || "General";
+
+            return `
             <div class="mod-item" data-mod-id="${mod.Id}" data-mod-title="${escapeHtml(mod.Title || ('Mod #' + mod.Id))}" data-mod-thumb="${mod.PreviewUrl || 'app.png'}" title="Long press to open Steam Workshop">
                 <span style="font-weight:bold;color:#64748b;font-size:0.8rem;width:18px;">${idx + 1}</span>
                 <img src="${mod.PreviewUrl || 'app.png'}" class="mod-thumb" onerror="this.src='app.png'">
                 <div class="mod-info">
                     <div class="mod-title" style="font-weight:600;color:#f8fafc;">${escapeHtml(mod.Title || ('Mod #' + mod.Id))}</div>
-                    <div class="mod-meta" style="color:#94a3b8;font-size:0.75rem;margin-top:2px;">
-                        ID: <strong style="color:#38bdf8;">${mod.Id}</strong>
-                        ${mod.IsDownloaded ? 
-                            '<span style="margin-left:8px;color:#34d399;font-weight:600;">✅ On Disk</span>' : 
-                            '<span style="margin-left:8px;color:#fbbf24;font-weight:600;">⏳ Pending Download</span>'
-                        }
+                    <div class="mod-meta" style="color:#94a3b8;font-size:0.75rem;margin-top:2px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;">
+                        <span>ID: <strong style="color:#38bdf8;">${mod.Id}</strong></span>
+                        <span style="color:#38bdf8;font-size:0.7rem;">[${escapeHtml(catName)}]</span>
+                        <span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:0.7rem;font-weight:bold;${badgeStyle}">
+                            ${escapeHtml(badgeText)}
+                        </span>
                     </div>
                 </div>
                 <div class="mod-actions">
@@ -611,7 +653,8 @@ async function fetchInstalledMods() {
                     <button class="btn-icon" style="background:#ef4444;color:white;" onclick="removeModFromServer('${mod.Id}')" title="Remove Mod">🗑️</button>
                 </div>
             </div>
-        `).join("");
+            `;
+        }).join("");
 
         container.querySelectorAll(".mod-item").forEach(item => {
             const id = item.getAttribute("data-mod-id");
@@ -626,6 +669,56 @@ async function fetchInstalledMods() {
                 <button class="btn-secondary" style="margin-top:8px;padding:4px 12px;font-size:0.75rem;" onclick="fetchInstalledMods()">🔄 Retry</button>
             </div>
         `;
+    }
+}
+
+async function autoSortInstalledMods() {
+    vibrate(20);
+    showToast("Auto-sorting mods by load order...");
+    try {
+        const res = await fetch(`${currentServerUrl}/api/mods/sort`, { method: "POST" });
+        const data = await res.json();
+        if (data.success) {
+            showToast("Mods auto-sorted successfully!");
+            fetchInstalledMods();
+        } else {
+            showToast("Auto-sort failed");
+        }
+    } catch (e) {
+        showToast("Auto-sort error: " + e.message);
+    }
+}
+
+async function dismissCrashLoopBanner() {
+    vibrate(20);
+    try {
+        await fetch(`${currentServerUrl}/api/control/crash-loop/dismiss`, { method: "POST" });
+        const banner = document.getElementById("dashCrashLoopBanner");
+        if (banner) banner.style.display = "none";
+    } catch (e) {}
+}
+
+async function disableOffendingCrashMod() {
+    vibrate(30);
+    if (!lastCrashCulpritModId) {
+        showToast("No specific mod identified to disable");
+        return;
+    }
+    if (!confirm(`Disable offending mod #${lastCrashCulpritModId} and restart server?`)) return;
+
+    try {
+        const res = await fetch(`${currentServerUrl}/api/control/crash-loop/disable-mod`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ modId: lastCrashCulpritModId })
+        });
+        const data = await res.json();
+        showToast(data.message || "Mod disabled. Restart initiated.");
+        const banner = document.getElementById("dashCrashLoopBanner");
+        if (banner) banner.style.display = "none";
+        fetchInstalledMods();
+    } catch (e) {
+        showToast("Recovery error: " + e.message);
     }
 }
 
@@ -1418,4 +1511,7 @@ window.onModalPreDownload = onModalPreDownload;
 window.preDownloadMod = preDownloadMod;
 window.openSteamWorkshopBrowser = openSteamWorkshopBrowser;
 window.addModToServer = addModToServer;
+window.autoSortInstalledMods = autoSortInstalledMods;
+window.dismissCrashLoopBanner = dismissCrashLoopBanner;
+window.disableOffendingCrashMod = disableOffendingCrashMod;
 

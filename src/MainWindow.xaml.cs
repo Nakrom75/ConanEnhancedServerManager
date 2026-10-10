@@ -25,6 +25,7 @@ namespace ConanServerManager
         private bool _hasSyncedRemoteConfig = false;
         private bool _isPopulatingRemoteDropdown = false;
         private int _remoteUptimeSeconds = 0;
+        private int _metricsTickCount = 0;
 
         private bool _isModBrowserInitialized = false;
         private string? _currentDetectedModId = null;
@@ -47,6 +48,24 @@ namespace ConanServerManager
             _engine.OnSteamStatusChanged += UpdateSteamVisibilityUi;
             _engine.OnPlayersChanged += (players) => Dispatcher.Invoke(() => UpdatePlayersListUi(players));
             _engine.OnConfigSaved += () => Dispatcher.Invoke(LoadUiFromConfig);
+            _engine.OnModsChanged += (mods) =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    if (!IsRemoteMode)
+                    {
+                        PopulateModListUi(mods);
+                    }
+                });
+            };
+            _engine.OnCrashLoopDetected += (culpritId, culpritTitle, reason) =>
+            {
+                Dispatcher.Invoke(() => ShowCrashLoopBanner(culpritId, culpritTitle, reason));
+            };
+            _engine.OnCrashLoopDismissed += () =>
+            {
+                Dispatcher.Invoke(HideCrashLoopBanner);
+            };
             _engine.OnModPreDownloadCompleted += (modId, success, msg) =>
             {
                 Dispatcher.Invoke(() =>
@@ -113,6 +132,12 @@ namespace ConanServerManager
         {
             if (!IsRemoteMode)
             {
+                _metricsTickCount++;
+                if (_metricsTickCount % 2 == 0)
+                {
+                    RefreshModListDownloadedStatus();
+                }
+
                 var srvUptime = _engine.ServerProcessUptime;
                 var appUptime = _engine.AppUptime;
                 var sysUptime = _engine.SystemUptime;
@@ -524,6 +549,19 @@ namespace ConanServerManager
 
                     SetRemoteConnectionStatus(true, $"CONNECTED to {srvName} ({status})");
 
+                    bool crashLoop = doc.RootElement.TryGetProperty("crashLoopDetected", out var cldProp) && cldProp.GetBoolean();
+                    if (crashLoop)
+                    {
+                        string cId = doc.RootElement.TryGetProperty("crashLoopSuspectModId", out var cIdProp) ? cIdProp.GetString() ?? "" : "";
+                        string cTitle = doc.RootElement.TryGetProperty("crashLoopSuspectModTitle", out var cTProp) ? cTProp.GetString() ?? "" : "";
+                        string cReason = doc.RootElement.TryGetProperty("crashLoopReason", out var cRProp) ? cRProp.GetString() ?? "" : "";
+                        ShowCrashLoopBanner(cId, cTitle, cReason);
+                    }
+                    else
+                    {
+                        HideCrashLoopBanner();
+                    }
+
                     if (!_hasSyncedRemoteConfig)
                     {
                         _hasSyncedRemoteConfig = true;
@@ -869,6 +907,7 @@ namespace ConanServerManager
                 await FetchRemoteIniFileAsync(baseUrl, "ServerSettings.ini", TxtServerSettingsIni);
                 await FetchRemoteIniFileAsync(baseUrl, "Engine.ini", TxtEngineIni);
                 await FetchRemoteIniFileAsync(baseUrl, "Game.ini", TxtGameIni);
+                await FetchRemoteModsListAsync(baseUrl);
             }
             catch (Exception ex)
             {
@@ -976,9 +1015,12 @@ namespace ConanServerManager
 
         private void RefreshModListDownloadedStatus()
         {
+            if (IsRemoteMode) return;
             foreach (var item in LstMods.Items.OfType<ModDisplayItem>())
             {
                 item.IsDownloaded = _engine.IsModDownloaded(item.Id);
+                var rt = _engine.GetModRuntimeInfo(item.Id, item.Title);
+                item.UpdateLoadStatus(rt.LoadStatus, rt.StatusBadge, rt.CategoryName);
             }
         }
 
@@ -993,6 +1035,7 @@ namespace ConanServerManager
             foreach (var id in list)
             {
                 var cached = SteamWorkshopHelper.GetCachedMod(id);
+                var cat = ModLoadOrderHelper.DetectCategory(cached?.Title ?? "", cached?.ShortDescription ?? "", id);
                 var item = new ModDisplayItem
                 {
                     Id = id,
@@ -1000,8 +1043,13 @@ namespace ConanServerManager
                         ? cached.Title
                         : $"Loading Mod #{id}...",
                     PreviewUrl = cached?.PreviewUrl ?? "",
-                    IsDownloaded = _engine.IsModDownloaded(id)
+                    IsDownloaded = _engine.IsModDownloaded(id),
+                    CategoryName = ModLoadOrderHelper.GetCategoryDisplayName(cat)
                 };
+
+                var rt = _engine.GetModRuntimeInfo(id, cached?.Title, cached?.ShortDescription);
+                item.UpdateLoadStatus(rt.LoadStatus, rt.StatusBadge, rt.CategoryName);
+
                 items.Add(item);
                 LstMods.Items.Add(item);
             }
@@ -1020,6 +1068,10 @@ namespace ConanServerManager
                             {
                                 item.Title = detail.Title;
                                 item.PreviewUrl = detail.PreviewUrl;
+                                var c = ModLoadOrderHelper.DetectCategory(detail.Title, detail.ShortDescription, item.Id);
+                                item.CategoryName = ModLoadOrderHelper.GetCategoryDisplayName(c);
+                                var rt = _engine.GetModRuntimeInfo(item.Id, detail.Title, detail.ShortDescription);
+                                item.UpdateLoadStatus(rt.LoadStatus, rt.StatusBadge, rt.CategoryName);
                             }
                             else if (item.Title.StartsWith("Loading"))
                             {
@@ -1363,7 +1415,48 @@ namespace ConanServerManager
             MessageBox.Show($"Configuration updated successfully.\nWeb API running on port {_engine.Config.WebPagePort}.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
-        private void BtnModMoveUp_Click(object sender, RoutedEventArgs e)
+        private string GetRemoteBaseUrl()
+        {
+            string url = TxtRemoteUrl?.Text?.Trim().TrimEnd('/') ?? "";
+            if (string.IsNullOrWhiteSpace(url)) url = "http://127.0.0.1:8088";
+            if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                url = "http://" + url;
+            }
+            return url;
+        }
+
+        private async void BtnAutoSortMods_Click(object sender, RoutedEventArgs e)
+        {
+            if (IsRemoteMode)
+            {
+                try
+                {
+                    string baseUrl = GetRemoteBaseUrl();
+                    var res = await _httpClient.PostAsync($"{baseUrl}/api/mods/sort", new StringContent("{}", Encoding.UTF8, "application/json"));
+                    if (res.IsSuccessStatusCode)
+                    {
+                        MessageBox.Show("Mods auto-sorted successfully on remote server according to Conan Exiles load order rules.", "Auto-Sort Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                        await FetchRemoteModsListAsync(baseUrl);
+                    }
+                    else
+                    {
+                        MessageBox.Show("Failed to auto-sort remote mods.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Remote Auto-Sort Error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            else
+            {
+                _engine.AutoSortMods();
+                MessageBox.Show("Mods auto-sorted successfully according to Conan Exiles load order rules.\n\nFrameworks & Core mods load first, followed by Maps, Overhauls, Items, Tweaks, HUD, and Patches last.", "Auto-Sort Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+
+        private async void BtnModMoveUp_Click(object sender, RoutedEventArgs e)
         {
             int idx = LstMods.SelectedIndex;
             if (idx > 0)
@@ -1372,10 +1465,11 @@ namespace ConanServerManager
                 LstMods.Items.RemoveAt(idx);
                 LstMods.Items.Insert(idx - 1, item);
                 LstMods.SelectedIndex = idx - 1;
+                await SyncModOrderAfterReorderAsync();
             }
         }
 
-        private void BtnModMoveDown_Click(object sender, RoutedEventArgs e)
+        private async void BtnModMoveDown_Click(object sender, RoutedEventArgs e)
         {
             int idx = LstMods.SelectedIndex;
             if (idx >= 0 && idx < LstMods.Items.Count - 1)
@@ -1384,10 +1478,41 @@ namespace ConanServerManager
                 LstMods.Items.RemoveAt(idx);
                 LstMods.Items.Insert(idx + 1, item);
                 LstMods.SelectedIndex = idx + 1;
+                await SyncModOrderAfterReorderAsync();
             }
         }
 
-        private void BtnAddMod_Click(object sender, RoutedEventArgs e)
+        private async Task SyncModOrderAfterReorderAsync()
+        {
+            var newOrder = LstMods.Items.Cast<object>()
+                .Select(item => item is ModDisplayItem m ? m.Id : item?.ToString()?.Trim() ?? "")
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToList();
+
+            if (IsRemoteMode)
+            {
+                try
+                {
+                    string baseUrl = GetRemoteBaseUrl();
+                    using var content = new StringContent(JsonSerializer.Serialize(new { mods = newOrder }), Encoding.UTF8, "application/json");
+                    await _httpClient.PostAsync($"{baseUrl}/api/mods/reorder", content);
+                }
+                catch (Exception ex)
+                {
+                    _engine.Log($"[Remote Client] Error synchronizing reordered mods: {ex.Message}");
+                }
+            }
+            else
+            {
+                _engine.Config.Mods = newOrder;
+                _engine.SaveConfig();
+                _engine.SyncIniSettings();
+                _engine.GenerateModlistFile();
+                _engine.TriggerModsChanged();
+            }
+        }
+
+        private async void BtnAddMod_Click(object sender, RoutedEventArgs e)
         {
             string newId = TxtNewModId.Text.Trim();
             if (string.IsNullOrEmpty(newId)) return;
@@ -1400,16 +1525,57 @@ namespace ConanServerManager
                 return;
             }
 
+            TxtNewModId.Clear();
+
+            if (IsRemoteMode)
+            {
+                try
+                {
+                    string baseUrl = GetRemoteBaseUrl();
+                    using var content = new StringContent(JsonSerializer.Serialize(new { modId = newId }), Encoding.UTF8, "application/json");
+                    var res = await _httpClient.PostAsync($"{baseUrl}/api/mods/add", content);
+                    if (res.IsSuccessStatusCode)
+                    {
+                        await FetchRemoteModsListAsync(baseUrl);
+                        MessageBox.Show($"Mod #{newId} added to server list remotely.", "Mod Added", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        string err = await res.Content.ReadAsStringAsync();
+                        MessageBox.Show($"Failed to add mod remotely:\n{err}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Remote add mod error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                return;
+            }
+
+            // Local Host Mode
+            if (!_engine.Config.Mods.Contains(newId, StringComparer.OrdinalIgnoreCase))
+            {
+                _engine.Config.Mods.Add(newId);
+                _engine.SaveConfig();
+                _engine.SyncIniSettings();
+                _engine.GenerateModlistFile();
+                _engine.TriggerModsChanged();
+            }
+
             var cached = SteamWorkshopHelper.GetCachedMod(newId);
+            var cat = ModLoadOrderHelper.DetectCategory(cached?.Title ?? "", cached?.ShortDescription ?? "", newId);
             var newItem = new ModDisplayItem
             {
                 Id = newId,
                 Title = cached != null && !string.IsNullOrWhiteSpace(cached.Title) ? cached.Title : $"Loading Mod #{newId}...",
                 PreviewUrl = cached?.PreviewUrl ?? "",
-                IsDownloaded = _engine.IsModDownloaded(newId)
+                IsDownloaded = _engine.IsModDownloaded(newId),
+                CategoryName = ModLoadOrderHelper.GetCategoryDisplayName(cat)
             };
+            var rt = _engine.GetModRuntimeInfo(newId, cached?.Title, cached?.ShortDescription);
+            newItem.UpdateLoadStatus(rt.LoadStatus, rt.StatusBadge, rt.CategoryName);
+
             LstMods.Items.Add(newItem);
-            TxtNewModId.Clear();
 
             if (!newItem.IsDownloaded)
             {
@@ -1429,6 +1595,10 @@ namespace ConanServerManager
                     {
                         newItem.Title = detail.Title;
                         newItem.PreviewUrl = detail.PreviewUrl;
+                        var c = ModLoadOrderHelper.DetectCategory(detail.Title, detail.ShortDescription, newId);
+                        newItem.CategoryName = ModLoadOrderHelper.GetCategoryDisplayName(c);
+                        var rInfo = _engine.GetModRuntimeInfo(newId, detail.Title, detail.ShortDescription);
+                        newItem.UpdateLoadStatus(rInfo.LoadStatus, rInfo.StatusBadge, rInfo.CategoryName);
                     }
                     else if (newItem.Title.StartsWith("Loading"))
                     {
@@ -1436,6 +1606,155 @@ namespace ConanServerManager
                     }
                 });
             });
+        }
+
+        private async Task FetchRemoteModsListAsync(string baseUrl)
+        {
+            try
+            {
+                using var cts = new System.Threading.CancellationTokenSource(5000);
+                string json = await _httpClient.GetStringAsync($"{baseUrl}/api/mods", cts.Token);
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("details", out var detailsArr) && detailsArr.ValueKind == JsonValueKind.Array)
+                {
+                    var newItems = new List<ModDisplayItem>();
+                    foreach (var el in detailsArr.EnumerateArray())
+                    {
+                        string id = el.TryGetProperty("Id", out var idProp) ? idProp.GetString() ?? "" : "";
+                        if (string.IsNullOrWhiteSpace(id)) continue;
+                        string title = el.TryGetProperty("Title", out var tProp) ? tProp.GetString() ?? "" : $"Mod #{id}";
+                        string preview = el.TryGetProperty("PreviewUrl", out var pProp) ? pProp.GetString() ?? "" : "";
+                        bool isDownloaded = el.TryGetProperty("IsDownloaded", out var dProp) && dProp.GetBoolean();
+                        string loadStatus = el.TryGetProperty("LoadStatus", out var lsProp) ? lsProp.GetString() ?? "DOWNLOADED" : "DOWNLOADED";
+                        string statusBadge = el.TryGetProperty("StatusBadge", out var sbProp) ? sbProp.GetString() ?? "" : "";
+                        string catName = el.TryGetProperty("CategoryName", out var cnProp) ? cnProp.GetString() ?? "" : "";
+
+                        var item = new ModDisplayItem
+                        {
+                            Id = id,
+                            Title = title,
+                            PreviewUrl = preview,
+                            IsDownloaded = isDownloaded,
+                            CategoryName = catName
+                        };
+                        item.UpdateLoadStatus(loadStatus, statusBadge, catName);
+                        newItems.Add(item);
+                    }
+
+                    Dispatcher.Invoke(() =>
+                    {
+                        LstMods.Items.Clear();
+                        foreach (var m in newItems)
+                        {
+                            LstMods.Items.Add(m);
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _engine.Log($"[Remote Client] Note fetching remote mods: {ex.Message}");
+            }
+        }
+
+        private void ShowCrashLoopBanner(string culpritId, string culpritTitle, string reason)
+        {
+            if (PnlCrashLoopAlert == null) return;
+            PnlCrashLoopAlert.Visibility = Visibility.Visible;
+            if (TxtCrashLoopTitle != null)
+            {
+                TxtCrashLoopTitle.Text = string.IsNullOrWhiteSpace(culpritTitle) 
+                    ? "CRASH LOOP DETECTED - AUTO-RESTART PAUSED" 
+                    : $"CRASH LOOP DETECTED - SUSPECT: {culpritTitle.ToUpperInvariant()}";
+            }
+            if (TxtCrashLoopDetails != null)
+            {
+                TxtCrashLoopDetails.Text = !string.IsNullOrWhiteSpace(culpritId)
+                    ? $"Suspected Offending Mod: {culpritTitle} (ID: #{culpritId}). Watchdog paused restarts. Reason: {reason}"
+                    : $"Rapid crashing detected. Server watchdog paused auto-restart to prevent crash loop. Reason: {reason}";
+            }
+            if (BtnDisableCrashMod != null)
+            {
+                BtnDisableCrashMod.Tag = culpritId;
+                BtnDisableCrashMod.Visibility = !string.IsNullOrWhiteSpace(culpritId) ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
+        private void HideCrashLoopBanner()
+        {
+            if (PnlCrashLoopAlert != null)
+            {
+                PnlCrashLoopAlert.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private async void BtnDisableCrashMod_Click(object sender, RoutedEventArgs e)
+        {
+            string modId = BtnDisableCrashMod?.Tag?.ToString() ?? "";
+            if (string.IsNullOrWhiteSpace(modId) && !string.IsNullOrWhiteSpace(_engine.CrashLoopSuspectModId))
+            {
+                modId = _engine.CrashLoopSuspectModId;
+            }
+
+            var confirm = MessageBox.Show(
+                $"Are you sure you want to disable offending mod {(string.IsNullOrWhiteSpace(modId) ? "" : $"#{modId}")} and restart the server?",
+                "Disable Mod & Restart",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (confirm != MessageBoxResult.Yes) return;
+
+            if (IsRemoteMode)
+            {
+                try
+                {
+                    string baseUrl = GetRemoteBaseUrl();
+                    using var content = new StringContent(JsonSerializer.Serialize(new { modId }), Encoding.UTF8, "application/json");
+                    var res = await _httpClient.PostAsync($"{baseUrl}/api/control/crash-loop/disable-mod", content);
+                    if (res.IsSuccessStatusCode)
+                    {
+                        HideCrashLoopBanner();
+                        MessageBox.Show("Offending mod removed on remote server. Server restart initiated.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                        await PollRemoteServerAsync();
+                    }
+                    else
+                    {
+                        MessageBox.Show("Failed to trigger remote recovery.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Remote recovery error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            else
+            {
+                HideCrashLoopBanner();
+                await _engine.DisableCrashCulpritModAndRestartAsync(modId);
+            }
+        }
+
+        private async void BtnDismissCrashLoop_Click(object sender, RoutedEventArgs e)
+        {
+            if (IsRemoteMode)
+            {
+                try
+                {
+                    string baseUrl = GetRemoteBaseUrl();
+                    var res = await _httpClient.PostAsync($"{baseUrl}/api/control/crash-loop/dismiss", new StringContent("{}", Encoding.UTF8, "application/json"));
+                    if (res.IsSuccessStatusCode)
+                    {
+                        HideCrashLoopBanner();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _engine.Log($"[Remote Client] Error dismissing crash loop: {ex.Message}");
+                }
+            }
+            else
+            {
+                _engine.DismissCrashLoop();
+            }
         }
 
         private void LstMods_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
@@ -1986,19 +2305,63 @@ namespace ConanServerManager
             }
         }
 
-        private void BtnRemoveMod_Click(object sender, RoutedEventArgs e)
+        private async void BtnRemoveMod_Click(object sender, RoutedEventArgs e)
         {
             var mod = GetSelectedOrClickedMod(sender);
-            if (mod != null && LstMods.Items.Contains(mod))
+            string modId = mod?.Id ?? "";
+            if (string.IsNullOrWhiteSpace(modId))
             {
-                LstMods.Items.Remove(mod);
+                int idx = LstMods.SelectedIndex;
+                if (idx >= 0 && LstMods.Items[idx] is ModDisplayItem m)
+                {
+                    modId = m.Id;
+                }
+                else if (idx >= 0 && LstMods.Items[idx] is string s)
+                {
+                    modId = s;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(modId)) return;
+
+            if (IsRemoteMode)
+            {
+                try
+                {
+                    string baseUrl = GetRemoteBaseUrl();
+                    using var content = new StringContent(JsonSerializer.Serialize(new { modId }), Encoding.UTF8, "application/json");
+                    var res = await _httpClient.PostAsync($"{baseUrl}/api/mods/remove", content);
+                    if (res.IsSuccessStatusCode)
+                    {
+                        await FetchRemoteModsListAsync(baseUrl);
+                    }
+                    else
+                    {
+                        MessageBox.Show("Failed to remove mod remotely.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Remote remove mod error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
                 return;
             }
 
-            int idx = LstMods.SelectedIndex;
-            if (idx >= 0)
+            _engine.Config.Mods.RemoveAll(x => x.Equals(modId, StringComparison.OrdinalIgnoreCase));
+            _engine.SaveConfig();
+            _engine.SyncIniSettings();
+            _engine.GenerateModlistFile();
+            _engine.TriggerModsChanged();
+
+            var toRemove = LstMods.Items.OfType<ModDisplayItem>().FirstOrDefault(m => m.Id.Equals(modId, StringComparison.OrdinalIgnoreCase));
+            if (toRemove != null)
             {
-                LstMods.Items.RemoveAt(idx);
+                LstMods.Items.Remove(toRemove);
+            }
+            else
+            {
+                var strRemove = LstMods.Items.OfType<string>().FirstOrDefault(s => s.Equals(modId, StringComparison.OrdinalIgnoreCase));
+                if (strRemove != null) LstMods.Items.Remove(strRemove);
             }
         }
 
@@ -2324,6 +2687,12 @@ namespace ConanServerManager
         private string _title = "";
         private string _previewUrl = "";
         private bool _isDownloaded = false;
+        private string _categoryName = "General";
+        private string _loadStatus = "DOWNLOADED";
+        private string _statusBadge = "📁 Ready on Disk";
+        private Brush _badgeBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E293B"));
+        private Brush _badgeBorder = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#475569"));
+        private Brush _badgeForeground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#94A3B8"));
 
         public string Id
         {
@@ -2349,7 +2718,91 @@ namespace ConanServerManager
             set { _isDownloaded = value; OnPropertyChanged(nameof(IsDownloaded)); OnPropertyChanged(nameof(Subtitle)); }
         }
 
-        public string Subtitle => $"ID: {Id} • {(IsDownloaded ? "✅ Ready on Disk" : "⏳ Pending Download")}";
+        public string CategoryName
+        {
+            get => _categoryName;
+            set { _categoryName = value; OnPropertyChanged(nameof(CategoryName)); }
+        }
+
+        public string LoadStatus
+        {
+            get => _loadStatus;
+            set { _loadStatus = value; OnPropertyChanged(nameof(LoadStatus)); }
+        }
+
+        public string StatusBadge
+        {
+            get => _statusBadge;
+            set { _statusBadge = value; OnPropertyChanged(nameof(StatusBadge)); }
+        }
+
+        public Brush BadgeBackground
+        {
+            get => _badgeBackground;
+            set { _badgeBackground = value; OnPropertyChanged(nameof(BadgeBackground)); }
+        }
+
+        public Brush BadgeBorder
+        {
+            get => _badgeBorder;
+            set { _badgeBorder = value; OnPropertyChanged(nameof(BadgeBorder)); }
+        }
+
+        public Brush BadgeForeground
+        {
+            get => _badgeForeground;
+            set { _badgeForeground = value; OnPropertyChanged(nameof(BadgeForeground)); }
+        }
+
+        public string Subtitle => $"ID: {Id} • {(IsDownloaded ? "Ready on Disk" : "Pending Download")}";
+
+        public void UpdateLoadStatus(string status, string? badge = null, string? category = null)
+        {
+            LoadStatus = status;
+            if (!string.IsNullOrEmpty(badge)) StatusBadge = badge;
+            if (!string.IsNullOrEmpty(category)) CategoryName = category;
+
+            switch (status?.ToUpperInvariant() ?? "")
+            {
+                case "LOADED":
+                    StatusBadge = string.IsNullOrEmpty(badge) ? "🟢 Loaded & Active" : badge;
+                    BadgeBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#064E3B"));
+                    BadgeBorder = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#10B981"));
+                    BadgeForeground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#34D399"));
+                    break;
+                case "LOAD_ERROR":
+                    StatusBadge = string.IsNullOrEmpty(badge) ? "❌ Load Error" : badge;
+                    BadgeBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#450A0A"));
+                    BadgeBorder = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EF4444"));
+                    BadgeForeground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F87171"));
+                    break;
+                case "PENDING_RESTART":
+                    StatusBadge = string.IsNullOrEmpty(badge) ? "⏳ Pending Restart" : badge;
+                    BadgeBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#451A03"));
+                    BadgeBorder = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B"));
+                    BadgeForeground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FBBF24"));
+                    break;
+                case "DOWNLOADING":
+                    StatusBadge = string.IsNullOrEmpty(badge) ? "⬇️ Downloading" : badge;
+                    BadgeBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E3A8A"));
+                    BadgeBorder = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#3B82F6"));
+                    BadgeForeground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#60A5FA"));
+                    break;
+                case "DOWNLOADED":
+                    StatusBadge = string.IsNullOrEmpty(badge) ? "📁 Ready on Disk" : badge;
+                    BadgeBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E293B"));
+                    BadgeBorder = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#475569"));
+                    BadgeForeground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#94A3B8"));
+                    break;
+                case "MISSING":
+                default:
+                    StatusBadge = string.IsNullOrEmpty(badge) ? "⚠️ Needs Download" : badge;
+                    BadgeBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#422006"));
+                    BadgeBorder = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D97706"));
+                    BadgeForeground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FBBF24"));
+                    break;
+            }
+        }
 
         public override string ToString() => $"{Title} ({Id})";
 

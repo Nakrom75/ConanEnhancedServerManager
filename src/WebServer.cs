@@ -265,6 +265,12 @@ namespace ConanServerManager
                     updateNotes = _engine.LatestAppUpdate?.ReleaseNotes ?? "",
                     backupDir = _engine.BackupDir,
                     activeGameDb = Path.GetFileName(_engine.GetActiveGameDbPath()),
+                    loadedModsCount = _engine.LoadedModIds.Count,
+                    totalModsCount = cfg.Mods.Count,
+                    crashLoopDetected = _engine.IsCrashLoopDetected,
+                    crashLoopSuspectModId = _engine.CrashLoopSuspectModId,
+                    crashLoopSuspectModTitle = _engine.CrashLoopSuspectModTitle,
+                    crashLoopReason = _engine.CrashLoopReason,
                     steamOnline = _engine.SteamStatus.IsOnline,
                     steamServerName = _engine.SteamStatus.ServerName,
                     steamMap = _engine.SteamStatus.Map,
@@ -406,7 +412,9 @@ namespace ConanServerManager
                     ["MaxTickRate"] = cfg.MaxTickRate,
                     ["Region"] = cfg.Region,
                     ["EnableBattlEye"] = cfg.EnableBattlEye,
-                    ["EnableVAC"] = cfg.EnableVAC
+                    ["EnableVAC"] = cfg.EnableVAC,
+                    ["mods"] = cfg.Mods,
+                    ["Mods"] = cfg.Mods
                 };
                 await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(res));
             }
@@ -520,27 +528,54 @@ namespace ConanServerManager
             else if (path == "/api/mods" && method == "GET")
             {
                 var modMap = await SteamWorkshopHelper.GetMultipleModDetailsAsync(_engine.Config.Mods);
-                var modList = new List<WorkshopModItem>();
+                var modList = new List<object>();
                 foreach (var modId in _engine.Config.Mods)
                 {
-                    if (modMap.TryGetValue(modId, out var details))
+                    var rt = _engine.GetModRuntimeInfo(modId);
+                    modMap.TryGetValue(modId, out var details);
+
+                    modList.Add(new
                     {
-                        details.IsInstalled = true;
-                        details.IsDownloaded = _engine.IsModDownloaded(modId);
-                        modList.Add(details);
-                    }
-                    else
-                    {
-                        modList.Add(new WorkshopModItem
-                        {
-                            Id = modId,
-                            Title = $"Mod #{modId}",
-                            IsInstalled = true,
-                            IsDownloaded = _engine.IsModDownloaded(modId)
-                        });
-                    }
+                        Id = modId,
+                        Title = details?.Title ?? $"Mod #{modId}",
+                        Creator = details?.Creator ?? "",
+                        PreviewUrl = details?.PreviewUrl ?? "",
+                        ShortDescription = details?.ShortDescription ?? "",
+                        FileSize = details?.FileSize ?? 0,
+                        Subscriptions = details?.Subscriptions ?? 0,
+                        IsInstalled = true,
+                        IsDownloaded = _engine.IsModDownloaded(modId),
+                        IsLoaded = rt.IsLoaded,
+                        LoadStatus = rt.LoadStatus,
+                        StatusBadge = rt.StatusBadge,
+                        StatusText = rt.StatusText,
+                        Category = (int)rt.Category,
+                        CategoryName = rt.CategoryName
+                    });
                 }
                 await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { mods = _engine.Config.Mods, details = modList }));
+            }
+            else if (path == "/api/mods/sort" && method == "POST")
+            {
+                _engine.AutoSortMods();
+                await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = true, mods = _engine.Config.Mods }));
+            }
+            else if (path == "/api/control/crash-loop/dismiss" && method == "POST")
+            {
+                _engine.DismissCrashLoop();
+                await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = true }));
+            }
+            else if (path == "/api/control/crash-loop/disable-mod" && method == "POST")
+            {
+                string modId = "";
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    modId = doc.RootElement.GetProperty("modId").GetString() ?? "";
+                }
+                catch { }
+                _ = Task.Run(async () => await _engine.DisableCrashCulpritModAndRestartAsync(modId));
+                await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = true, message = "Offending mod removed. Restart initiated." }));
             }
             else if (path == "/api/mods/add" && method == "POST")
             {
@@ -561,6 +596,7 @@ namespace ConanServerManager
                         _engine.SaveConfig();
                         _engine.SyncIniSettings();
                         _engine.GenerateModlistFile();
+                        _engine.TriggerModsChanged();
                         _engine.Log($"[Remote Admin] Added Steam Workshop Mod #{modId} to server mod list. Triggering background pre-download...");
                         _ = Task.Run(async () => await _engine.PreDownloadModAsync(modId));
                     }
@@ -605,6 +641,7 @@ namespace ConanServerManager
                     _engine.SaveConfig();
                     _engine.SyncIniSettings();
                     _engine.GenerateModlistFile();
+                    _engine.TriggerModsChanged();
                     _engine.Log($"[Remote Admin] Removed Steam Workshop Mod #{modId} from server mod list.");
 
                     await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = true, mods = _engine.Config.Mods }));
@@ -634,6 +671,7 @@ namespace ConanServerManager
                         _engine.SaveConfig();
                         _engine.SyncIniSettings();
                         _engine.GenerateModlistFile();
+                        _engine.TriggerModsChanged();
                         _engine.Log($"[Remote Admin] Reordered server mod list ({newOrder.Count} mods).");
                     }
 
@@ -809,6 +847,20 @@ namespace ConanServerManager
         </div>
     </div>
 
+    <!-- Crash Loop Alert Banner -->
+    <div id=""pnlCrashLoopAlert"" style=""display:none;margin-bottom:14px;background:#450a0a;border:1.5px solid #ef4444;border-radius:10px;padding:12px;"">
+        <div style=""display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;"">
+            <div>
+                <div style=""font-weight:bold;color:#fca5a5;font-size:0.95rem;"" id=""crashLoopAlertTitle"">🚨 CRASH LOOP DETECTED - AUTO-RESTART PAUSED</div>
+                <div style=""font-size:0.8rem;color:#f87171;margin-top:3px;"" id=""crashLoopAlertMsg"">Suspected mod caused crash loop.</div>
+            </div>
+            <div style=""display:flex;gap:8px;"">
+                <button class=""btn-stop"" id=""btnCrashDisableMod"" style=""padding:6px 12px;font-size:0.75rem;font-weight:bold;"" onclick=""disableOffendingMod()"">🗑️ Disable Offending Mod &amp; Restart</button>
+                <button class=""btn-backup"" style=""padding:6px 10px;font-size:0.75rem;"" onclick=""dismissCrashLoopAlert()"">✕ Dismiss</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Connected Players Card -->
     <div class=""card"">
         <div class=""header"" style=""margin-bottom: 10px;"">
@@ -840,7 +892,10 @@ namespace ConanServerManager
             <div class=""subtitle"" style=""text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold; color: #818cf8;"">
                 📦 Active Server Mods (<span id=""activeModsCountBadge"">0</span>)
             </div>
-            <button class=""btn-backup"" style=""padding: 4px 10px; font-size: 0.75rem;"" onclick=""loadServerMods()"">🔄 Refresh</button>
+            <div style=""display:flex;gap:6px;"">
+                <button class=""btn-start"" style=""padding: 4px 10px; font-size: 0.75rem; background:#059669;"" onclick=""autoSortServerMods()"">🪄 Auto-Sort Order</button>
+                <button class=""btn-backup"" style=""padding: 4px 10px; font-size: 0.75rem;"" onclick=""loadServerMods()"">🔄 Refresh</button>
+            </div>
         </div>
         <div id=""activeModsContainer""></div>
     </div>
@@ -986,6 +1041,16 @@ namespace ConanServerManager
                 } else {
                     container.innerHTML = '<div style=""color: #64748b; font-size: 0.85rem; text-align: center; padding: 12px;"">No players currently online</div>';
                 }
+
+                if (data.crashLoopDetected) {
+                    suspectCrashModId = data.crashLoopSuspectModId || '';
+                    document.getElementById('pnlCrashLoopAlert').style.display = 'block';
+                    document.getElementById('crashLoopAlertTitle').innerText = '🚨 CRASH LOOP DETECTED - ' + (data.crashLoopSuspectModTitle ? 'SUSPECT: ' + data.crashLoopSuspectModTitle.toUpperCase() : 'AUTO-RESTART PAUSED');
+                    document.getElementById('crashLoopAlertMsg').innerText = (data.crashLoopSuspectModId ? 'Suspected Mod: ' + data.crashLoopSuspectModTitle + ' (ID: #' + data.crashLoopSuspectModId + '). ' : '') + 'Reason: ' + (data.crashLoopReason || 'Process exited repeatedly during boot.');
+                    document.getElementById('btnCrashDisableMod').style.display = suspectCrashModId ? 'inline-block' : 'none';
+                } else {
+                    document.getElementById('pnlCrashLoopAlert').style.display = 'none';
+                }
             } catch (e) {}
         }
 
@@ -1104,6 +1169,45 @@ namespace ConanServerManager
             }
         }
 
+        let suspectCrashModId = '';
+
+        async function autoSortServerMods() {
+            try {
+                const res = await fetch('/api/mods/sort', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    alert('Mods auto-sorted successfully according to recommended Conan Exiles load order rules!');
+                    loadServerMods();
+                }
+            } catch (e) {
+                alert('Auto-sort failed: ' + e.message);
+            }
+        }
+
+        async function dismissCrashLoopAlert() {
+            try {
+                await fetch('/api/control/crash-loop/dismiss', { method: 'POST' });
+                document.getElementById('pnlCrashLoopAlert').style.display = 'none';
+            } catch (e) {}
+        }
+
+        async function disableOffendingMod() {
+            if (!confirm('Disable offending mod #' + (suspectCrashModId || 'suspect') + ' and restart the server?')) return;
+            try {
+                const res = await fetch('/api/control/crash-loop/disable-mod', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ modId: suspectCrashModId })
+                });
+                const data = await res.json();
+                alert(data.message || 'Offending mod removed and restart initiated.');
+                document.getElementById('pnlCrashLoopAlert').style.display = 'none';
+                loadServerMods();
+            } catch (e) {
+                alert('Recovery error: ' + e.message);
+            }
+        }
+
         async function loadServerMods() {
             try {
                 const res = await fetch('/api/mods');
@@ -1120,8 +1224,14 @@ namespace ConanServerManager
                         <span style=""font-weight:bold;color:#64748b;font-size:0.75rem;width:18px;"">${idx + 1}</span>
                         <div style=""flex:1;min-width:0;"">
                             <div style=""font-weight:bold;font-size:0.85rem;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"">${escapeHtml(m.Title)}</div>
-                            <div style=""font-size:0.7rem;color:#94a3b8;"">ID: <strong>${m.Id}</strong></div>
+                            <div style=""font-size:0.7rem;color:#94a3b8;margin-top:2px;"">
+                                ID: <strong>${m.Id}</strong>
+                                <span style=""margin-left:8px;color:#38bdf8;"">${escapeHtml(m.CategoryName || 'General')}</span>
+                            </div>
                         </div>
+                        <span style=""font-size:0.7rem;font-weight:bold;padding:3px 7px;border-radius:4px;background:${m.IsLoaded ? '#064e3b' : (m.LoadStatus === 'PENDING_RESTART' ? '#451a03' : '#1e293b')};color:${m.IsLoaded ? '#34d399' : (m.LoadStatus === 'PENDING_RESTART' ? '#fbbf24' : '#94a3b8')};border:1px solid ${m.IsLoaded ? '#10b981' : (m.LoadStatus === 'PENDING_RESTART' ? '#f59e0b' : '#475569')};"">
+                            ${escapeHtml(m.StatusBadge || '📁 Ready on Disk')}
+                        </span>
                         <button class=""btn-stop"" style=""padding:4px 8px;font-size:0.75rem;"" onclick=""removeModFromServer('${m.Id}')"">🗑️</button>
                     </div>
                 `).join('');

@@ -1517,7 +1517,88 @@ The following items were identified during the v1.3.2 feature audit and schedule
 - **Automated Mod Dependency Resolution**: Query Steam Workshop item dependencies (e.g. required framework mods like Pippi, ModControlPanel) and prompt users with 1-click batch installation of prerequisite mods when installing an item.
 
 ---
+
+## 40. Live Mod Mount Tracker, Crash Loop Watchdog, Remote Mod Synchronization & Auto-Sort Engine (v1.3.3)
+
+> **Milestone Version:** 1.3.3 (versionCode `10303`)  
+> **Release Target:** Full bidirectional mod synchronization between Host, Remote Desktop, and Mobile clients; live mod load status tracking from `ConanSandbox.log`; intelligent Conan load order auto-sorting; and crash loop watchdog isolation with culprit mod detection.
+
+### 1. Bidirectional Remote Mod Synchronization
+- **Problem & Root Cause**:
+  - Mod modifications executed via the Remote Desktop client only altered the local WPF `LstMods` collection in memory and did not dispatch updates to `/api/mods/*` or update `manager_config.json` and `modlist.txt` on the host server.
+  - Mod additions or reorderings performed via the Android companion app did not trigger a host UI notification, causing the host WPF manager to retain stale mod lists and potentially overwrite remote changes when saving settings.
+- **Architectural Solution**:
+  - **`ServerEngine.OnModsChanged` Event**: Fires whenever mods are added, removed, reordered, or auto-sorted via local UI, REST API, or remote sync.
+  - **Host WPF GUI Synchronization**: `MainWindow` subscribes to `_engine.OnModsChanged` to immediately refresh `LstMods` whenever changes occur from mobile or web interfaces.
+  - **Remote Desktop Client Dispatch**: In Remote Client Mode, `BtnAddMod_Click`, `BtnRemoveMod_Click`, `BtnModMoveUp_Click`, `BtnModMoveDown_Click`, and `BtnAutoSortMods_Click` now dispatch directly to `/api/mods/add`, `/api/mods/remove`, `/api/mods/reorder`, and `/api/mods/sort`, followed by instant remote list re-fetch via `FetchRemoteModsListAsync()`.
+  - **Full INI and Disk Alignment**: Any change to the server mod list immediately updates `manager_config.json`, synchronizes `DedicatedServerLauncherMods` in `ServerSettings.ini`, and regenerates `ConanSandbox/Saved/Config/WindowsServer/modlist.txt`.
+
+### 2. Live Mod Mount Detection & Status Badges
+- **Real-Time Unreal Engine Log Parsing (`ScanLiveModMountStatus()`)**:
+  - A background 2-second non-blocking file stream inspects `ConanSandbox/Saved/Logs/ConanSandbox.log` using `FileStream(..., FileMode.Open, FileAccess.Read, FileShare.ReadWrite)`.
+  - Captures mod mounting events (`LogModManager: Mounting mod pak file: ...\content\440900\<ModId>\<pakName>`) and populates `LoadedModIds`.
+  - Catches mod load errors (`MountMod: ... Failed to mount`, `Corrupt pak`, `Hash mismatch`) and populates `ModErrorMap`.
+- **Mod Runtime State Model (`ModRuntimeInfo`)**:
+  - `LOADED`: 🟢 **Loaded & Active** (mod mounted and active in live server process).
+  - `PENDING_RESTART`: ⏳ **Pending Restart** (downloaded on disk; server running but requires restart to mount).
+  - `DOWNLOADED`: 📁 **Ready on Disk** (verified on disk while server stopped).
+  - `DOWNLOADING`: ⬇️ **Downloading** (currently downloading via SteamCMD in background).
+  - `LOAD_ERROR`: ❌ **Load Error** (error occurred during mount).
+  - `MISSING`: ⚠️ **Needs Download** (mod not present in workshop folder).
+- **Universal Multi-Platform Visibility**:
+  - **Desktop UI**: Each mod in `LstMods` renders a styled color-coded pill badge and category badge.
+  - **Embedded Web Console**: Active mods display dynamic status chips (`🟢 Loaded & Active`, `⏳ Pending Restart`, `📁 Ready on Disk`).
+  - **Android Companion App**: Mod cards in Tab 2 show real-time colored status badges and category chips without opening server logs or launching the game.
+
+### 3. Intelligent Mod Load Order Auto-Sort Engine (`ModLoadOrderHelper.cs`)
+- **Conan Exiles Mod Hierarchy Categorization**:
+  Categorizes mods into priority weights based on title, description, and known Mod IDs:
+  1. **Core Frameworks** (Priority 10): MCP, Pippi, SudoSpells, LBPR, Tot Admin/Customizer.
+  2. **Map Extensions** (Priority 20): Savage Wilds, Underworld, new landmasses.
+  3. **Overhauls & Progression** (Priority 30): The Age of Calamitous (AoC), EEWA, Paragon Leveling.
+  4. **NPCs & Thralls** (Priority 40): Valkyrie, Spawn 98% Women, Improved Quality of Life (IQoL).
+  5. **Items & Cosmetics** (Priority 50): GrimProductions, Sacred Lust, High Heels, Fashionist, Barber.
+  6. **Building & Storage** (Priority 60): Double Storage, Pythagoras, Glass Construction.
+  7. **Physics & Tweaks** (Priority 70): Reliable Meteors, WindLess, Tot Walk, stack sizes.
+  8. **HUD & Emblems** (Priority 80): Minimaps, Compasses, Sikky's Clan Emblems.
+  9. **Compatibility Patches** (Priority 90, Load Last): LBPR Additional Features, bridge patches, override patches.
+- **1-Click Auto-Sort**:
+  - Available across all clients: Desktop UI ("🪄 Auto-Sort Order"), Web Console, and Android App ("🪄 Auto-Sort").
+  - Stable sort preserves existing custom order within the same category while enforcing global safety rules.
+  - Automatically regenerates `modlist.txt` in the exact sequence required by Conan Exiles.
+
+### 4. Infinite Crash Loop Watchdog & Culprit Mod Isolation
+- **Crash Loop Signature Detection**:
+  - Tracks server crashes occurring within 5 minutes of process startup.
+  - If 3 crashes occur in rapid succession (< 5 minutes each), the watchdog identifies an **infinite crash loop**, pauses auto-restarts, and invokes `AnalyzeCrashAndIdentifyCulprit()`.
+- **Culprit Mod Identification Algorithm**:
+  - Scans the trailing 400 lines of `ConanSandbox.log` for fatal exception markers (`Fatal error:`, `EXCEPTION_ACCESS_VIOLATION`, `Assertion failed:`).
+  - Scans lines within 35 lines of the crash point for Steam Workshop paths matching `content\440900\(<ModId>)\`.
+  - If not directly adjacent to the exception, inspects the last mod mounting line prior to termination.
+  - Resolves culprit Workshop metadata to identify the specific offending mod name and ID.
+- **Automated Alerts & 1-Click Recovery**:
+  - **Discord Webhook**: Sends emergency red embed alert specifying the culprit mod and notification that auto-restart has been paused.
+  - **Desktop Banner (`PnlCrashLoopAlert`)**: Displays glassmorphic red alert banner with offending mod details, a "🗑️ Disable Offending Mod & Restart" button, and a "✕ Dismiss" button.
+  - **Web Console & Android App**: Prominent red banners with identical 1-click recovery actions (`/api/control/crash-loop/disable-mod` and `/api/control/crash-loop/dismiss`).
+  - Clicking "Disable Offending Mod & Restart" cleanly removes the culprit mod from `Config.Mods`, regenerates `modlist.txt`, clears the crash history, and launches a clean server startup.
+
+### 5. Synchronized Dual-Platform Release (`v1.3.3` / `10303`)
+- Synchronized all 7 core version locations:
+  1. `version.txt` -> `1.3.3`
+  2. `src/ServerEngine.cs` -> `CurrentAppVersion = "1.3.3"`
+  3. `src/MainWindow.xaml` -> `v1.3.3` (title and header badge)
+  4. `android/app/build.gradle` -> `getAppVersionName() = "1.3.3"`, `getAppVersionCode() = 10303`
+  5. `android/app/src/main/assets/app.js` -> `APP_VERSION = "1.3.3"`
+  6. `android/app/src/main/assets/index.html` -> badge `v1.3.3`
+  7. `android/app/src/main/java/com/conan/servermanager/MainActivity.java` -> fallback `"1.3.3"`, `10303`
+- **Build Status**:
+  - Windows: Self-contained `win-x64` build compiled with 0 Errors / 0 Warnings; packaged `ConanServerManager_v1.3.3.zip` and updated `ConanServerManager_DeployPackage.zip`.
+  - Android: Generated pre-signed `ConanServerManager-v1.3.3.apk` (4.64 MB, versionCode `10303`).
+- **Zero Remote Deployment**: All binaries, APKs, and archives remain strictly local for manual administrator distribution.
+
+---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
+
 
 
 

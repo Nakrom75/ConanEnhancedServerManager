@@ -9,6 +9,7 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 
@@ -162,6 +163,26 @@ namespace ConanServerManager
         public bool WebPortBound { get; set; }
     }
 
+    public class ModRuntimeInfo
+    {
+        public string Id { get; set; } = "";
+        public bool IsLoaded { get; set; }
+        public string LoadStatus { get; set; } = "UNKNOWN"; // LOADED, PENDING_RESTART, DOWNLOADED, DOWNLOADING, MISSING, ERROR
+        public string StatusBadge { get; set; } = "";
+        public string StatusText { get; set; } = "";
+        public ModCategory Category { get; set; } = ModCategory.ItemsCosmetics;
+        public string CategoryName { get; set; } = "General Content";
+    }
+
+    public class CrashAnalysisResult
+    {
+        public bool HasCrashError { get; set; }
+        public string CulpritModId { get; set; } = "";
+        public string CulpritModTitle { get; set; } = "";
+        public string ErrorMessage { get; set; } = "";
+        public string Summary { get; set; } = "";
+    }
+
     public class ServerEngine
     {
         public static string BaseDir => AppDomain.CurrentDomain.BaseDirectory;
@@ -259,7 +280,7 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.3.2";
+            return "1.3.3";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
@@ -384,6 +405,25 @@ namespace ConanServerManager
         public bool IsModPreDownloading { get; private set; } = false;
         public string? CurrentPreDownloadingModId { get; private set; } = null;
         public event Action<string, bool, string>? OnModPreDownloadCompleted;
+        public event Action<List<string>>? OnModsChanged;
+
+        // Live Mod Load Status
+        public HashSet<string> LoadedModIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, string> ModErrorMap { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private long _lastConanLogPosition = 0;
+        private System.Threading.Timer? _modMountScanTimer;
+        private readonly object _logScanLock = new object();
+        public string ConanLogFilePath => Path.Combine(ServerRootDir, "ConanSandbox", "Saved", "Logs", "ConanSandbox.log");
+
+        // Crash Loop Detection
+        public bool IsCrashLoopDetected { get; private set; } = false;
+        public string CrashLoopSuspectModId { get; private set; } = "";
+        public string CrashLoopSuspectModTitle { get; private set; } = "";
+        public string CrashLoopReason { get; private set; } = "";
+        public event Action<string, string, string>? OnCrashLoopDetected;
+        public event Action? OnCrashLoopDismissed;
+        private readonly List<DateTime> _recentCrashTimes = new List<DateTime>();
+
         private readonly SemaphoreSlim _steamCmdLock = new SemaphoreSlim(1, 1);
 
         public ServerEngine()
@@ -401,6 +441,7 @@ namespace ConanServerManager
             StartAppUpdateTimer();
             StartSteamQueryTimer();
             StartAutoRestartTimer();
+            StartModMountScanTimer();
         }
 
         public bool DetectAndAdoptRunningServerProcess()
@@ -581,6 +622,187 @@ namespace ConanServerManager
                     Log($"[Auto-Restart Scheduler Error]: {ex.Message}");
                 }
             }, null, TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(20));
+        }
+
+        private void StartModMountScanTimer()
+        {
+            // Scans ConanSandbox.log every 2 seconds when server is running to detect mounted mods and errors
+            _modMountScanTimer = new System.Threading.Timer(_ =>
+            {
+                ScanLiveModMountStatus();
+            }, null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(2));
+        }
+
+        public void ScanLiveModMountStatus()
+        {
+            if (ServerStatus != "RUNNING") return;
+
+            try
+            {
+                string logPath = ConanLogFilePath;
+                if (!File.Exists(logPath)) return;
+
+                lock (_logScanLock)
+                {
+                    var fi = new FileInfo(logPath);
+                    if (fi.Length < _lastConanLogPosition)
+                    {
+                        // File was truncated or rolled over
+                        _lastConanLogPosition = 0;
+                        LoadedModIds.Clear();
+                        ModErrorMap.Clear();
+                    }
+
+                    using var fs = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                    if (_lastConanLogPosition > 0 && _lastConanLogPosition < fs.Length)
+                    {
+                        fs.Seek(_lastConanLogPosition, SeekOrigin.Begin);
+                    }
+
+                    using var reader = new StreamReader(fs, Encoding.UTF8);
+                    string? line;
+                    var mountRegex = new Regex(@"content[\\/]440900[\\/](\d{6,12})[\\/]", RegexOptions.IgnoreCase);
+
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        if (line.Contains("LogModManager: Mounting mod pak file:", StringComparison.OrdinalIgnoreCase) ||
+                            line.Contains("MountMod:", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var m = mountRegex.Match(line);
+                            if (m.Success)
+                            {
+                                string modId = m.Groups[1].Value;
+                                if (!LoadedModIds.Contains(modId))
+                                {
+                                    LoadedModIds.Add(modId);
+                                }
+                            }
+                        }
+                        else if (line.Contains("LogModManager: Error:", StringComparison.OrdinalIgnoreCase) ||
+                                 line.Contains("LogPakFile: Error:", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var m = mountRegex.Match(line);
+                            if (m.Success)
+                            {
+                                string modId = m.Groups[1].Value;
+                                ModErrorMap[modId] = line.Trim();
+                            }
+                        }
+                    }
+
+                    _lastConanLogPosition = fs.Position;
+                }
+            }
+            catch { }
+        }
+
+        public ModRuntimeInfo GetModRuntimeInfo(string modId, string? title = null, string? description = null)
+        {
+            string cleanId = modId.Trim();
+            bool isDownloaded = IsModDownloaded(cleanId);
+            bool isPreDownloading = IsModPreDownloading && CurrentPreDownloadingModId == cleanId;
+            var cached = SteamWorkshopHelper.GetCachedMod(cleanId);
+            string effTitle = !string.IsNullOrWhiteSpace(title) ? title : cached?.Title ?? "";
+            string effDesc = !string.IsNullOrWhiteSpace(description) ? description : cached?.ShortDescription ?? "";
+            var category = ModLoadOrderHelper.ClassifyMod(cleanId, effTitle, effDesc);
+            string catName = ModLoadOrderHelper.GetCategoryDisplayName(category);
+
+            if (ServerStatus == "RUNNING")
+            {
+                if (ModErrorMap.TryGetValue(cleanId, out var err))
+                {
+                    return new ModRuntimeInfo
+                    {
+                        Id = cleanId,
+                        IsLoaded = false,
+                        LoadStatus = "ERROR",
+                        StatusBadge = "❌ Load Error",
+                        StatusText = err,
+                        Category = category,
+                        CategoryName = catName
+                    };
+                }
+
+                if (LoadedModIds.Contains(cleanId))
+                {
+                    return new ModRuntimeInfo
+                    {
+                        Id = cleanId,
+                        IsLoaded = true,
+                        LoadStatus = "LOADED",
+                        StatusBadge = "🟢 Active & Loaded",
+                        StatusText = "Mod mounted and active in game server",
+                        Category = category,
+                        CategoryName = catName
+                    };
+                }
+
+                return new ModRuntimeInfo
+                {
+                    Id = cleanId,
+                    IsLoaded = false,
+                    LoadStatus = "PENDING_RESTART",
+                    StatusBadge = "⏳ Pending Restart",
+                    StatusText = isDownloaded ? "Ready on disk; restart server to load" : "Pending download and restart",
+                    Category = category,
+                    CategoryName = catName
+                };
+            }
+
+            if (isPreDownloading)
+            {
+                return new ModRuntimeInfo
+                {
+                    Id = cleanId,
+                    IsLoaded = false,
+                    LoadStatus = "DOWNLOADING",
+                    StatusBadge = "⬇️ Downloading",
+                    StatusText = "SteamCMD downloading mod...",
+                    Category = category,
+                    CategoryName = catName
+                };
+            }
+
+            if (isDownloaded)
+            {
+                return new ModRuntimeInfo
+                {
+                    Id = cleanId,
+                    IsLoaded = false,
+                    LoadStatus = "DOWNLOADED",
+                    StatusBadge = "📁 Ready on Disk",
+                    StatusText = "Verified on disk",
+                    Category = category,
+                    CategoryName = catName
+                };
+            }
+
+            return new ModRuntimeInfo
+            {
+                Id = cleanId,
+                IsLoaded = false,
+                LoadStatus = "MISSING",
+                StatusBadge = "⚠️ Needs Download",
+                StatusText = "Mod not found in workshop folder",
+                Category = category,
+                CategoryName = catName
+            };
+        }
+
+        public void AutoSortMods()
+        {
+            var sorted = ModLoadOrderHelper.AutoSortModList(Config.Mods, id => SteamWorkshopHelper.GetCachedMod(id));
+            Config.Mods = sorted;
+            SaveConfig();
+            SyncIniSettings();
+            GenerateModlistFile();
+            Log($"[Mods] Auto-sorted mod list according to Conan Exiles load order rules ({sorted.Count} mods).");
+            TriggerModsChanged();
+        }
+
+        public void TriggerModsChanged()
+        {
+            OnModsChanged?.Invoke(Config.Mods);
         }
 
         private async Task CheckAutoRestartScheduleAsync()
@@ -871,10 +1093,52 @@ namespace ConanServerManager
 
                     if (hasExited)
                     {
-                        Log("[Watchdog] WARNING: Server process terminated unexpectedly! Executing auto-restart...");
                         SetStatus("STOPPED");
                         ServerProcess = null;
                         ServerStartTime = DateTime.MinValue;
+
+                        DateTime now = DateTime.Now;
+                        int crashCount;
+                        lock (_recentCrashTimes)
+                        {
+                            _recentCrashTimes.Add(now);
+                            _recentCrashTimes.RemoveAll(t => (now - t).TotalMinutes > 5);
+                            crashCount = _recentCrashTimes.Count;
+                        }
+
+                        var crashAnalysis = AnalyzeCrashAndIdentifyCulprit();
+
+                        if (crashCount >= 3)
+                        {
+                            IsCrashLoopDetected = true;
+                            CrashLoopSuspectModId = crashAnalysis.CulpritModId;
+                            CrashLoopSuspectModTitle = crashAnalysis.CulpritModTitle;
+                            CrashLoopReason = $"Server crashed {crashCount} times within 5 minutes. Offending Mod: {(string.IsNullOrEmpty(crashAnalysis.CulpritModTitle) ? "Unknown" : crashAnalysis.CulpritModTitle)} (ID: {crashAnalysis.CulpritModId}). Automatic restart has been PAUSED to protect the server.";
+
+                            Log("========================================================================");
+                            Log("🚨 [CRASH LOOP DETECTED] REPEATED SERVER CRASHES IDENTIFIED!");
+                            Log($"🚨 {CrashLoopReason}");
+                            if (!string.IsNullOrEmpty(crashAnalysis.ErrorMessage))
+                            {
+                                Log($"🚨 Error: {crashAnalysis.ErrorMessage}");
+                            }
+                            Log("🚨 Auto-restart is paused. Please disable the offending mod or dismiss the alert in Server Manager.");
+                            Log("========================================================================");
+
+                            _ = Task.Run(async () =>
+                            {
+                                await SendDiscordNotificationAsync($"🚨 **CRASH LOOP DETECTED - AUTO-RESTART PAUSED**\nServer terminated unexpectedly {crashCount} times within 5 minutes.\nSuspected culprit: **{crashAnalysis.CulpritModTitle}** (Mod ID: `{crashAnalysis.CulpritModId}`)\n*Auto-restart paused to prevent infinite boot loop.*");
+                            });
+
+                            OnCrashLoopDetected?.Invoke(crashAnalysis.CulpritModId, crashAnalysis.CulpritModTitle, CrashLoopReason);
+                            return;
+                        }
+
+                        Log($"[Watchdog] WARNING: Server process terminated unexpectedly! (Crash {crashCount}/3 within 5m)");
+                        if (!string.IsNullOrEmpty(crashAnalysis.CulpritModId))
+                        {
+                            Log($"[Watchdog] Suspect mod identified from log: Mod #{crashAnalysis.CulpritModId} ({crashAnalysis.CulpritModTitle})");
+                        }
                         _ = Task.Run(async () => await RunFullUpdateAndStartAsync());
                         return;
                     }
@@ -930,6 +1194,137 @@ namespace ConanServerManager
                     }
                 }
             }
+        }
+
+        public CrashAnalysisResult AnalyzeCrashAndIdentifyCulprit()
+        {
+            var result = new CrashAnalysisResult();
+            try
+            {
+                string logPath = ConanLogFilePath;
+                if (!File.Exists(logPath)) return result;
+
+                var lines = new List<string>();
+                using (var fs = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var reader = new StreamReader(fs, Encoding.UTF8))
+                {
+                    string? l;
+                    while ((l = reader.ReadLine()) != null)
+                    {
+                        lines.Add(l);
+                        if (lines.Count > 400) lines.RemoveAt(0);
+                    }
+                }
+
+                if (lines.Count == 0) return result;
+
+                int crashIdx = -1;
+                string crashErrorLine = "";
+                for (int i = lines.Count - 1; i >= 0; i--)
+                {
+                    string line = lines[i];
+                    if (line.Contains("Fatal error:", StringComparison.OrdinalIgnoreCase) ||
+                        line.Contains("EXCEPTION_ACCESS_VIOLATION", StringComparison.OrdinalIgnoreCase) ||
+                        line.Contains("Critical error:", StringComparison.OrdinalIgnoreCase) ||
+                        line.Contains("Assertion failed:", StringComparison.OrdinalIgnoreCase) ||
+                        line.Contains("[CrashReportClient]", StringComparison.OrdinalIgnoreCase))
+                    {
+                        crashIdx = i;
+                        crashErrorLine = line.Trim();
+                        break;
+                    }
+                }
+
+                if (crashIdx != -1)
+                {
+                    result.HasCrashError = true;
+                    result.ErrorMessage = crashErrorLine;
+                }
+
+                var modIdRegex = new Regex(@"content[\\/]440900[\\/](\d{6,12})[\\/]", RegexOptions.IgnoreCase);
+
+                // 1st Priority: Scan lines near crash point
+                int startCheck = Math.Max(0, crashIdx != -1 ? crashIdx - 35 : lines.Count - 50);
+                int endCheck = Math.Min(lines.Count, crashIdx != -1 ? crashIdx + 15 : lines.Count);
+
+                for (int i = endCheck - 1; i >= startCheck; i--)
+                {
+                    var match = modIdRegex.Match(lines[i]);
+                    if (match.Success)
+                    {
+                        result.CulpritModId = match.Groups[1].Value;
+                        break;
+                    }
+                }
+
+                // If not found near crash, find the LAST mod that was being mounted anywhere in the log
+                if (string.IsNullOrEmpty(result.CulpritModId))
+                {
+                    for (int i = lines.Count - 1; i >= 0; i--)
+                    {
+                        if (lines[i].Contains("LogModManager: Mounting mod pak file:", StringComparison.OrdinalIgnoreCase) ||
+                            lines[i].Contains("MountMod:", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var match = modIdRegex.Match(lines[i]);
+                            if (match.Success)
+                            {
+                                result.CulpritModId = match.Groups[1].Value;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(result.CulpritModId))
+                {
+                    var cached = SteamWorkshopHelper.GetCachedMod(result.CulpritModId);
+                    result.CulpritModTitle = cached != null && !string.IsNullOrWhiteSpace(cached.Title) ? cached.Title : $"Mod #{result.CulpritModId}";
+                    result.Summary = $"Crash occurred while loading {result.CulpritModTitle} (ID: {result.CulpritModId}). Error: {(string.IsNullOrEmpty(result.ErrorMessage) ? "Process exited unexpectedly during mod load" : result.ErrorMessage)}";
+                }
+                else
+                {
+                    result.Summary = $"Server crashed unexpectedly. Error: {(string.IsNullOrEmpty(result.ErrorMessage) ? "Unknown fatal error" : result.ErrorMessage)}";
+                }
+            }
+            catch (Exception ex)
+            {
+                result.Summary = $"Crash analysis note: {ex.Message}";
+            }
+
+            return result;
+        }
+
+        public void DismissCrashLoop()
+        {
+            lock (_recentCrashTimes)
+            {
+                _recentCrashTimes.Clear();
+            }
+            IsCrashLoopDetected = false;
+            CrashLoopSuspectModId = "";
+            CrashLoopSuspectModTitle = "";
+            CrashLoopReason = "";
+            OnCrashLoopDismissed?.Invoke();
+            Log("[Watchdog] Crash loop alert dismissed by administrator.");
+        }
+
+        public async Task<bool> DisableCrashCulpritModAndRestartAsync(string? modId = null)
+        {
+            string targetId = !string.IsNullOrWhiteSpace(modId) ? modId.Trim() : CrashLoopSuspectModId;
+            if (string.IsNullOrWhiteSpace(targetId)) return false;
+
+            Log($"[Watchdog] Disabling offending mod #{targetId} from server mod list to resolve crash loop...");
+            Config.Mods.RemoveAll(x => x.Equals(targetId, StringComparison.OrdinalIgnoreCase));
+            SaveConfig();
+            SyncIniSettings();
+            GenerateModlistFile();
+            TriggerModsChanged();
+
+            DismissCrashLoop();
+
+            Log($"[Watchdog] Offending mod #{targetId} removed. Initiating clean server startup...");
+            await RunFullUpdateAndStartAsync();
+            return true;
         }
 
         private static void SafeFireAndForget(Func<Task> action, string taskName)
@@ -1528,6 +1923,27 @@ namespace ConanServerManager
                 else if (vac.ValueKind == JsonValueKind.String && bool.TryParse(vac.GetString(), out bool vVal)) { Config.EnableVAC = vVal; changed = true; }
             }
 
+            if (root.TryGetProperty("mods", out var mProp) || root.TryGetProperty("Mods", out mProp))
+            {
+                if (mProp.ValueKind == JsonValueKind.Array)
+                {
+                    var newMods = new List<string>();
+                    foreach (var el in mProp.EnumerateArray())
+                    {
+                        string id = el.GetString()?.Trim() ?? "";
+                        if (!string.IsNullOrWhiteSpace(id) && !newMods.Contains(id))
+                        {
+                            newMods.Add(id);
+                        }
+                    }
+                    Config.Mods = newMods;
+                    SyncIniSettings();
+                    GenerateModlistFile();
+                    TriggerModsChanged();
+                    changed = true;
+                }
+            }
+
             if (changed)
             {
                 SaveConfig();
@@ -1899,6 +2315,15 @@ namespace ConanServerManager
                     {
                         ServerStartTime = DateTime.Now;
                     }
+
+                    lock (_logScanLock)
+                    {
+                        LoadedModIds.Clear();
+                        ModErrorMap.Clear();
+                        _lastConanLogPosition = 0;
+                    }
+                    DismissCrashLoop();
+
                     SetStatus("RUNNING");
                     Log($"Server launched successfully! Process PID: {ServerProcess.Id}, Process Start: {ServerStartTime:yyyy-MM-dd HH:mm:ss}");
                     Log($"Launch Command: {ExecutablePath} {arguments}");
@@ -2260,6 +2685,12 @@ namespace ConanServerManager
             ServerStartTime = DateTime.MinValue;
             SteamStatus = new SteamServerInfo { IsOnline = false, ErrorMessage = "Server stopped." };
             OnSteamStatusChanged?.Invoke(SteamStatus);
+            lock (_logScanLock)
+            {
+                LoadedModIds.Clear();
+                ModErrorMap.Clear();
+                _lastConanLogPosition = 0;
+            }
 
             SetStatus("STOPPED");
             ServerProcess = null;
