@@ -58,6 +58,24 @@ namespace ConanServerManager
                     }
                 });
             };
+            _engine.OnDisabledModsChanged += (dis) =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    if (!IsRemoteMode)
+                    {
+                        PopulateDisabledModListUi(dis);
+                    }
+                });
+            };
+            _engine.OnModUpdatesChanged += () =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    UpdateModUpdatesBannerUi();
+                    RefreshModListDownloadedStatus();
+                });
+            };
             _engine.OnCrashLoopDetected += (culpritId, culpritTitle, reason) =>
             {
                 Dispatcher.Invoke(() => ShowCrashLoopBanner(culpritId, culpritTitle, reason));
@@ -798,6 +816,8 @@ namespace ConanServerManager
             ChkUseAllCores.IsChecked = cfg.UseAllAvailableCores;
 
             PopulateModListUi(cfg.Mods);
+            PopulateDisabledModListUi(cfg.DisabledMods);
+            UpdateModUpdatesBannerUi();
         }
 
         private ManagerConfig GetConfigFromUi()
@@ -1019,16 +1039,33 @@ namespace ConanServerManager
             foreach (var item in LstMods.Items.OfType<ModDisplayItem>())
             {
                 item.IsDownloaded = _engine.IsModDownloaded(item.Id);
+                item.HasUpdate = _engine.ModsWithUpdates.Contains(item.Id);
                 var rt = _engine.GetModRuntimeInfo(item.Id, item.Title);
                 item.UpdateLoadStatus(rt.LoadStatus, rt.StatusBadge, rt.CategoryName);
             }
+            if (LstDisabledMods != null)
+            {
+                foreach (var item in LstDisabledMods.Items.OfType<ModDisplayItem>())
+                {
+                    item.IsDownloaded = _engine.IsModDownloaded(item.Id);
+                    item.HasUpdate = _engine.ModsWithUpdates.Contains(item.Id);
+                    var rt = _engine.GetModRuntimeInfo(item.Id, item.Title);
+                    item.UpdateLoadStatus(rt.LoadStatus, rt.StatusBadge, rt.CategoryName);
+                }
+            }
+            UpdateModUpdatesBannerUi();
         }
 
         private void PopulateModListUi(IEnumerable<string>? modIds)
         {
             LstMods.Items.Clear();
-            if (modIds == null) return;
+            if (modIds == null)
+            {
+                if (TxtActiveModsCount != null) TxtActiveModsCount.Text = "(0 mods)";
+                return;
+            }
             var list = modIds.Where(m => !string.IsNullOrWhiteSpace(m)).Select(m => m.Trim()).ToList();
+            if (TxtActiveModsCount != null) TxtActiveModsCount.Text = $"({list.Count} mods)";
             if (list.Count == 0) return;
 
             var items = new List<ModDisplayItem>();
@@ -1044,6 +1081,8 @@ namespace ConanServerManager
                         : $"Loading Mod #{id}...",
                     PreviewUrl = cached?.PreviewUrl ?? "",
                     IsDownloaded = _engine.IsModDownloaded(id),
+                    HasUpdate = _engine.ModsWithUpdates.Contains(id),
+                    IsDisabled = false,
                     CategoryName = ModLoadOrderHelper.GetCategoryDisplayName(cat)
                 };
 
@@ -1053,6 +1092,8 @@ namespace ConanServerManager
                 items.Add(item);
                 LstMods.Items.Add(item);
             }
+
+            UpdateModUpdatesBannerUi();
 
             // Asynchronously resolve actual titles from Steam Workshop if any are missing
             _ = Task.Run(async () =>
@@ -1082,6 +1123,91 @@ namespace ConanServerManager
                 }
                 catch { }
             });
+        }
+
+        private void PopulateDisabledModListUi(IEnumerable<string>? disabledModIds)
+        {
+            if (LstDisabledMods == null) return;
+            LstDisabledMods.Items.Clear();
+            if (disabledModIds == null)
+            {
+                if (TxtDisabledModsCount != null) TxtDisabledModsCount.Text = "0";
+                return;
+            }
+            var list = disabledModIds.Where(m => !string.IsNullOrWhiteSpace(m)).Select(m => m.Trim()).ToList();
+            if (TxtDisabledModsCount != null) TxtDisabledModsCount.Text = list.Count.ToString();
+            if (list.Count == 0) return;
+
+            var items = new List<ModDisplayItem>();
+            foreach (var id in list)
+            {
+                var cached = SteamWorkshopHelper.GetCachedMod(id);
+                var cat = ModLoadOrderHelper.DetectCategory(cached?.Title ?? "", cached?.ShortDescription ?? "", id);
+                var item = new ModDisplayItem
+                {
+                    Id = id,
+                    IsDisabled = true,
+                    HasUpdate = _engine.ModsWithUpdates.Contains(id),
+                    Title = cached != null && !string.IsNullOrWhiteSpace(cached.Title) && !cached.Title.StartsWith("Mod #")
+                        ? cached.Title
+                        : $"Mod #{id}",
+                    PreviewUrl = cached?.PreviewUrl ?? "",
+                    IsDownloaded = _engine.IsModDownloaded(id),
+                    CategoryName = ModLoadOrderHelper.GetCategoryDisplayName(cat)
+                };
+
+                var rt = _engine.GetModRuntimeInfo(id, cached?.Title, cached?.ShortDescription);
+                item.UpdateLoadStatus(rt.LoadStatus, rt.StatusBadge, rt.CategoryName);
+
+                items.Add(item);
+                LstDisabledMods.Items.Add(item);
+            }
+
+            UpdateModUpdatesBannerUi();
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var map = await SteamWorkshopHelper.GetMultipleModDetailsAsync(list);
+                    Dispatcher.Invoke(() =>
+                    {
+                        foreach (var item in items)
+                        {
+                            if (map.TryGetValue(item.Id, out var detail) && !string.IsNullOrWhiteSpace(detail.Title))
+                            {
+                                item.Title = detail.Title;
+                                item.PreviewUrl = detail.PreviewUrl;
+                                var c = ModLoadOrderHelper.DetectCategory(detail.Title, detail.ShortDescription, item.Id);
+                                item.CategoryName = ModLoadOrderHelper.GetCategoryDisplayName(c);
+                                var rt = _engine.GetModRuntimeInfo(item.Id, detail.Title, detail.ShortDescription);
+                                item.UpdateLoadStatus(rt.LoadStatus, rt.StatusBadge, rt.CategoryName);
+                            }
+                        }
+                    });
+                }
+                catch { }
+            });
+        }
+
+        private void UpdateModUpdatesBannerUi()
+        {
+            if (PnlModUpdatesBanner == null) return;
+            if (IsRemoteMode) return;
+
+            int count = _engine.ModsWithUpdates.Count;
+            if (count > 0)
+            {
+                PnlModUpdatesBanner.Visibility = Visibility.Visible;
+                if (TxtModUpdatesBanner != null)
+                {
+                    TxtModUpdatesBanner.Text = $"Updates available on Steam Workshop for {count} mod(s)! Restart & Update to apply.";
+                }
+            }
+            else
+            {
+                PnlModUpdatesBanner.Visibility = Visibility.Collapsed;
+            }
         }
 
         private void LoadIniFilesToTabs()
@@ -1628,6 +1754,7 @@ namespace ConanServerManager
                         string loadStatus = el.TryGetProperty("LoadStatus", out var lsProp) ? lsProp.GetString() ?? "DOWNLOADED" : "DOWNLOADED";
                         string statusBadge = el.TryGetProperty("StatusBadge", out var sbProp) ? sbProp.GetString() ?? "" : "";
                         string catName = el.TryGetProperty("CategoryName", out var cnProp) ? cnProp.GetString() ?? "" : "";
+                        bool hasUpdate = el.TryGetProperty("HasUpdate", out var huProp) && huProp.GetBoolean();
 
                         var item = new ModDisplayItem
                         {
@@ -1635,11 +1762,45 @@ namespace ConanServerManager
                             Title = title,
                             PreviewUrl = preview,
                             IsDownloaded = isDownloaded,
-                            CategoryName = catName
+                            CategoryName = catName,
+                            HasUpdate = hasUpdate,
+                            IsDisabled = false
                         };
                         item.UpdateLoadStatus(loadStatus, statusBadge, catName);
                         newItems.Add(item);
                     }
+
+                    var newDisabled = new List<ModDisplayItem>();
+                    if (doc.RootElement.TryGetProperty("disabledDetails", out var disArr) && disArr.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var el in disArr.EnumerateArray())
+                        {
+                            string id = el.TryGetProperty("Id", out var idProp) ? idProp.GetString() ?? "" : "";
+                            if (string.IsNullOrWhiteSpace(id)) continue;
+                            string title = el.TryGetProperty("Title", out var tProp) ? tProp.GetString() ?? "" : $"Mod #{id}";
+                            string preview = el.TryGetProperty("PreviewUrl", out var pProp) ? pProp.GetString() ?? "" : "";
+                            bool isDownloaded = el.TryGetProperty("IsDownloaded", out var dProp) && dProp.GetBoolean();
+                            string loadStatus = el.TryGetProperty("LoadStatus", out var lsProp) ? lsProp.GetString() ?? "DISABLED" : "DISABLED";
+                            string statusBadge = el.TryGetProperty("StatusBadge", out var sbProp) ? sbProp.GetString() ?? "" : "";
+                            string catName = el.TryGetProperty("CategoryName", out var cnProp) ? cnProp.GetString() ?? "" : "";
+                            bool hasUpdate = el.TryGetProperty("HasUpdate", out var huProp) && huProp.GetBoolean();
+
+                            var item = new ModDisplayItem
+                            {
+                                Id = id,
+                                Title = title,
+                                PreviewUrl = preview,
+                                IsDownloaded = isDownloaded,
+                                CategoryName = catName,
+                                HasUpdate = hasUpdate,
+                                IsDisabled = true
+                            };
+                            item.UpdateLoadStatus(loadStatus, statusBadge, catName);
+                            newDisabled.Add(item);
+                        }
+                    }
+
+                    int updatesCount = doc.RootElement.TryGetProperty("updatesAvailableCount", out var ucProp) ? ucProp.GetInt32() : 0;
 
                     Dispatcher.Invoke(() =>
                     {
@@ -1647,6 +1808,31 @@ namespace ConanServerManager
                         foreach (var m in newItems)
                         {
                             LstMods.Items.Add(m);
+                        }
+                        if (TxtActiveModsCount != null) TxtActiveModsCount.Text = $"({newItems.Count} mods)";
+
+                        if (LstDisabledMods != null)
+                        {
+                            LstDisabledMods.Items.Clear();
+                            foreach (var dm in newDisabled)
+                            {
+                                LstDisabledMods.Items.Add(dm);
+                            }
+                        }
+                        if (TxtDisabledModsCount != null) TxtDisabledModsCount.Text = newDisabled.Count.ToString();
+
+                        if (PnlModUpdatesBanner != null)
+                        {
+                            if (updatesCount > 0)
+                            {
+                                PnlModUpdatesBanner.Visibility = Visibility.Visible;
+                                if (TxtModUpdatesBanner != null)
+                                    TxtModUpdatesBanner.Text = $"Updates available on remote server for {updatesCount} mod(s)!";
+                            }
+                            else
+                            {
+                                PnlModUpdatesBanner.Visibility = Visibility.Collapsed;
+                            }
                         }
                     });
                 }
@@ -2363,6 +2549,253 @@ namespace ConanServerManager
                 var strRemove = LstMods.Items.OfType<string>().FirstOrDefault(s => s.Equals(modId, StringComparison.OrdinalIgnoreCase));
                 if (strRemove != null) LstMods.Items.Remove(strRemove);
             }
+            if (TxtActiveModsCount != null) TxtActiveModsCount.Text = $"({LstMods.Items.Count} mods)";
+        }
+
+        private async void BtnDisableMod_Click(object sender, RoutedEventArgs e)
+        {
+            var mod = GetSelectedOrClickedMod(sender);
+            string modId = mod?.Id ?? "";
+            if (string.IsNullOrWhiteSpace(modId))
+            {
+                int idx = LstMods.SelectedIndex;
+                if (idx >= 0 && LstMods.Items[idx] is ModDisplayItem m)
+                    modId = m.Id;
+            }
+            if (string.IsNullOrWhiteSpace(modId))
+            {
+                MessageBox.Show("Please select an active mod to disable.", "No Mod Selected", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (IsRemoteMode)
+            {
+                try
+                {
+                    string baseUrl = GetRemoteBaseUrl();
+                    using var content = new StringContent(JsonSerializer.Serialize(new { modId }), Encoding.UTF8, "application/json");
+                    var res = await _httpClient.PostAsync($"{baseUrl}/api/mods/disable", content);
+                    if (res.IsSuccessStatusCode)
+                    {
+                        await FetchRemoteModsListAsync(baseUrl);
+                    }
+                    else
+                    {
+                        MessageBox.Show("Failed to disable mod remotely.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Remote disable mod error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                return;
+            }
+
+            _engine.DisableMod(modId);
+            RefreshModListUi();
+            PopulateDisabledModListUi(_engine.Config.DisabledMods);
+            UpdateModUpdatesBannerUi();
+        }
+
+        private async void BtnEnableSelectedDisabledMod_Click(object sender, RoutedEventArgs e)
+        {
+            string modId = "";
+            if (LstDisabledMods?.SelectedItem is ModDisplayItem m)
+            {
+                modId = m.Id;
+            }
+            if (string.IsNullOrWhiteSpace(modId))
+            {
+                MessageBox.Show("Please select an inactive mod to re-enable.", "No Mod Selected", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            await EnableDisabledModAsync(modId);
+        }
+
+        private async void MnuEnableDisabledMod_Click(object sender, RoutedEventArgs e)
+        {
+            string modId = "";
+            if (LstDisabledMods?.SelectedItem is ModDisplayItem m)
+                modId = m.Id;
+            if (!string.IsNullOrWhiteSpace(modId))
+                await EnableDisabledModAsync(modId);
+        }
+
+        private async Task EnableDisabledModAsync(string modId)
+        {
+            if (IsRemoteMode)
+            {
+                try
+                {
+                    string baseUrl = GetRemoteBaseUrl();
+                    using var content = new StringContent(JsonSerializer.Serialize(new { modId }), Encoding.UTF8, "application/json");
+                    var res = await _httpClient.PostAsync($"{baseUrl}/api/mods/enable", content);
+                    if (res.IsSuccessStatusCode)
+                    {
+                        await FetchRemoteModsListAsync(baseUrl);
+                    }
+                    else
+                    {
+                        MessageBox.Show("Failed to enable mod remotely.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Remote enable mod error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                return;
+            }
+
+            _engine.EnableMod(modId);
+            RefreshModListUi();
+            PopulateDisabledModListUi(_engine.Config.DisabledMods);
+            UpdateModUpdatesBannerUi();
+        }
+
+        private async void BtnDeleteSelectedDisabledMod_Click(object sender, RoutedEventArgs e)
+        {
+            string modId = "";
+            if (LstDisabledMods?.SelectedItem is ModDisplayItem m)
+                modId = m.Id;
+            if (string.IsNullOrWhiteSpace(modId))
+            {
+                MessageBox.Show("Please select an inactive mod to remove.", "No Mod Selected", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var confirm = MessageBox.Show($"Are you sure you want to completely remove disabled mod #{modId}?", "Confirm Removal", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (confirm != MessageBoxResult.Yes) return;
+
+            if (IsRemoteMode)
+            {
+                try
+                {
+                    string baseUrl = GetRemoteBaseUrl();
+                    using var content = new StringContent(JsonSerializer.Serialize(new { modId }), Encoding.UTF8, "application/json");
+                    var res = await _httpClient.PostAsync($"{baseUrl}/api/mods/remove", content);
+                    if (res.IsSuccessStatusCode)
+                    {
+                        await FetchRemoteModsListAsync(baseUrl);
+                    }
+                    else
+                    {
+                        MessageBox.Show("Failed to remove disabled mod remotely.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Remote remove mod error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                return;
+            }
+
+            _engine.RemoveDisabledMod(modId);
+            PopulateDisabledModListUi(_engine.Config.DisabledMods);
+        }
+
+        private void MnuRemoveDisabledMod_Click(object sender, RoutedEventArgs e)
+        {
+            BtnDeleteSelectedDisabledMod_Click(sender, e);
+        }
+
+        private async void BtnCheckModUpdates_Click(object sender, RoutedEventArgs e)
+        {
+            if (IsRemoteMode)
+            {
+                try
+                {
+                    string baseUrl = GetRemoteBaseUrl();
+                    var res = await _httpClient.PostAsync($"{baseUrl}/api/mods/check-updates", new StringContent("{}", Encoding.UTF8, "application/json"));
+                    if (res.IsSuccessStatusCode)
+                    {
+                        await FetchRemoteModsListAsync(baseUrl);
+                        string body = await res.Content.ReadAsStringAsync();
+                        using var doc = JsonDocument.Parse(body);
+                        int count = doc.RootElement.TryGetProperty("updatesCount", out var cProp) ? cProp.GetInt32() : 0;
+                        if (count > 0)
+                        {
+                            MessageBox.Show($"Steam Workshop check complete: Found {count} mod update(s) published by authors!", "Mod Updates Available", MessageBoxButton.OK, MessageBoxImage.Information);
+                        }
+                        else
+                        {
+                            MessageBox.Show("All installed mods are up to date with Steam Workshop.", "No Updates Found", MessageBoxButton.OK, MessageBoxImage.Information);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Remote check updates error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                return;
+            }
+
+            try
+            {
+                Mouse.OverrideCursor = Cursors.Wait;
+                int count = await _engine.CheckAllModsForUpdatesAsync();
+                UpdateModUpdatesBannerUi();
+                RefreshModListDownloadedStatus();
+                if (count > 0)
+                {
+                    MessageBox.Show($"Steam Workshop check complete: Found {count} mod update(s) published by authors!", "Mod Updates Available", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    MessageBox.Show("All installed mods are up to date with Steam Workshop.", "No Updates Found", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+            }
+        }
+
+        private void LstDisabledMods_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            DependencyObject? dep = e.OriginalSource as DependencyObject;
+            while (dep != null && !(dep is ListBoxItem))
+            {
+                dep = VisualTreeHelper.GetParent(dep);
+            }
+
+            if (dep is ListBoxItem item && LstDisabledMods != null)
+            {
+                item.IsSelected = true;
+                item.Focus();
+            }
+        }
+
+        private void MnuViewDisabledInModBrowser_Click(object sender, RoutedEventArgs e)
+        {
+            if (LstDisabledMods?.SelectedItem is ModDisplayItem selItem)
+            {
+                OpenFullPageBrowser(selItem.Id);
+            }
+        }
+
+        private void MnuOpenDisabledWorkshopPage_Click(object sender, RoutedEventArgs e)
+        {
+            if (LstDisabledMods?.SelectedItem is ModDisplayItem selItem)
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = $"https://steamcommunity.com/sharedfiles/filedetails/?id={selItem.Id}",
+                        UseShellExecute = true
+                    });
+                }
+                catch { }
+            }
+        }
+
+        private void MnuCopyDisabledModId_Click(object sender, RoutedEventArgs e)
+        {
+            if (LstDisabledMods?.SelectedItem is ModDisplayItem selItem)
+            {
+                try { Clipboard.SetText(selItem.Id); } catch { }
+            }
         }
 
         private async void BtnSaveEngineIni_Click(object sender, RoutedEventArgs e)
@@ -2694,6 +3127,10 @@ namespace ConanServerManager
         private Brush _badgeBorder = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#475569"));
         private Brush _badgeForeground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#94A3B8"));
 
+        private bool _hasUpdate = false;
+        private bool _isDisabled = false;
+        private long _remoteTimeUpdated = 0;
+
         public string Id
         {
             get => _id;
@@ -2716,6 +3153,24 @@ namespace ConanServerManager
         {
             get => _isDownloaded;
             set { _isDownloaded = value; OnPropertyChanged(nameof(IsDownloaded)); OnPropertyChanged(nameof(Subtitle)); }
+        }
+
+        public bool HasUpdate
+        {
+            get => _hasUpdate;
+            set { _hasUpdate = value; OnPropertyChanged(nameof(HasUpdate)); OnPropertyChanged(nameof(Subtitle)); }
+        }
+
+        public bool IsDisabled
+        {
+            get => _isDisabled;
+            set { _isDisabled = value; OnPropertyChanged(nameof(IsDisabled)); OnPropertyChanged(nameof(Subtitle)); }
+        }
+
+        public long RemoteTimeUpdated
+        {
+            get => _remoteTimeUpdated;
+            set { _remoteTimeUpdated = value; OnPropertyChanged(nameof(RemoteTimeUpdated)); }
         }
 
         public string CategoryName
@@ -2754,13 +3209,35 @@ namespace ConanServerManager
             set { _badgeForeground = value; OnPropertyChanged(nameof(BadgeForeground)); }
         }
 
-        public string Subtitle => $"ID: {Id} • {(IsDownloaded ? "Ready on Disk" : "Pending Download")}";
+        public string Subtitle => HasUpdate 
+            ? $"ID: {Id} • 🔄 Update Available on Steam Workshop!" 
+            : (IsDisabled 
+                ? $"ID: {Id} • Inactive (Excluded from Server)" 
+                : $"ID: {Id} • {(IsDownloaded ? "Ready on Disk" : "Pending Download")}");
 
         public void UpdateLoadStatus(string status, string? badge = null, string? category = null)
         {
             LoadStatus = status;
             if (!string.IsNullOrEmpty(badge)) StatusBadge = badge;
             if (!string.IsNullOrEmpty(category)) CategoryName = category;
+
+            if (HasUpdate)
+            {
+                StatusBadge = string.IsNullOrEmpty(badge) ? "🔄 Update Available" : badge;
+                BadgeBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#312E81"));
+                BadgeBorder = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#6366F1"));
+                BadgeForeground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A5B4FC"));
+                return;
+            }
+
+            if (IsDisabled)
+            {
+                StatusBadge = string.IsNullOrEmpty(badge) ? "⏸️ Inactive" : badge;
+                BadgeBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E293B"));
+                BadgeBorder = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#475569"));
+                BadgeForeground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#94A3B8"));
+                return;
+            }
 
             switch (status?.ToUpperInvariant() ?? "")
             {

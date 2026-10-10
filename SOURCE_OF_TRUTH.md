@@ -1597,6 +1597,73 @@ The following items were identified during the v1.3.2 feature audit and schedule
 - **Zero Remote Deployment**: All binaries, APKs, and archives remain strictly local for manual administrator distribution.
 
 ---
+
+## 41. Automated Mod Update Detection, Inactive Mods System & Dual-Platform Release (`v1.3.4`)
+
+### 1. Root Cause Analysis: Incompatible Mod Crash (Pippi on CL-379176)
+- **Live Server Crash Log Diagnostic**:
+  - Investigated crash on live dedicated server `\\192.168.0.5\ConanServerManager\ConanExilesDedicatedServer\ConanSandbox\Saved\Logs\ConanSandbox.log`.
+  - Confirmed exact engine error:
+    ```
+    LogModManager: Error: You are running incompatible mods with this version of the game. The following mods failed mounting:
+    - ...\content\440900\3725018456\Pippi.pak (Mod is too old and needs to be updated for this game version)
+    LogWindows: FPlatformMisc::RequestExitWithStatus(1, 1, <NoCallSiteInfo>)
+    ```
+  - Conan Exiles `5.8.2-379176 (CL-379176)` enforces `devkitRevisionNumber >= 1002`.
+  - Pippi v4.0.6 (Steam Workshop ID `3725018456`) was cooked with `devkitRevisionNumber: 1001`, causing the game engine to reject mounting and immediately trigger exit status 1.
+  - Demonstrated the critical requirement for both **automated mod update detection** (notifying the admin immediately once the author updates the mod on Steam Workshop) and a **disable/inactive mod management system** (excluding incompatible mods from `modlist.txt` while keeping downloaded files on disk awaiting author fixes).
+
+### 2. Automated Steam Workshop Mod Update Detection Engine
+- **Lightweight Steam API Polling (`SteamWorkshopHelper.cs`)**:
+  - Extended `SteamWorkshopHelper.QueryRemoteDetailsForceRefreshAsync` to parse `time_updated` (Unix timestamp in seconds) from Steam Remote Storage API (`ISteamRemoteStorage/GetPublishedFileDetails/v1/`).
+  - Added `TimeUpdated` long property to `WorkshopModItem`.
+- **Timestamp Evaluation & Comparison (`ServerEngine.cs`)**:
+  - Stored `ModInstalledTimestamps` dictionary in `ManagerConfig` to track local install/update timestamps.
+  - Automatically queries local `.pak` `FileInfo.LastWriteTimeUtc` when missing from config.
+  - Compares Steam's remote `time_updated` against local timestamp. If remote > local, flags mod with update status and registers in `ModsWithUpdates`.
+- **Scheduled & On-Demand Execution**:
+  - Background Timer (`_modUpdateTimer`): Initiates 15 seconds after app startup and re-checks every 30 minutes.
+  - On-Demand ("🔄 Check Updates"): Instant check available across Desktop, Web Console, and Android App.
+- **Visual Notification Banners & Badges**:
+  - Active & Inactive mods with published Steam updates display prominent purple glassmorphic badge `🔄 Update Available` (`#312E81` background, `#6366F1` border, `#A5B4FC` text).
+  - Notification banners appear at the top of the Mods tab on Desktop, Web Console, and Android companion app displaying the count of updated mods.
+
+### 3. Inactive / Disabled Mods Management Engine
+- **Preserve Files on Disk Without Erasing**:
+  - Added `DisabledMods` list to `ManagerConfig`.
+  - When disabling a mod:
+    - Cleanly moved from `Config.Mods` to `Config.DisabledMods`.
+    - Excluded from `modlist.txt` so Conan Exiles does not mount it.
+    - All downloaded `.pak` files and SteamCMD content remain untouched in `steamapps\workshop\content\440900\<id>\`.
+- **Dedicated Inactive Mods Card & Controls**:
+  - Desktop: Added `LstDisabledMods` panel with item count badge, "▶️ Re-Enable", and "🗑️ Remove" buttons, plus full right-click context menu.
+  - Web Console: Added dedicated `#disabledModsCard` with live active/inactive mod chips.
+  - Android App: Added `#disabledModsCard` with Re-Enable (`▶️`) and Remove (`🗑️`) action buttons.
+- **1-Click Re-Enable & Auto-Sort**:
+  - Re-enabling a mod moves it back to `Config.Mods`, automatically runs `AutoSortMods()`, regenerates `modlist.txt`, and syncs configs.
+- **Infinite Crash Loop Isolation Integration**:
+  - Offending mods identified during rapid crash loops are now routed to `DisableMod(modId)` (moved to Inactive Mods list) rather than being permanently deleted.
+
+### 4. Mod Load Order Framework Hierarchy Sub-Priority
+- Updated `ModLoadOrderHelper.cs` to explicitly assign:
+  - `3722388367` (ModControlPanel / MCP) -> Sub-priority -20 (guaranteed #1 position).
+  - `3725018456` & `880454836` (Pippi) -> Sub-priority -10 (guaranteed #2 position).
+
+### 5. Synchronized Dual-Platform Release (`v1.3.4` / `10304`)
+- Synchronized all 7 core version locations:
+  1. `version.txt` -> `1.3.4`
+  2. `src/ServerEngine.cs` -> fallback `GetAppVersion()` = `"1.3.4"`
+  3. `src/MainWindow.xaml` -> `TxtAppHeaderTitle` = `"Conan Enhanced Server Manager v1.3.4"`, `TxtAppHeaderVersionBadge` = `"🚀 v1.3.4"`
+  4. `android/app/build.gradle` -> `getAppVersionName() = "1.3.4"`, `getAppVersionCode() = 10304`
+  5. `android/app/src/main/assets/app.js` -> `APP_VERSION = "1.3.4"`
+  6. `android/app/src/main/assets/index.html` -> badge `#appInstalledVersion` = `v1.3.4`
+  7. `android/app/src/main/java/com/conan/servermanager/MainActivity.java` -> fallback `"1.3.4"`, `10304`
+- **Build Status**:
+  - Windows: Self-contained `win-x64` build compiled with 0 Errors / 0 Warnings; packaged `ConanServerManager_v1.3.4.zip` (136.7 MB) and updated `ConanServerManager_DeployPackage.zip`.
+  - Android: Generated pre-signed `ConanServerManager-v1.3.4.apk` (4.64 MB, versionCode `10304`).
+- **Zero Remote Deployment Compliance**: All binaries, APKs, and packages remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\` for manual administrator release and distribution.
+
+---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
 
 

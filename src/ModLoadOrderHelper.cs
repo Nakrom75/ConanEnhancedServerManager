@@ -24,7 +24,8 @@ namespace ConanServerManager
         {
             // Core Frameworks (Load 1st)
             ["3722388367"] = ModCategory.CoreFramework, // ModControlPanel (Enhanced)
-            ["880454836"]  = ModCategory.CoreFramework, // Pippi - User & Server Management
+            ["3725018456"] = ModCategory.CoreFramework, // [Enhanced] Pippi - User & Server Management
+            ["880454836"]  = ModCategory.CoreFramework, // Pippi - User & Server Management (Legacy)
             ["1369743238"] = ModCategory.CoreFramework, // Less Building Placement Restrictions
             ["2275543784"] = ModCategory.CoreFramework, // SudoSpells
             ["2886777977"] = ModCategory.CoreFramework, // Tot ! Admin
@@ -183,21 +184,42 @@ namespace ConanServerManager
         {
             if (currentMods == null || currentMods.Count <= 1) return currentMods?.ToList() ?? new List<string>();
 
-            // Stable sort using category priority, preserving relative order of mods within the same category
+            // Stable sort using category priority, with fine-tuned sub-priority for essential core frameworks
             return currentMods
                 .Select((modId, originalIndex) =>
                 {
                     var details = detailsProvider(modId);
                     var category = ClassifyMod(modId, details?.Title, details?.ShortDescription);
+                    int subPriority = 50;
+                    if (category == ModCategory.CoreFramework)
+                    {
+                        string cleanId = modId.Trim();
+                        string eff = $"{cleanId} {details?.Title}".ToLowerInvariant();
+                        if (cleanId == "3722388367" || eff.Contains("modcontrolpanel") || eff.Contains("mod control panel"))
+                        {
+                            subPriority = 1; // MCP always 1st
+                        }
+                        else if (cleanId == "3725018456" || cleanId == "880454836" || eff.Contains("pippi"))
+                        {
+                            subPriority = 2; // Pippi always 2nd
+                        }
+                        else
+                        {
+                            subPriority = 10;
+                        }
+                    }
+
                     return new
                     {
                         ModId = modId,
                         Category = category,
                         Priority = (int)category,
+                        SubPriority = subPriority,
                         OriginalIndex = originalIndex
                     };
                 })
                 .OrderBy(x => x.Priority)
+                .ThenBy(x => x.SubPriority)
                 .ThenBy(x => x.OriginalIndex)
                 .Select(x => x.ModId)
                 .ToList();

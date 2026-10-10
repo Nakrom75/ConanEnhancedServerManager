@@ -7,7 +7,7 @@ let savedServers = [];
 let latestApkUrl = "";
 let lastKnownConfig = null;
 let lastCrashCulpritModId = "";
-let APP_VERSION = "1.3.3";
+let APP_VERSION = "1.3.4";
 if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
 }
@@ -609,59 +609,127 @@ async function fetchInstalledMods() {
         if (!res.ok) throw new Error("HTTP " + res.status);
         const data = await res.json();
         installedMods = data.details || [];
+        const disabledModsList = data.disabledDetails || [];
+
+        // Mod Updates Banner
+        const updBanner = document.getElementById("modUpdatesBanner");
+        const updText = document.getElementById("modUpdatesBannerText");
+        const updatesCount = data.updatesAvailableCount || 0;
+        if (updBanner) {
+            if (updatesCount > 0) {
+                updBanner.style.display = "flex";
+                if (updText) updText.innerText = `${updatesCount} Mod Update(s) Available on Steam Workshop`;
+            } else {
+                updBanner.style.display = "none";
+            }
+        }
 
         const countBadge = document.getElementById("installedModsCount");
         if (countBadge) countBadge.innerText = installedMods.length;
 
         if (installedMods.length === 0) {
-            container.innerHTML = `<div style="text-align:center;padding:16px;color:#64748b;font-size:0.85rem;">No mods currently installed on server</div>`;
-            return;
-        }
+            container.innerHTML = `<div style="text-align:center;padding:16px;color:#64748b;font-size:0.85rem;">No active mods currently loaded by server</div>`;
+        } else {
+            container.innerHTML = installedMods.map((mod, idx) => {
+                const isLoaded = mod.IsLoaded;
+                const hasUpdate = mod.HasUpdate;
+                const loadStatus = mod.LoadStatus || (mod.IsDownloaded ? "DOWNLOADED" : "MISSING");
+                let badgeStyle = "background:#1e293b;color:#94a3b8;border:1px solid #475569;";
+                let badgeText = mod.StatusBadge || (mod.IsDownloaded ? "📁 Ready on Disk" : "⏳ Pending Download");
 
-        container.innerHTML = installedMods.map((mod, idx) => {
-            const isLoaded = mod.IsLoaded;
-            const loadStatus = mod.LoadStatus || (mod.IsDownloaded ? "DOWNLOADED" : "MISSING");
-            let badgeStyle = "background:#1e293b;color:#94a3b8;border:1px solid #475569;";
-            if (isLoaded) {
-                badgeStyle = "background:#064e3b;color:#34d399;border:1px solid #10b981;";
-            } else if (loadStatus === "PENDING_RESTART") {
-                badgeStyle = "background:#451a03;color:#fbbf24;border:1px solid #f59e0b;";
-            } else if (loadStatus === "ERROR" || loadStatus === "LOAD_ERROR") {
-                badgeStyle = "background:#450a0a;color:#f87171;border:1px solid #ef4444;";
-            }
+                if (hasUpdate) {
+                    badgeStyle = "background:#312e81;color:#a5b4fc;border:1px solid #6366f1;";
+                    badgeText = "🔄 Update Available";
+                } else if (isLoaded) {
+                    badgeStyle = "background:#064e3b;color:#34d399;border:1px solid #10b981;";
+                } else if (loadStatus === "PENDING_RESTART") {
+                    badgeStyle = "background:#451a03;color:#fbbf24;border:1px solid #f59e0b;";
+                } else if (loadStatus === "ERROR" || loadStatus === "LOAD_ERROR") {
+                    badgeStyle = "background:#450a0a;color:#f87171;border:1px solid #ef4444;";
+                }
 
-            const badgeText = mod.StatusBadge || (mod.IsDownloaded ? "📁 Ready on Disk" : "⏳ Pending Download");
-            const catName = mod.CategoryName || "General";
+                const catName = mod.CategoryName || "General";
 
-            return `
-            <div class="mod-item" data-mod-id="${mod.Id}" data-mod-title="${escapeHtml(mod.Title || ('Mod #' + mod.Id))}" data-mod-thumb="${mod.PreviewUrl || 'app.png'}" title="Long press to open Steam Workshop">
-                <span style="font-weight:bold;color:#64748b;font-size:0.8rem;width:18px;">${idx + 1}</span>
-                <img src="${mod.PreviewUrl || 'app.png'}" class="mod-thumb" onerror="this.src='app.png'">
-                <div class="mod-info">
-                    <div class="mod-title" style="font-weight:600;color:#f8fafc;">${escapeHtml(mod.Title || ('Mod #' + mod.Id))}</div>
-                    <div class="mod-meta" style="color:#94a3b8;font-size:0.75rem;margin-top:2px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;">
-                        <span>ID: <strong style="color:#38bdf8;">${mod.Id}</strong></span>
-                        <span style="color:#38bdf8;font-size:0.7rem;">[${escapeHtml(catName)}]</span>
-                        <span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:0.7rem;font-weight:bold;${badgeStyle}">
-                            ${escapeHtml(badgeText)}
-                        </span>
+                return `
+                <div class="mod-item" data-mod-id="${mod.Id}" data-mod-title="${escapeHtml(mod.Title || ('Mod #' + mod.Id))}" data-mod-thumb="${mod.PreviewUrl || 'app.png'}" title="Long press to open Steam Workshop">
+                    <span style="font-weight:bold;color:#64748b;font-size:0.8rem;width:18px;">${idx + 1}</span>
+                    <img src="${mod.PreviewUrl || 'app.png'}" class="mod-thumb" onerror="this.src='app.png'">
+                    <div class="mod-info">
+                        <div class="mod-title" style="font-weight:600;color:#f8fafc;">${escapeHtml(mod.Title || ('Mod #' + mod.Id))}</div>
+                        <div class="mod-meta" style="color:#94a3b8;font-size:0.75rem;margin-top:2px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;">
+                            <span>ID: <strong style="color:#38bdf8;">${mod.Id}</strong></span>
+                            <span style="color:#38bdf8;font-size:0.7rem;">[${escapeHtml(catName)}]</span>
+                            <span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:0.7rem;font-weight:bold;${badgeStyle}">
+                                ${escapeHtml(badgeText)}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="mod-actions">
+                        ${idx > 0 ? `<button class="btn-icon" onclick="reorderMod(${idx}, -1)" title="Move Up">▲</button>` : ''}
+                        ${idx < installedMods.length - 1 ? `<button class="btn-icon" onclick="reorderMod(${idx}, 1)" title="Move Down">▼</button>` : ''}
+                        <button class="btn-icon" style="background:#334155;color:#cbd5e1;" onclick="disableModOnServer('${mod.Id}')" title="Disable Mod (Move to Inactive)">⏸️</button>
+                        <button class="btn-icon" style="background:#ef4444;color:white;" onclick="removeModFromServer('${mod.Id}')" title="Remove Mod">🗑️</button>
                     </div>
                 </div>
-                <div class="mod-actions">
-                    ${idx > 0 ? `<button class="btn-icon" onclick="reorderMod(${idx}, -1)" title="Move Up">▲</button>` : ''}
-                    ${idx < installedMods.length - 1 ? `<button class="btn-icon" onclick="reorderMod(${idx}, 1)" title="Move Down">▼</button>` : ''}
-                    <button class="btn-icon" style="background:#ef4444;color:white;" onclick="removeModFromServer('${mod.Id}')" title="Remove Mod">🗑️</button>
-                </div>
-            </div>
-            `;
-        }).join("");
+                `;
+            }).join("");
 
-        container.querySelectorAll(".mod-item").forEach(item => {
-            const id = item.getAttribute("data-mod-id");
-            const title = item.getAttribute("data-mod-title");
-            const thumb = item.getAttribute("data-mod-thumb");
-            attachLongPressMod(item, id, title, thumb);
-        });
+            container.querySelectorAll(".mod-item").forEach(item => {
+                const id = item.getAttribute("data-mod-id");
+                const title = item.getAttribute("data-mod-title");
+                const thumb = item.getAttribute("data-mod-thumb");
+                attachLongPressMod(item, id, title, thumb);
+            });
+        }
+
+        // Render Inactive / Disabled Mods Card
+        const disCard = document.getElementById("disabledModsCard");
+        const disContainer = document.getElementById("disabledModsContainer");
+        const disCountBadge = document.getElementById("disabledModsCountBadge");
+        if (disCard && disContainer) {
+            if (disabledModsList.length > 0) {
+                disCard.style.display = "block";
+                if (disCountBadge) disCountBadge.innerText = disabledModsList.length;
+                disContainer.innerHTML = disabledModsList.map((mod, idx) => {
+                    const hasUpdate = mod.HasUpdate;
+                    const badgeStyle = hasUpdate 
+                        ? "background:#312e81;color:#a5b4fc;border:1px solid #6366f1;" 
+                        : "background:#1e293b;color:#94a3b8;border:1px solid #475569;";
+                    const badgeText = hasUpdate ? "🔄 Update Available" : "⏸️ Inactive";
+                    const catName = mod.CategoryName || "General";
+
+                    return `
+                    <div class="mod-item" data-mod-id="${mod.Id}" data-mod-title="${escapeHtml(mod.Title || ('Mod #' + mod.Id))}" data-mod-thumb="${mod.PreviewUrl || 'app.png'}" style="opacity:0.85;border:1px dashed #475569;" title="Long press to open Steam Workshop">
+                        <span style="font-weight:bold;color:#64748b;font-size:0.8rem;width:18px;">${idx + 1}</span>
+                        <img src="${mod.PreviewUrl || 'app.png'}" class="mod-thumb" onerror="this.src='app.png'">
+                        <div class="mod-info">
+                            <div class="mod-title" style="font-weight:600;color:#cbd5e1;">${escapeHtml(mod.Title || ('Mod #' + mod.Id))}</div>
+                            <div class="mod-meta" style="color:#94a3b8;font-size:0.75rem;margin-top:2px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;">
+                                <span>ID: <strong style="color:#94a3b8;">${mod.Id}</strong></span>
+                                <span style="color:#818cf8;font-size:0.7rem;">[${escapeHtml(catName)}]</span>
+                                <span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:0.7rem;font-weight:bold;${badgeStyle}">
+                                    ${escapeHtml(badgeText)}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="mod-actions">
+                            <button class="btn-icon" style="background:#10b981;color:white;" onclick="enableModOnServer('${mod.Id}')" title="Re-enable Mod">▶️</button>
+                            <button class="btn-icon" style="background:#ef4444;color:white;" onclick="removeModFromServer('${mod.Id}')" title="Remove Mod Completely">🗑️</button>
+                        </div>
+                    </div>
+                    `;
+                }).join("");
+
+                disContainer.querySelectorAll(".mod-item").forEach(item => {
+                    const id = item.getAttribute("data-mod-id");
+                    const title = item.getAttribute("data-mod-title");
+                    const thumb = item.getAttribute("data-mod-thumb");
+                    attachLongPressMod(item, id, title, thumb);
+                });
+            } else {
+                disCard.style.display = "none";
+            }
+        }
     } catch (e) {
         container.innerHTML = `
             <div style="text-align:center;padding:16px;color:#f87171;font-size:0.85rem;">
@@ -669,6 +737,63 @@ async function fetchInstalledMods() {
                 <button class="btn-secondary" style="margin-top:8px;padding:4px 12px;font-size:0.75rem;" onclick="fetchInstalledMods()">🔄 Retry</button>
             </div>
         `;
+    }
+}
+
+async function disableModOnServer(modId) {
+    vibrate(20);
+    showToast(`Disabling mod #${modId}...`);
+    try {
+        const res = await fetch(`${currentServerUrl}/api/mods/disable`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ modId })
+        });
+        if (res.ok) {
+            showToast(`Mod #${modId} moved to inactive list.`);
+            fetchInstalledMods();
+        } else {
+            showToast("Failed to disable mod.");
+        }
+    } catch (e) {
+        showToast("Error: " + e.message);
+    }
+}
+
+async function enableModOnServer(modId) {
+    vibrate(20);
+    showToast(`Enabling mod #${modId}...`);
+    try {
+        const res = await fetch(`${currentServerUrl}/api/mods/enable`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ modId })
+        });
+        if (res.ok) {
+            showToast(`Mod #${modId} enabled and added to active load order.`);
+            fetchInstalledMods();
+        } else {
+            showToast("Failed to enable mod.");
+        }
+    } catch (e) {
+        showToast("Error: " + e.message);
+    }
+}
+
+async function checkServerModUpdates() {
+    vibrate(20);
+    showToast("Checking Steam Workshop for mod updates...");
+    try {
+        const res = await fetch(`${currentServerUrl}/api/mods/check-updates`, { method: "POST" });
+        const data = await res.json();
+        if (data.updatesCount > 0) {
+            showToast(`Found ${data.updatesCount} mod update(s) on Steam Workshop!`);
+        } else {
+            showToast("All mods are up to date with Steam Workshop.");
+        }
+        fetchInstalledMods();
+    } catch (e) {
+        showToast("Check failed: " + e.message);
     }
 }
 
@@ -1514,4 +1639,7 @@ window.addModToServer = addModToServer;
 window.autoSortInstalledMods = autoSortInstalledMods;
 window.dismissCrashLoopBanner = dismissCrashLoopBanner;
 window.disableOffendingCrashMod = disableOffendingCrashMod;
+window.disableModOnServer = disableModOnServer;
+window.enableModOnServer = enableModOnServer;
+window.checkServerModUpdates = checkServerModUpdates;
 

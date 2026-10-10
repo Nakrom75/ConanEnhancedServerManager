@@ -22,6 +22,7 @@ namespace ConanServerManager
         public int Subscriptions { get; set; } = 0;
         public bool IsInstalled { get; set; } = false;
         public bool IsDownloaded { get; set; } = false;
+        public long TimeUpdated { get; set; } = 0;
     }
 
     public static class SteamWorkshopHelper
@@ -153,6 +154,13 @@ namespace ConanServerManager
                                         else if (fs.ValueKind == JsonValueKind.String && long.TryParse(fs.GetString(), out var parsedFs)) fileSize = parsedFs;
                                     }
 
+                                    long timeUpdated = 0;
+                                    if (item.TryGetProperty("time_updated", out var tu))
+                                    {
+                                        if (tu.ValueKind == JsonValueKind.Number) timeUpdated = tu.GetInt64();
+                                        else if (tu.ValueKind == JsonValueKind.String && long.TryParse(tu.GetString(), out var parsedTu)) timeUpdated = parsedTu;
+                                    }
+
                                     if (!string.IsNullOrEmpty(id) && resCode == 1 && !string.IsNullOrWhiteSpace(title))
                                     {
                                         var modObj = new WorkshopModItem
@@ -163,7 +171,8 @@ namespace ConanServerManager
                                             PreviewUrl = previewUrl,
                                             ShortDescription = desc.Length > 200 ? desc.Substring(0, 200) + "..." : desc,
                                             Subscriptions = subs,
-                                            FileSize = fileSize
+                                            FileSize = fileSize,
+                                            TimeUpdated = timeUpdated
                                         };
                                         _cache[id] = modObj;
                                         result[id] = modObj;
@@ -193,6 +202,100 @@ namespace ConanServerManager
                 }
             }
 
+            return result;
+        }
+
+        public static async Task<Dictionary<string, WorkshopModItem>> QueryRemoteDetailsForceRefreshAsync(IEnumerable<string> modIds)
+        {
+            var result = new Dictionary<string, WorkshopModItem>(StringComparer.OrdinalIgnoreCase);
+            var idList = modIds?.Where(id => !string.IsNullOrWhiteSpace(id)).Select(id => id.Trim()).Distinct().ToList() ?? new List<string>();
+            if (idList.Count == 0) return result;
+
+            const int batchSize = 50;
+            for (int i = 0; i < idList.Count; i += batchSize)
+            {
+                var chunk = idList.Skip(i).Take(batchSize).ToList();
+                try
+                {
+                    var sb = new StringBuilder();
+                    sb.Append("itemcount=").Append(chunk.Count);
+                    for (int c = 0; c < chunk.Count; c++)
+                    {
+                        sb.Append("&publishedfileids[").Append(c).Append("]=").Append(Uri.EscapeDataString(chunk[c]));
+                    }
+
+                    using var content = new StringContent(sb.ToString(), Encoding.UTF8, "application/x-www-form-urlencoded");
+                    var resp = await _httpClient.PostAsync("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/", content);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        string json = await resp.Content.ReadAsStringAsync();
+                        using var doc = JsonDocument.Parse(json);
+                        if (doc.RootElement.TryGetProperty("response", out var respEl) &&
+                            respEl.TryGetProperty("publishedfiledetails", out var detailsArr))
+                        {
+                            foreach (var item in detailsArr.EnumerateArray())
+                            {
+                                string id = item.TryGetProperty("publishedfileid", out var idProp) ? idProp.GetString() ?? "" : "";
+                                int resCode = 0;
+                                if (item.TryGetProperty("result", out var r))
+                                {
+                                    if (r.ValueKind == JsonValueKind.Number) resCode = r.GetInt32();
+                                    else if (r.ValueKind == JsonValueKind.String && int.TryParse(r.GetString(), out var parsedR)) resCode = parsedR;
+                                }
+
+                                string title = item.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+                                string creator = item.TryGetProperty("creator", out var c) ? c.GetString() ?? "" : "";
+                                string previewUrl = item.TryGetProperty("preview_url", out var p) ? p.GetString() ?? "" : "";
+                                string desc = item.TryGetProperty("description", out var d) ? d.GetString() ?? "" : "";
+
+                                int subs = 0;
+                                if (item.TryGetProperty("subscriptions", out var s))
+                                {
+                                    if (s.ValueKind == JsonValueKind.Number) subs = s.GetInt32();
+                                    else if (s.ValueKind == JsonValueKind.String && int.TryParse(s.GetString(), out var parsedS)) subs = parsedS;
+                                }
+
+                                long fileSize = 0;
+                                if (item.TryGetProperty("file_size", out var fs))
+                                {
+                                    if (fs.ValueKind == JsonValueKind.Number) fileSize = fs.GetInt64();
+                                    else if (fs.ValueKind == JsonValueKind.String && long.TryParse(fs.GetString(), out var parsedFs)) fileSize = parsedFs;
+                                }
+
+                                long timeUpdated = 0;
+                                if (item.TryGetProperty("time_updated", out var tu))
+                                {
+                                    if (tu.ValueKind == JsonValueKind.Number) timeUpdated = tu.GetInt64();
+                                    else if (tu.ValueKind == JsonValueKind.String && long.TryParse(tu.GetString(), out var parsedTu)) timeUpdated = parsedTu;
+                                }
+
+                                if (!string.IsNullOrEmpty(id) && resCode == 1 && !string.IsNullOrWhiteSpace(title))
+                                {
+                                    var modObj = new WorkshopModItem
+                                    {
+                                        Id = id,
+                                        Title = title,
+                                        Creator = creator,
+                                        PreviewUrl = previewUrl,
+                                        ShortDescription = desc.Length > 200 ? desc.Substring(0, 200) + "..." : desc,
+                                        Subscriptions = subs,
+                                        FileSize = fileSize,
+                                        TimeUpdated = timeUpdated
+                                    };
+                                    _cache[id] = modObj;
+                                    result[id] = modObj;
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[SteamWorkshopHelper] Error force-refreshing mod details: {ex.Message}");
+                }
+            }
+
+            SaveCache();
             return result;
         }
 

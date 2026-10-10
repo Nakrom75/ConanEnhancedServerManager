@@ -527,7 +527,8 @@ namespace ConanServerManager
             }
             else if (path == "/api/mods" && method == "GET")
             {
-                var modMap = await SteamWorkshopHelper.GetMultipleModDetailsAsync(_engine.Config.Mods);
+                var allIds = _engine.Config.Mods.Concat(_engine.Config.DisabledMods).Distinct().ToList();
+                var modMap = await SteamWorkshopHelper.GetMultipleModDetailsAsync(allIds);
                 var modList = new List<object>();
                 foreach (var modId in _engine.Config.Mods)
                 {
@@ -544,6 +545,9 @@ namespace ConanServerManager
                         FileSize = details?.FileSize ?? 0,
                         Subscriptions = details?.Subscriptions ?? 0,
                         IsInstalled = true,
+                        IsDisabled = false,
+                        HasUpdate = rt.HasUpdate,
+                        RemoteTimeUpdated = rt.RemoteTimeUpdated,
                         IsDownloaded = _engine.IsModDownloaded(modId),
                         IsLoaded = rt.IsLoaded,
                         LoadStatus = rt.LoadStatus,
@@ -553,12 +557,101 @@ namespace ConanServerManager
                         CategoryName = rt.CategoryName
                     });
                 }
-                await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { mods = _engine.Config.Mods, details = modList }));
+
+                var disabledList = new List<object>();
+                foreach (var modId in _engine.Config.DisabledMods)
+                {
+                    var rt = _engine.GetModRuntimeInfo(modId);
+                    modMap.TryGetValue(modId, out var details);
+
+                    disabledList.Add(new
+                    {
+                        Id = modId,
+                        Title = details?.Title ?? $"Mod #{modId}",
+                        Creator = details?.Creator ?? "",
+                        PreviewUrl = details?.PreviewUrl ?? "",
+                        ShortDescription = details?.ShortDescription ?? "",
+                        FileSize = details?.FileSize ?? 0,
+                        Subscriptions = details?.Subscriptions ?? 0,
+                        IsInstalled = false,
+                        IsDisabled = true,
+                        HasUpdate = rt.HasUpdate,
+                        RemoteTimeUpdated = rt.RemoteTimeUpdated,
+                        IsDownloaded = _engine.IsModDownloaded(modId),
+                        IsLoaded = false,
+                        LoadStatus = rt.LoadStatus,
+                        StatusBadge = rt.StatusBadge,
+                        StatusText = rt.StatusText,
+                        Category = (int)rt.Category,
+                        CategoryName = rt.CategoryName
+                    });
+                }
+
+                await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new
+                {
+                    mods = _engine.Config.Mods,
+                    details = modList,
+                    disabledMods = _engine.Config.DisabledMods,
+                    disabledDetails = disabledList,
+                    updatesAvailableCount = _engine.ModsWithUpdates.Count,
+                    updatesAvailableList = _engine.ModsWithUpdates.ToList()
+                }));
             }
             else if (path == "/api/mods/sort" && method == "POST")
             {
                 _engine.AutoSortMods();
                 await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = true, mods = _engine.Config.Mods }));
+            }
+            else if (path == "/api/mods/disable" && method == "POST")
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    string modId = doc.RootElement.GetProperty("modId").GetString()?.Trim() ?? "";
+                    if (!string.IsNullOrWhiteSpace(modId))
+                    {
+                        _engine.DisableMod(modId);
+                    }
+                    await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = true, mods = _engine.Config.Mods, disabledMods = _engine.Config.DisabledMods }));
+                }
+                catch (Exception ex)
+                {
+                    await SendHttpResponseAsync(stream, 400, "application/json", JsonSerializer.Serialize(new { success = false, error = ex.Message }));
+                }
+            }
+            else if (path == "/api/mods/enable" && method == "POST")
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    string modId = doc.RootElement.GetProperty("modId").GetString()?.Trim() ?? "";
+                    if (!string.IsNullOrWhiteSpace(modId))
+                    {
+                        _engine.EnableMod(modId);
+                    }
+                    await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = true, mods = _engine.Config.Mods, disabledMods = _engine.Config.DisabledMods }));
+                }
+                catch (Exception ex)
+                {
+                    await SendHttpResponseAsync(stream, 400, "application/json", JsonSerializer.Serialize(new { success = false, error = ex.Message }));
+                }
+            }
+            else if (path == "/api/mods/check-updates" && method == "POST")
+            {
+                try
+                {
+                    int count = await _engine.CheckAllModsForUpdatesAsync();
+                    await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new
+                    {
+                        success = true,
+                        updatesCount = count,
+                        updatesList = _engine.ModsWithUpdates.ToList()
+                    }));
+                }
+                catch (Exception ex)
+                {
+                    await SendHttpResponseAsync(stream, 400, "application/json", JsonSerializer.Serialize(new { success = false, error = ex.Message }));
+                }
             }
             else if (path == "/api/control/crash-loop/dismiss" && method == "POST")
             {
@@ -893,11 +986,24 @@ namespace ConanServerManager
                 📦 Active Server Mods (<span id=""activeModsCountBadge"">0</span>)
             </div>
             <div style=""display:flex;gap:6px;"">
+                <button class=""btn-start"" style=""padding: 4px 10px; font-size: 0.75rem; background:#3b82f6;"" onclick=""checkServerModUpdates()"">🔄 Check Updates</button>
                 <button class=""btn-start"" style=""padding: 4px 10px; font-size: 0.75rem; background:#059669;"" onclick=""autoSortServerMods()"">🪄 Auto-Sort Order</button>
                 <button class=""btn-backup"" style=""padding: 4px 10px; font-size: 0.75rem;"" onclick=""loadServerMods()"">🔄 Refresh</button>
             </div>
         </div>
+        <div id=""modUpdatesBanner"" style=""display:none;background:#1e1b4b;border:1px solid #6366f1;color:#c7d2fe;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:0.8rem;font-weight:bold;""></div>
         <div id=""activeModsContainer""></div>
+    </div>
+
+    <!-- Inactive / Disabled Mods Card -->
+    <div class=""card"" id=""disabledModsCard"" style=""display:none;"">
+        <div class=""header"" style=""margin-bottom: 8px;"">
+            <div class=""subtitle"" style=""text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold; color: #94a3b8;"">
+                ⏸️ Inactive / Disabled Mods (<span id=""disabledModsCountBadge"">0</span>)
+            </div>
+        </div>
+        <div style=""font-size:0.75rem;color:#64748b;margin-bottom:8px;"">Mods kept locally on disk but excluded from server modlist.txt. Re-enable when ready.</div>
+        <div id=""disabledModsContainer""></div>
     </div>
 
     <!-- Server Settings Card -->
@@ -1208,6 +1314,51 @@ namespace ConanServerManager
             }
         }
 
+        async function checkServerModUpdates() {
+            try {
+                const res = await fetch('/api/mods/check-updates', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    alert('Mod update check complete! Updates available: ' + data.updatesCount);
+                    loadServerMods();
+                }
+            } catch (e) {
+                alert('Mod update check error: ' + e.message);
+            }
+        }
+
+        async function disableModOnServer(id) {
+            try {
+                const res = await fetch('/api/mods/disable', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ modId: id })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    loadServerMods();
+                }
+            } catch (e) {
+                alert('Disable mod error: ' + e.message);
+            }
+        }
+
+        async function enableModOnServer(id) {
+            try {
+                const res = await fetch('/api/mods/enable', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ modId: id })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    loadServerMods();
+                }
+            } catch (e) {
+                alert('Enable mod error: ' + e.message);
+            }
+        }
+
         async function loadServerMods() {
             try {
                 const res = await fetch('/api/mods');
@@ -1215,26 +1366,83 @@ namespace ConanServerManager
                 const container = document.getElementById('activeModsContainer');
                 const list = data.details || [];
                 document.getElementById('activeModsCountBadge').innerText = list.length;
+
+                // Mod updates banner
+                const banner = document.getElementById('modUpdatesBanner');
+                if (banner) {
+                    if (data.updatesAvailableCount > 0) {
+                        banner.style.display = 'block';
+                        banner.innerHTML = `🔄 <strong>${data.updatesAvailableCount} Mod Update(s) Available on Steam Workshop!</strong> Restart or update the server to apply latest versions.`;
+                    } else {
+                        banner.style.display = 'none';
+                    }
+                }
+
                 if (list.length === 0) {
                     container.innerHTML = '<div style=""color:#64748b;font-size:0.8rem;text-align:center;padding:10px;"">No mods installed on server</div>';
-                    return;
-                }
-                container.innerHTML = list.map((m, idx) => `
-                    <div style=""display:flex;align-items:center;gap:8px;background:#0f172a;border:1px solid #334155;border-radius:6px;padding:6px 10px;margin-bottom:6px;"">
-                        <span style=""font-weight:bold;color:#64748b;font-size:0.75rem;width:18px;"">${idx + 1}</span>
-                        <div style=""flex:1;min-width:0;"">
-                            <div style=""font-weight:bold;font-size:0.85rem;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"">${escapeHtml(m.Title)}</div>
-                            <div style=""font-size:0.7rem;color:#94a3b8;margin-top:2px;"">
-                                ID: <strong>${m.Id}</strong>
-                                <span style=""margin-left:8px;color:#38bdf8;"">${escapeHtml(m.CategoryName || 'General')}</span>
+                } else {
+                    container.innerHTML = list.map((m, idx) => {
+                        const isUpd = m.HasUpdate;
+                        const badgeBg = isUpd ? '#312e81' : (m.IsLoaded ? '#064e3b' : (m.LoadStatus === 'PENDING_RESTART' ? '#451a03' : '#1e293b'));
+                        const badgeFg = isUpd ? '#a5b4fc' : (m.IsLoaded ? '#34d399' : (m.LoadStatus === 'PENDING_RESTART' ? '#fbbf24' : '#94a3b8'));
+                        const badgeBorder = isUpd ? '#6366f1' : (m.IsLoaded ? '#10b981' : (m.LoadStatus === 'PENDING_RESTART' ? '#f59e0b' : '#475569'));
+                        const badgeText = isUpd ? '🔄 Update Available' : escapeHtml(m.StatusBadge || '📁 Ready on Disk');
+
+                        return `
+                        <div style=""display:flex;align-items:center;gap:8px;background:#0f172a;border:1px solid #334155;border-radius:6px;padding:6px 10px;margin-bottom:6px;"">
+                            <span style=""font-weight:bold;color:#64748b;font-size:0.75rem;width:18px;"">${idx + 1}</span>
+                            <div style=""flex:1;min-width:0;"">
+                                <div style=""font-weight:bold;font-size:0.85rem;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"">${escapeHtml(m.Title)}</div>
+                                <div style=""font-size:0.7rem;color:#94a3b8;margin-top:2px;"">
+                                    ID: <strong>${m.Id}</strong>
+                                    <span style=""margin-left:8px;color:#38bdf8;"">${escapeHtml(m.CategoryName || 'General')}</span>
+                                </div>
                             </div>
-                        </div>
-                        <span style=""font-size:0.7rem;font-weight:bold;padding:3px 7px;border-radius:4px;background:${m.IsLoaded ? '#064e3b' : (m.LoadStatus === 'PENDING_RESTART' ? '#451a03' : '#1e293b')};color:${m.IsLoaded ? '#34d399' : (m.LoadStatus === 'PENDING_RESTART' ? '#fbbf24' : '#94a3b8')};border:1px solid ${m.IsLoaded ? '#10b981' : (m.LoadStatus === 'PENDING_RESTART' ? '#f59e0b' : '#475569')};"">
-                            ${escapeHtml(m.StatusBadge || '📁 Ready on Disk')}
-                        </span>
-                        <button class=""btn-stop"" style=""padding:4px 8px;font-size:0.75rem;"" onclick=""removeModFromServer('${m.Id}')"">🗑️</button>
-                    </div>
-                `).join('');
+                            <span style=""font-size:0.7rem;font-weight:bold;padding:3px 7px;border-radius:4px;background:${badgeBg};color:${badgeFg};border:1px solid ${badgeBorder};"">
+                                ${badgeText}
+                            </span>
+                            <button class=""btn-backup"" style=""padding:4px 8px;font-size:0.75rem;"" title=""Disable mod (move to inactive)"" onclick=""disableModOnServer('${m.Id}')"">⏸️</button>
+                            <button class=""btn-stop"" style=""padding:4px 8px;font-size:0.75rem;"" title=""Remove mod completely"" onclick=""removeModFromServer('${m.Id}')"">🗑️</button>
+                        </div>`;
+                    }).join('');
+                }
+
+                // Inactive / Disabled Mods list
+                const disCard = document.getElementById('disabledModsCard');
+                const disContainer = document.getElementById('disabledModsContainer');
+                const disList = data.disabledDetails || [];
+                if (disCard && disContainer) {
+                    if (disList.length > 0) {
+                        disCard.style.display = 'block';
+                        document.getElementById('disabledModsCountBadge').innerText = disList.length;
+                        disContainer.innerHTML = disList.map((m, idx) => {
+                            const isUpd = m.HasUpdate;
+                            const badgeBg = isUpd ? '#312e81' : '#1e293b';
+                            const badgeFg = isUpd ? '#a5b4fc' : '#94a3b8';
+                            const badgeBorder = isUpd ? '#6366f1' : '#475569';
+                            const badgeText = isUpd ? '🔄 Update Available' : '⏸️ Inactive';
+
+                            return `
+                            <div style=""display:flex;align-items:center;gap:8px;background:#0f172a;border:1px dashed #475569;border-radius:6px;padding:6px 10px;margin-bottom:6px;opacity:0.9;"">
+                                <span style=""font-weight:bold;color:#64748b;font-size:0.75rem;width:18px;"">${idx + 1}</span>
+                                <div style=""flex:1;min-width:0;"">
+                                    <div style=""font-weight:bold;font-size:0.85rem;color:#cbd5e1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"">${escapeHtml(m.Title)}</div>
+                                    <div style=""font-size:0.7rem;color:#94a3b8;margin-top:2px;"">
+                                        ID: <strong>${m.Id}</strong>
+                                        <span style=""margin-left:8px;color:#38bdf8;"">${escapeHtml(m.CategoryName || 'General')}</span>
+                                    </div>
+                                </div>
+                                <span style=""font-size:0.7rem;font-weight:bold;padding:3px 7px;border-radius:4px;background:${badgeBg};color:${badgeFg};border:1px solid ${badgeBorder};"">
+                                    ${badgeText}
+                                </span>
+                                <button class=""btn-start"" style=""padding:4px 8px;font-size:0.75rem;background:#10b981;"" title=""Re-enable mod"" onclick=""enableModOnServer('${m.Id}')"">▶️</button>
+                                <button class=""btn-stop"" style=""padding:4px 8px;font-size:0.75rem;"" title=""Remove mod completely"" onclick=""removeModFromServer('${m.Id}')"">🗑️</button>
+                            </div>`;
+                        }).join('');
+                    } else {
+                        disCard.style.display = 'none';
+                    }
+                }
             } catch (e) {}
         }
 

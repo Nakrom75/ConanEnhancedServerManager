@@ -120,9 +120,9 @@
                     <StackPanel Orientation="Vertical">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Image Source="app.png" Width="22" Height="22" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.3.3" Style="{StaticResource HeaderTitle}"/>
+                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.3.4" Style="{StaticResource HeaderTitle}"/>
                             <Border CornerRadius="8" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" Margin="10,0,0,0" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="🚀 v1.3.3" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="🚀 v1.3.4" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="TxtServerPathInfo" Text="Mode: Local Server Host | Embedded Web Console: http://0.0.0.0:8088" Foreground="#94A3B8" FontSize="11"/>
@@ -737,58 +737,169 @@
                                 <ColumnDefinition Width="160"/>
                             </Grid.ColumnDefinitions>
 
-                            <ListBox Grid.Column="0" x:Name="LstMods" Background="#0F172A" Foreground="#FFFFFF" BorderBrush="#334155" 
-                                     VerticalAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                     PreviewMouseRightButtonDown="LstMods_PreviewMouseRightButtonDown">
-                                <ListBox.ContextMenu>
-                                    <ContextMenu>
-                                        <MenuItem Header="📥 Pre-Download / Verify Mod Files Now" Click="MnuPreDownloadMod_Click"/>
-                                        <MenuItem Header="🌐 View in Workshop Browser" Click="MnuViewInModBrowser_Click"/>
-                                        <MenuItem Header="🌐 Open in External Browser" Click="MnuOpenWorkshopPage_Click"/>
-                                        <MenuItem Header="📋 Copy Workshop URL" Click="MnuCopyWorkshopUrl_Click"/>
-                                        <MenuItem Header="📋 Copy Mod ID" Click="MnuCopyModId_Click"/>
-                                        <Separator/>
-                                        <MenuItem Header="🗑️ Remove Mod" Click="BtnRemoveMod_Click"/>
-                                    </ContextMenu>
-                                </ListBox.ContextMenu>
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border BorderBrush="#1E293B" BorderThickness="0,0,0,1" Padding="6,5" Margin="0,1">
-                                             <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <Border Grid.Column="0" Width="26" Height="26" CornerRadius="6" Background="#1E293B" BorderBrush="#475569" BorderThickness="1" Margin="0,0,8,0" VerticalAlignment="Center">
-                                                    <TextBlock Text="🧩" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                </Border>
-                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13" Foreground="#F8FAFC" TextTrimming="CharacterEllipsis"/>
-                                                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
-                                                        <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="#94A3B8"/>
-                                                        <TextBlock Text="{Binding CategoryName}" FontSize="10" Foreground="#38BDF8" Margin="8,0,0,0" VerticalAlignment="Center"/>
-                                                    </StackPanel>
-                                                </StackPanel>
-                                                <Border Grid.Column="2" CornerRadius="6" Background="{Binding BadgeBackground}" BorderBrush="{Binding BadgeBorder}" BorderThickness="1" Padding="6,2" VerticalAlignment="Center" Margin="6,0,2,0">
-                                                    <TextBlock Text="{Binding StatusBadge}" FontSize="10" FontWeight="Bold" Foreground="{Binding BadgeForeground}"/>
-                                                </Border>
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
+                            <!-- Column 0: Active & Disabled Mods Lists -->
+                            <Grid Grid.Column="0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/> <!-- Mod Updates Banner -->
+                                    <RowDefinition Height="Auto"/> <!-- Active Mods Header -->
+                                    <RowDefinition Height="*"/>    <!-- Active Mods ListBox -->
+                                    <RowDefinition Height="6"/>    <!-- Spacer -->
+                                    <RowDefinition Height="Auto"/> <!-- Inactive Mods Section -->
+                                </Grid.RowDefinitions>
 
+                                <!-- Mod Updates Banner -->
+                                <Border Grid.Row="0" x:Name="PnlModUpdatesBanner" Background="#1E1B4B" BorderBrush="#818CF8" BorderThickness="1" CornerRadius="6" Padding="8,5" Margin="0,0,0,6" Visibility="Collapsed">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="🔄" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="TxtModUpdatesBanner" Text="Updates available for installed mods on Steam Workshop!" Foreground="#C7D2FE" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="🔄 Check Updates" Style="{StaticResource BtnSecondary}" Padding="8,2" FontSize="10" Click="BtnCheckModUpdates_Click"/>
+                                    </Grid>
+                                </Border>
+
+                                <!-- Active Mods Header -->
+                                <Grid Grid.Row="1" Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="▶ Active Mods (Loaded by Server)" FontWeight="Bold" FontSize="11" Foreground="#38BDF8"/>
+                                        <TextBlock x:Name="TxtActiveModsCount" Text="(0 mods)" Foreground="#94A3B8" FontSize="10" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Active Mods ListBox -->
+                                <ListBox Grid.Row="2" x:Name="LstMods" Background="#0F172A" Foreground="#FFFFFF" BorderBrush="#334155" 
+                                         VerticalAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         PreviewMouseRightButtonDown="LstMods_PreviewMouseRightButtonDown">
+                                    <ListBox.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="⏸️ Disable Mod (Move to Inactive)" Click="BtnDisableMod_Click"/>
+                                            <MenuItem Header="📥 Pre-Download / Verify Mod Files Now" Click="MnuPreDownloadMod_Click"/>
+                                            <MenuItem Header="🌐 View in Workshop Browser" Click="MnuViewInModBrowser_Click"/>
+                                            <MenuItem Header="🌐 Open in External Browser" Click="MnuOpenWorkshopPage_Click"/>
+                                            <MenuItem Header="📋 Copy Workshop URL" Click="MnuCopyWorkshopUrl_Click"/>
+                                            <MenuItem Header="📋 Copy Mod ID" Click="MnuCopyModId_Click"/>
+                                            <Separator/>
+                                            <MenuItem Header="🗑️ Remove Mod" Click="BtnRemoveMod_Click"/>
+                                        </ContextMenu>
+                                    </ListBox.ContextMenu>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border BorderBrush="#1E293B" BorderThickness="0,0,0,1" Padding="6,5" Margin="0,1">
+                                                 <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Border Grid.Column="0" Width="26" Height="26" CornerRadius="6" Background="#1E293B" BorderBrush="#475569" BorderThickness="1" Margin="0,0,8,0" VerticalAlignment="Center">
+                                                        <TextBlock Text="🧩" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13" Foreground="#F8FAFC" TextTrimming="CharacterEllipsis"/>
+                                                        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                                            <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="#94A3B8"/>
+                                                            <TextBlock Text="{Binding CategoryName}" FontSize="10" Foreground="#38BDF8" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <Border Grid.Column="2" CornerRadius="6" Background="{Binding BadgeBackground}" BorderBrush="{Binding BadgeBorder}" BorderThickness="1" Padding="6,2" VerticalAlignment="Center" Margin="6,0,2,0">
+                                                        <TextBlock Text="{Binding StatusBadge}" FontSize="10" FontWeight="Bold" Foreground="{Binding BadgeForeground}"/>
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+
+                                <!-- Inactive / Disabled Mods Section -->
+                                <Border Grid.Row="4" x:Name="PnlDisabledMods" Background="#0B132B" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="6" MaxHeight="170">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="*"/>
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0" Margin="0,0,0,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock Text="⏸️ Inactive / Disabled Mods" FontWeight="Bold" FontSize="11" Foreground="#A78BFA"/>
+                                                <Border CornerRadius="8" Background="#1E293B" BorderBrush="#818CF8" BorderThickness="1" Margin="6,0,0,0" Padding="5,1">
+                                                    <TextBlock x:Name="TxtDisabledModsCount" Text="0" Foreground="#A5B4FC" FontSize="9" FontWeight="Bold"/>
+                                                </Border>
+                                                <TextBlock Text="(Files kept on disk, excluded from server)" Foreground="#64748B" FontSize="9" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                <Button x:Name="BtnEnableSelectedDisabledMod" Content="▶️ Re-Enable" Style="{StaticResource BtnSuccess}" Padding="6,2" FontSize="9" FontWeight="Bold" Click="BtnEnableSelectedDisabledMod_Click" Margin="0,0,4,0" ToolTip="Restore selected inactive mod back to active server load order"/>
+                                                <Button x:Name="BtnDeleteSelectedDisabledMod" Content="🗑️ Remove" Style="{StaticResource BtnDanger}" Padding="6,2" FontSize="9" Click="BtnDeleteSelectedDisabledMod_Click" ToolTip="Permanently remove selected inactive mod"/>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <ListBox Grid.Row="1" x:Name="LstDisabledMods" Background="#0F172A" Foreground="#CBD5E1" BorderBrush="#1E293B" MaxHeight="120"
+                                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                 PreviewMouseRightButtonDown="LstDisabledMods_PreviewMouseRightButtonDown">
+                                            <ListBox.ContextMenu>
+                                                <ContextMenu>
+                                                    <MenuItem Header="▶️ Enable Mod (Restore to Server)" Click="MnuEnableDisabledMod_Click"/>
+                                                    <MenuItem Header="🌐 View in Workshop Browser" Click="MnuViewDisabledInModBrowser_Click"/>
+                                                    <MenuItem Header="🌐 Open in External Browser" Click="MnuOpenDisabledWorkshopPage_Click"/>
+                                                    <MenuItem Header="📋 Copy Mod ID" Click="MnuCopyDisabledModId_Click"/>
+                                                    <Separator/>
+                                                    <MenuItem Header="🗑️ Remove Mod Permanently" Click="MnuRemoveDisabledMod_Click"/>
+                                                </ContextMenu>
+                                            </ListBox.ContextMenu>
+                                            <ListBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border BorderBrush="#1E293B" BorderThickness="0,0,0,1" Padding="4,3" Margin="0,1">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <Border Grid.Column="0" Width="22" Height="22" CornerRadius="4" Background="#1E293B" BorderBrush="#475569" BorderThickness="1" Margin="0,0,6,0" VerticalAlignment="Center">
+                                                                <TextBlock Text="⏸️" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                            </Border>
+                                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="11" Foreground="#CBD5E1" TextTrimming="CharacterEllipsis"/>
+                                                                <StackPanel Orientation="Horizontal" Margin="0,1,0,0">
+                                                                    <TextBlock Text="{Binding Subtitle}" FontSize="9" Foreground="#64748B"/>
+                                                                    <TextBlock Text="{Binding CategoryName}" FontSize="9" Foreground="#818CF8" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </StackPanel>
+                                                            <Border Grid.Column="2" CornerRadius="4" Background="{Binding BadgeBackground}" BorderBrush="{Binding BadgeBorder}" BorderThickness="1" Padding="5,2" VerticalAlignment="Center" Margin="4,0,2,0">
+                                                                <TextBlock Text="{Binding StatusBadge}" FontSize="9" FontWeight="Bold" Foreground="{Binding BadgeForeground}"/>
+                                                            </Border>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ListBox.ItemTemplate>
+                                        </ListBox>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+
+                            <!-- Column 2: Action Control Buttons -->
                             <StackPanel Grid.Column="2">
-                                <Button x:Name="BtnAutoSortMods" Content="🪄 Auto-Sort Order" Style="{StaticResource BtnSuccess}" Click="BtnAutoSortMods_Click" Margin="0,0,0,8" ToolTip="Intelligently sort active mods according to recommended Conan Exiles load order rules (Core frameworks 1st, Tweaks, Items, Patches last)"/>
-                                <Button Content="Move Up ▲" Style="{StaticResource BtnSecondary}" Click="BtnModMoveUp_Click" Margin="0,0,0,6"/>
+                                <Button x:Name="BtnCheckModUpdates" Content="🔄 Check Updates" Style="{StaticResource BtnSecondary}" Click="BtnCheckModUpdates_Click" Margin="0,0,0,6" ToolTip="Query Steam Workshop to check if authors released updates for installed mods"/>
+                                <Button x:Name="BtnAutoSortMods" Content="🪄 Auto-Sort Order" Style="{StaticResource BtnSuccess}" Click="BtnAutoSortMods_Click" Margin="0,0,0,6" ToolTip="Intelligently sort active mods according to recommended Conan Exiles load order rules (Core frameworks 1st, Tweaks, Items, Patches last)"/>
+                                <Button Content="Move Up ▲" Style="{StaticResource BtnSecondary}" Click="BtnModMoveUp_Click" Margin="0,0,0,4"/>
                                 <Button Content="Move Down ▼" Style="{StaticResource BtnSecondary}" Click="BtnModMoveDown_Click" Margin="0,0,0,6"/>
-                                <Button x:Name="BtnPreDownloadMod" Content="📥 Pre-Download Mod" Style="{StaticResource BtnSecondary}" Click="BtnPreDownloadMod_Click" Margin="0,0,0,10" ToolTip="Pre-download or verify the selected mod's files via SteamCMD in the background"/>
-                                <Button x:Name="BtnOpenModBrowser" Content="🌐 Browse Workshop" Style="{StaticResource BtnSuccess}" Click="BtnOpenModBrowser_Click" Margin="0,0,0,12" ToolTip="Open the integrated Steam Workshop browser to search and add mods"/>
+                                <Button x:Name="BtnPreDownloadMod" Content="📥 Pre-Download Mod" Style="{StaticResource BtnSecondary}" Click="BtnPreDownloadMod_Click" Margin="0,0,0,6" ToolTip="Pre-download or verify the selected mod's files via SteamCMD in the background"/>
+                                <Button x:Name="BtnDisableMod" Content="⏸️ Disable Mod" Style="{StaticResource BtnSecondary}" Click="BtnDisableMod_Click" Margin="0,0,0,6" ToolTip="Move selected mod to Inactive Mods list without deleting downloaded files"/>
+                                <Button x:Name="BtnOpenModBrowser" Content="🌐 Browse Workshop" Style="{StaticResource BtnSuccess}" Click="BtnOpenModBrowser_Click" Margin="0,0,0,10" ToolTip="Open the integrated Steam Workshop browser to search and add mods"/>
                                 <TextBlock Text="Add Mod ID" Style="{StaticResource FormLabel}"/>
-                                <TextBox x:Name="TxtNewModId" Style="{StaticResource FormInput}" Margin="0,0,0,6"/>
-                                <Button Content="Add Mod" Style="{StaticResource BtnPrimary}" Click="BtnAddMod_Click" Margin="0,0,0,6"/>
-                                <Button Content="Remove Mod" Style="{StaticResource BtnDanger}" Click="BtnRemoveMod_Click" Margin="0,0,0,10"/>
+                                <TextBox x:Name="TxtNewModId" Style="{StaticResource FormInput}" Margin="0,0,0,4"/>
+                                <Button Content="Add Mod" Style="{StaticResource BtnPrimary}" Click="BtnAddMod_Click" Margin="0,0,0,4"/>
+                                <Button Content="Remove Mod" Style="{StaticResource BtnDanger}" Click="BtnRemoveMod_Click" Margin="0,0,0,6"/>
                                 <Button Content="🌐 View on Workshop" Style="{StaticResource BtnSecondary}" Click="BtnViewModWorkshop_Click" Margin="0,0,0,6" ToolTip="Open the selected mod's Steam Workshop page in browser"/>
                             </StackPanel>
                         </Grid>

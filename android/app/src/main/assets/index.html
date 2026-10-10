@@ -137,6 +137,18 @@
                 <div id="workshopSearchResults" style="margin-top:12px;"></div>
             </div>
 
+            <!-- Mod Updates Available Banner -->
+            <div id="modUpdatesBanner" style="display:none;background:#1e1b4b;border:1px solid #6366f1;border-radius:8px;padding:10px 12px;margin-bottom:12px;align-items:center;justify-content:space-between;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:1.1rem;">🔄</span>
+                    <div>
+                        <div style="font-weight:bold;color:#c7d2fe;font-size:0.85rem;" id="modUpdatesBannerText">Mod Updates Available</div>
+                        <div style="font-size:0.72rem;color:#a5b4fc;">New versions published on Steam Workshop</div>
+                    </div>
+                </div>
+                <button class="btn-primary" style="padding:6px 10px;font-size:0.75rem;background:#4f46e5;flex-shrink:0;" onclick="checkServerModUpdates()">Check Now</button>
+            </div>
+
             <!-- Installed Server Mods List -->
             <div class="card">
                 <div class="card-header">
@@ -145,6 +157,7 @@
                         <div style="font-size:0.72rem;color:#38bdf8;">💡 Long press any mod to open its Workshop page</div>
                     </div>
                     <div style="display:flex;gap:6px;align-items:center;">
+                        <button class="btn-secondary" style="padding:4px 8px;font-size:0.75rem;" onclick="checkServerModUpdates()" title="Check Steam Workshop for Updates">🔄 Updates</button>
                         <button class="btn-primary" style="padding:4px 8px;font-size:0.75rem;background:#059669;" onclick="autoSortInstalledMods()" title="Auto-Sort according to Conan Exiles load order rules">🪄 Auto-Sort</button>
                         <button class="btn-icon" onclick="fetchInstalledMods()">🔄</button>
                     </div>
@@ -152,6 +165,17 @@
                 <div id="installedModsContainer">
                     <div style="text-align:center;padding:16px;color:#64748b;font-size:0.85rem;">Loading server mods...</div>
                 </div>
+            </div>
+
+            <!-- Inactive / Disabled Mods Card -->
+            <div class="card" id="disabledModsCard" style="display:none;">
+                <div class="card-header">
+                    <div>
+                        <div class="card-title" style="margin-bottom:2px;color:#a78bfa;">⏸️ Inactive / Disabled Mods (<span id="disabledModsCountBadge">0</span>)</div>
+                        <div style="font-size:0.72rem;color:#94a3b8;">Kept on disk, excluded from server launch</div>
+                    </div>
+                </div>
+                <div id="disabledModsContainer"></div>
             </div>
         </section>
 
@@ -254,7 +278,7 @@
             <div class="card">
                 <div class="card-title">✨ Application Updates</div>
                 <div style="font-size:0.85rem;color:#cbd5e1;margin-bottom:12px;">
-                    <div>App Version: <strong class="badge badge-ver" id="appInstalledVersion">v1.3.3</strong></div>
+                    <div>App Version: <strong class="badge badge-ver" id="appInstalledVersion">v1.3.4</strong></div>
                     <div style="margin-top:6px;">Server Manager Version: <strong id="serverInstalledVersion" style="color:#38bdf8;">--</strong></div>
                 </div>
 
