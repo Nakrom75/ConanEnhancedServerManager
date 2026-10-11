@@ -1709,7 +1709,68 @@ The following items were identified during the v1.3.2 feature audit and schedule
 - **Zero Remote Deployment Compliance**: All binaries, APKs, and packages remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\` for manual administrator release and distribution.
 
 ---
+
+## 43. WebView2 Thread Dispatch, Server & RCON Password Synchronization, and Remote Configuration Engine (v1.3.6)
+
+> **Milestone Version:** 1.3.6 (versionCode `10306`)  
+> **Release Target:** In-app Chromium WebView2 UI thread marshalling & custom data directory fix, password clearing & bi-directional INI synchronization (`ServerSettings.ini` & `Engine.ini`), RCON password & port parity (`ServerSettings.ini` & `Game.ini`), startup config resurrection prevention, and full remote configuration syncing.
+
+### 1. Incident & Bug Reports
+1. **WebView2 False "Not Installed" Prompt**:
+   - The built-in mod browser prompted users to install the WebView2 runtime even when Microsoft Edge WebView2 was already installed.
+   - *Root Cause*: `NavigateBrowserToUrl()` spawned `Task.Run()` on a background thread pool thread which directly called `WvModBrowser.EnsureCoreWebView2Async()`. Because `WvModBrowser` is owned by the UI Dispatcher thread, an `InvalidOperationException` (cross-thread access violation) was thrown, caught by the generic catch block, and displayed `PnlWebView2Error`.
+2. **Server Password Not Clearing & Re-Populating on Startup**:
+   - Changing or removing the server password failed to remove the password prompt when joining the server; removing it manually from `ServerSettings.ini` resulted in the password returning upon restarting the manager.
+   - *Root Cause*:
+     1. `IsPlaceholderPassword(pass)` began with `if (string.IsNullOrWhiteSpace(pass)) return true;`.
+     2. In `SyncIniSettings()`, `if (Config.ServerPassword != null && !IsPlaceholderPassword(Config.ServerPassword))` evaluated to false when `ServerPassword` was empty `""`, preventing empty passwords from ever being written to `ServerSettings.ini` or `Engine.ini`.
+     3. Conan Exiles and Unreal Engine OSS read `ServerPassword` from both `ServerSettings.ini` (`[ServerSettings]`) and `Engine.ini` (`[OnlineSubsystem]`).
+     4. On application boot, `AutoDetectAndImportIniSettings()` unconditionally ran after `LoadConfig()`. When it saw empty `ServerPassword` in `ServerSettings.ini` (which `IsPlaceholderPassword` skipped), it scanned `Engine.ini`, found the stale password, and restored it back into `Config.ServerPassword`, repopulating the UI field and rewriting it on the next launch.
+3. **RCON Password Stuck at `yoursupersecretpassword123`**:
+   - Setting the RCON password in the manager did not update `ServerSettings.ini`, which retained the default template password `yoursupersecretpassword123`.
+   - *Root Cause*: `SyncIniSettings()` only updated `Game.ini` `[RconPlugin]` and omitted `ServerSettings.ini` `[ServerSettings]`. Furthermore, `UpdateSettingsFromRemote()` in remote mode completely omitted parsing `rconPassword`, `rconPort`, and `rconEnabled`.
+
+### 2. Architectural Fixes & Implementation
+- **WebView2 Dispatcher Thread Marshalling & Custom Data Directory (`MainWindow.xaml.cs`)**:
+  - `InitializeModBrowserAsync()` enforces `Dispatcher.CheckAccess()` and dispatches to `Dispatcher.InvokeAsync` when invoked off-thread.
+  - Initialized CoreWebView2 with an isolated user data directory: `%LOCALAPPDATA%\ConanServerManager\WebView2` via `CoreWebView2Environment.CreateAsync(null, userDataFolder)`.
+  - Added "🔄 Retry In-App Browser" button in `MainWindow.xaml` (`BtnRetryWebView2_Click`) to allow instant recovery without restarting the application.
+  - Rewrote `NavigateBrowserToUrl()` to execute on `Dispatcher.InvokeAsync()` instead of `Task.Run()`.
+- **Password & Placeholder Logic Refinement (`ServerEngine.cs`)**:
+  - Rewrote `IsPlaceholderPassword`: `if (string.IsNullOrWhiteSpace(pass)) return false;` so an empty password represents a valid "no password" configuration.
+  - Added Funcom default template strings `yoursupersecretpassword123` and `yoursupersecretpassword123!` to placeholder identification list.
+- **Bi-Directional Password Synchronization (`SyncIniSettings`)**:
+  - Unconditionally synchronizes `ServerPassword` to both `ServerSettings.ini` (`[ServerSettings]`) and `Engine.ini` (`[OnlineSubsystem]`). When password is removed, both files receive `ServerPassword=` (empty value), ensuring Unreal Engine OSS removes the password requirement.
+- **Dual INI RCON Synchronization (`SyncIniSettings`)**:
+  - Synchronizes `RconEnabled`, `RconPort`, and `RconPassword` to both `ServerSettings.ini` (`[ServerSettings]`) and `Game.ini` (`[RconPlugin]`).
+- **Startup Config Guard & Stale Password Resurrection Prevention**:
+  - In `ServerEngine` constructor, `AutoDetectAndImportIniSettings()` only executes on initial server setup if `manager_config.json` does not exist yet.
+  - In `AutoDetectAndImportIniSettings()`, added `serverPasswordDetected` tracking: if `ServerSettings.ini` has `ServerPassword=`, it sets `Config.ServerPassword = ""` and prevents `Engine.ini` from resurrecting old passwords.
+- **Full Remote Configuration Engine (`UpdateSettingsFromRemote` & `WebServer.cs`)**:
+  - Added support in `UpdateSettingsFromRemote()` for `rconPassword`, `rconPort`, `rconEnabled`, `gamePort`, `rawUdpPort`, `queryPort`, `useMultihome`, and `multihomeIp`.
+  - Automatically triggers `SyncIniSettings()` on remote configuration save.
+  - Updated `GET /api/config` in `WebServer.cs` to return `rconEnabled`, `useMultihome`, and `multihomeIp`.
+- **Remote Client Pre-Action Synchronization (`MainWindow.xaml.cs`)**:
+  - Added `SaveRemoteConfigFromUiAsync()` which posts the UI configuration to `/api/config` and updates the local client model.
+  - Pre-wired `BtnStart_Click`, `BtnStartNoUpdate_Click`, `BtnRestart_Click`, and `BtnRestartNoUpdate_Click` in Remote Client Mode to automatically push configuration before initiating server processes.
+
+### 3. Synchronized Dual-Platform Release (`v1.3.6` / `10306`)
+- Synchronized all 7 core version locations:
+  1. `version.txt` -> `1.3.6`
+  2. `src/ServerEngine.cs` -> fallback `GetAppVersion()` = `"1.3.6"`
+  3. `src/MainWindow.xaml` -> `TxtAppHeaderTitle` = `"Conan Enhanced Server Manager v1.3.6"`, `TxtAppHeaderVersionBadge` = `"🚀 v1.3.6"`
+  4. `android/app/build.gradle` -> `getAppVersionName() = "1.3.6"`, `getAppVersionCode() = 10306`
+  5. `android/app/src/main/assets/app.js` -> `APP_VERSION = "1.3.6"`
+  6. `android/app/src/main/assets/index.html` -> badge `#appInstalledVersion` = `v1.3.6`
+  7. `android/app/src/main/java/com/conan/servermanager/MainActivity.java` -> fallback `"1.3.6"`, `10306`
+- **Build Status**:
+  - Windows: Self-contained `win-x64` build compiled with 0 Errors / 0 Warnings; packaged `ConanServerManager_v1.3.6.zip` (136.7 MB) and updated `ConanServerManager_DeployPackage.zip`.
+  - Android: Generated pre-signed `ConanServerManager-v1.3.6.apk` (4.64 MB, versionCode `10306`).
+- **Zero Remote Deployment Compliance**: All binaries, APKs, and packages remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\` for manual administrator release and distribution.
+
+---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
+
 
 
 

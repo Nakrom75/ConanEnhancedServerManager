@@ -1421,6 +1421,7 @@ namespace ConanServerManager
         {
             if (IsRemoteMode)
             {
+                await SaveRemoteConfigFromUiAsync();
                 await SendRemoteActionAsync("start");
             }
             else
@@ -1434,6 +1435,7 @@ namespace ConanServerManager
         {
             if (IsRemoteMode)
             {
+                await SaveRemoteConfigFromUiAsync();
                 await SendRemoteActionAsync("start-noupdate");
             }
             else
@@ -1447,6 +1449,7 @@ namespace ConanServerManager
         {
             if (IsRemoteMode)
             {
+                await SaveRemoteConfigFromUiAsync();
                 await SendRemoteActionAsync("restart");
             }
             else
@@ -1460,6 +1463,7 @@ namespace ConanServerManager
         {
             if (IsRemoteMode)
             {
+                await SaveRemoteConfigFromUiAsync();
                 await SendRemoteActionAsync("restart-noupdate");
             }
             else
@@ -1525,40 +1529,56 @@ namespace ConanServerManager
             }
         }
 
+        private async Task<bool> SaveRemoteConfigFromUiAsync()
+        {
+            string baseUrl = TxtRemoteUrl.Text.Trim().TrimEnd('/');
+            if (!baseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !baseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                baseUrl = "http://" + baseUrl;
+            }
+
+            try
+            {
+                var cfg = GetConfigFromUi();
+                string json = JsonSerializer.Serialize(cfg, new JsonSerializerOptions { WriteIndented = true });
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                var res = await _httpClient.PostAsync($"{baseUrl}/api/config", content);
+                if (res.IsSuccessStatusCode)
+                {
+                    _engine.Config = cfg;
+                    _engine.Config.IsRemoteClientMode = true;
+                    _engine.Config.RemoteServerUrl = baseUrl;
+                    _engine.SaveConfig();
+                    _engine.Log($"[Remote Client] Configuration pushed to remote server {baseUrl}.");
+                    await FetchAndPopulateRemoteConfigAsync(baseUrl);
+                    return true;
+                }
+                else
+                {
+                    string err = await res.Content.ReadAsStringAsync();
+                    _engine.Log($"[Remote Client] Remote save returned error: {err}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                _engine.Log($"[Remote Client] Failed to push config remotely: {ex.Message}");
+                return false;
+            }
+        }
+
         private async void BtnSaveConfig_Click(object sender, RoutedEventArgs e)
         {
             if (IsRemoteMode)
             {
-                string baseUrl = TxtRemoteUrl.Text.Trim().TrimEnd('/');
-                if (!baseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !baseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                bool success = await SaveRemoteConfigFromUiAsync();
+                if (success)
                 {
-                    baseUrl = "http://" + baseUrl;
+                    MessageBox.Show($"Configuration saved successfully to remote server at {GetRemoteBaseUrl()}.", "Remote Saved", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
-
-                try
+                else
                 {
-                    var cfg = GetConfigFromUi();
-                    string json = JsonSerializer.Serialize(cfg, new JsonSerializerOptions { WriteIndented = true });
-                    var content = new StringContent(json, Encoding.UTF8, "application/json");
-                    var res = await _httpClient.PostAsync($"{baseUrl}/api/config", content);
-                    if (res.IsSuccessStatusCode)
-                    {
-                        _engine.Config.IsRemoteClientMode = true;
-                        _engine.Config.RemoteServerUrl = baseUrl;
-                        _engine.SaveConfig();
-
-                        MessageBox.Show($"Configuration saved successfully to remote server at {baseUrl}.", "Remote Saved", MessageBoxButton.OK, MessageBoxImage.Information);
-                        _engine.Log($"[Remote Client] Configuration saved to remote server {baseUrl}.");
-                    }
-                    else
-                    {
-                        string err = await res.Content.ReadAsStringAsync();
-                        MessageBox.Show($"Remote save returned error:\n{err}", "Remote Save Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Failed to save config remotely:\n{ex.Message}", "Remote Save Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show("Failed to save configuration to remote server. Check logs for details.", "Remote Save Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
                 return;
             }
@@ -2155,32 +2175,42 @@ namespace ConanServerManager
         private async Task InitializeModBrowserAsync()
         {
             if (_isModBrowserInitialized) return;
+            if (!Dispatcher.CheckAccess())
+            {
+                await Dispatcher.InvokeAsync(async () => await InitializeModBrowserAsync());
+                return;
+            }
+
             try
             {
-                await WvModBrowser.EnsureCoreWebView2Async();
+                string userDataFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ConanServerManager", "WebView2");
+                System.IO.Directory.CreateDirectory(userDataFolder);
+                var env = await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(null, userDataFolder);
+                await WvModBrowser.EnsureCoreWebView2Async(env);
                 _isModBrowserInitialized = true;
-                Dispatcher.Invoke(() =>
-                {
-                    PnlWebView2Error.Visibility = Visibility.Collapsed;
-                    WvModBrowser.Visibility = Visibility.Visible;
+                PnlWebView2Error.Visibility = Visibility.Collapsed;
+                WvModBrowser.Visibility = Visibility.Visible;
 
-                    WvModBrowser.SourceChanged += (s, e) => OnModBrowserSourceChanged();
-                    WvModBrowser.NavigationCompleted += (s, e) => OnModBrowserNavigationCompleted();
+                WvModBrowser.SourceChanged += (s, e) => OnModBrowserSourceChanged();
+                WvModBrowser.NavigationCompleted += (s, e) => OnModBrowserNavigationCompleted();
 
-                    WvModBrowser.CoreWebView2.Navigate(ConanWorkshopHomeUrl);
-                    TxtBrowserUrl.Text = ConanWorkshopHomeUrl;
-                });
+                string target = string.IsNullOrWhiteSpace(TxtBrowserUrl.Text) ? ConanWorkshopHomeUrl : TxtBrowserUrl.Text.Trim();
+                WvModBrowser.CoreWebView2.Navigate(target);
+                TxtBrowserUrl.Text = target;
                 _engine.Log("[ModBrowser] In-app Chromium WebView2 initialized successfully.");
             }
             catch (Exception ex)
             {
                 _engine.Log($"[ModBrowser] WebView2 initialization failed: {ex.Message}");
-                Dispatcher.Invoke(() =>
-                {
-                    PnlWebView2Error.Visibility = Visibility.Visible;
-                    WvModBrowser.Visibility = Visibility.Collapsed;
-                });
+                PnlWebView2Error.Visibility = Visibility.Visible;
+                WvModBrowser.Visibility = Visibility.Collapsed;
             }
+        }
+
+        private void BtnRetryWebView2_Click(object sender, RoutedEventArgs e)
+        {
+            _isModBrowserInitialized = false;
+            _ = InitializeModBrowserAsync();
         }
 
         private void OnModBrowserSourceChanged()
@@ -2254,15 +2284,12 @@ namespace ConanServerManager
             TxtBrowserUrl.Text = url;
             if (!_isModBrowserInitialized)
             {
-                _ = Task.Run(async () =>
+                _ = Dispatcher.InvokeAsync(async () =>
                 {
                     await InitializeModBrowserAsync();
                     if (_isModBrowserInitialized)
                     {
-                        Dispatcher.Invoke(() =>
-                        {
-                            WvModBrowser.CoreWebView2?.Navigate(url);
-                        });
+                        WvModBrowser.CoreWebView2?.Navigate(url);
                     }
                 });
                 return;

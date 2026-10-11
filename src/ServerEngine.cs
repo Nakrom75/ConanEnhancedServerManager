@@ -221,17 +221,19 @@ namespace ConanServerManager
 
         public static bool IsPlaceholderPassword(string? pass)
         {
-            if (string.IsNullOrWhiteSpace(pass)) return true;
+            if (string.IsNullOrWhiteSpace(pass)) return false;
             string t = pass.Trim();
             return t.Equals("SuperSecretAdminPassword123!", StringComparison.OrdinalIgnoreCase) ||
                    t.Equals("SuperSecretRconPassword123!", StringComparison.OrdinalIgnoreCase) ||
                    t.Equals("AdminPassword456", StringComparison.OrdinalIgnoreCase) ||
                    t.Equals("SecretPassword", StringComparison.OrdinalIgnoreCase) ||
                    t.Equals("ChangeMeAdminPassword123!", StringComparison.OrdinalIgnoreCase) ||
-                   t.Equals("ChangeMeRconPassword123!", StringComparison.OrdinalIgnoreCase);
+                   t.Equals("ChangeMeRconPassword123!", StringComparison.OrdinalIgnoreCase) ||
+                   t.Equals("yoursupersecretpassword123", StringComparison.OrdinalIgnoreCase) ||
+                   t.Equals("yoursupersecretpassword123!", StringComparison.OrdinalIgnoreCase);
         }
 
-        public ManagerConfig Config { get; private set; } = new ManagerConfig();
+        public ManagerConfig Config { get; set; } = new ManagerConfig();
         public Process? ServerProcess { get; private set; }
         public Process? CurrentSteamCmdProcess { get; private set; }
         public string ServerStatus { get; private set; } = "STOPPED";
@@ -286,7 +288,7 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.3.5";
+            return "1.3.6";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
@@ -440,8 +442,12 @@ namespace ConanServerManager
 
         public ServerEngine()
         {
+            bool hadConfig = File.Exists(ConfigJsonPath);
             LoadConfig();
-            AutoDetectAndImportIniSettings();
+            if (!hadConfig)
+            {
+                AutoDetectAndImportIniSettings();
+            }
             RefreshNetworkAdapters();
 
             DetectAndAdoptRunningServerProcess();
@@ -1896,6 +1902,7 @@ namespace ConanServerManager
             {
                 var lines = File.ReadAllLines(ServerSettingsIni);
                 string currentSection = "";
+                bool serverPasswordDetected = false;
 
                 foreach (var rawLine in lines)
                 {
@@ -1921,9 +1928,14 @@ namespace ConanServerManager
                         }
                         else if (key.Equals("ServerPassword", StringComparison.OrdinalIgnoreCase))
                         {
+                            serverPasswordDetected = true;
                             if (!IsPlaceholderPassword(val))
                             {
                                 Config.ServerPassword = val;
+                            }
+                            else
+                            {
+                                Config.ServerPassword = "";
                             }
                         }
                         else if (key.Equals("AdminPassword", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(val))
@@ -1943,6 +1955,10 @@ namespace ConanServerManager
                         else if (key.Equals("RconPort", StringComparison.OrdinalIgnoreCase) && int.TryParse(val, out int rPort))
                         {
                             Config.RconPort = rPort;
+                        }
+                        else if (key.Equals("RconEnabled", StringComparison.OrdinalIgnoreCase) && bool.TryParse(val, out bool rEnabled))
+                        {
+                            Config.RconEnabled = rEnabled;
                         }
                         else if (key.Equals("DedicatedServerLauncherModList", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(val))
                         {
@@ -1990,7 +2006,7 @@ namespace ConanServerManager
                         }
                         else if (eSection.Equals("OnlineSubsystem", StringComparison.OrdinalIgnoreCase) && k.Equals("ServerPassword", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(v))
                         {
-                            if (string.IsNullOrEmpty(Config.ServerPassword) && !IsPlaceholderPassword(v))
+                            if (!serverPasswordDetected && string.IsNullOrEmpty(Config.ServerPassword) && !IsPlaceholderPassword(v))
                             {
                                 Config.ServerPassword = v;
                             }
@@ -2116,6 +2132,36 @@ namespace ConanServerManager
                 string val = aPass.GetString()?.Trim() ?? "";
                 if (!string.IsNullOrEmpty(val)) { Config.AdminPassword = val; changed = true; }
             }
+            if (root.TryGetProperty("rconPassword", out var rPass) || root.TryGetProperty("RconPassword", out rPass))
+            {
+                string val = rPass.GetString()?.Trim() ?? "";
+                if (!string.IsNullOrEmpty(val)) { Config.RconPassword = val; changed = true; }
+            }
+            if (root.TryGetProperty("rconPort", out var rPort) || root.TryGetProperty("RconPort", out rPort))
+            {
+                if (rPort.ValueKind == JsonValueKind.Number && rPort.TryGetInt32(out int val)) { Config.RconPort = val; changed = true; }
+                else if (rPort.ValueKind == JsonValueKind.String && int.TryParse(rPort.GetString(), out int sVal)) { Config.RconPort = sVal; changed = true; }
+            }
+            if (root.TryGetProperty("rconEnabled", out var rEn) || root.TryGetProperty("RconEnabled", out rEn))
+            {
+                if (rEn.ValueKind == JsonValueKind.True || rEn.ValueKind == JsonValueKind.False) { Config.RconEnabled = rEn.GetBoolean(); changed = true; }
+                else if (rEn.ValueKind == JsonValueKind.String && bool.TryParse(rEn.GetString(), out bool bVal)) { Config.RconEnabled = bVal; changed = true; }
+            }
+            if (root.TryGetProperty("gamePort", out var gPort) || root.TryGetProperty("GamePort", out gPort))
+            {
+                if (gPort.ValueKind == JsonValueKind.Number && gPort.TryGetInt32(out int val)) { Config.GamePort = val; changed = true; }
+                else if (gPort.ValueKind == JsonValueKind.String && int.TryParse(gPort.GetString(), out int sVal)) { Config.GamePort = sVal; changed = true; }
+            }
+            if (root.TryGetProperty("rawUdpPort", out var ruPort) || root.TryGetProperty("RawUdpPort", out ruPort))
+            {
+                if (ruPort.ValueKind == JsonValueKind.Number && ruPort.TryGetInt32(out int val)) { Config.RawUdpPort = val; changed = true; }
+                else if (ruPort.ValueKind == JsonValueKind.String && int.TryParse(ruPort.GetString(), out int sVal)) { Config.RawUdpPort = sVal; changed = true; }
+            }
+            if (root.TryGetProperty("queryPort", out var qPort) || root.TryGetProperty("QueryPort", out qPort))
+            {
+                if (qPort.ValueKind == JsonValueKind.Number && qPort.TryGetInt32(out int val)) { Config.QueryPort = val; changed = true; }
+                else if (qPort.ValueKind == JsonValueKind.String && int.TryParse(qPort.GetString(), out int sVal)) { Config.QueryPort = sVal; changed = true; }
+            }
             if (root.TryGetProperty("maxPlayers", out var mPl) || root.TryGetProperty("MaxPlayers", out mPl))
             {
                 if (mPl.ValueKind == JsonValueKind.Number && mPl.TryGetInt32(out int val)) { Config.MaxPlayers = val; changed = true; }
@@ -2140,6 +2186,17 @@ namespace ConanServerManager
             {
                 if (vac.ValueKind == JsonValueKind.True || vac.ValueKind == JsonValueKind.False) { Config.EnableVAC = vac.GetBoolean(); changed = true; }
                 else if (vac.ValueKind == JsonValueKind.String && bool.TryParse(vac.GetString(), out bool vVal)) { Config.EnableVAC = vVal; changed = true; }
+            }
+            if (root.TryGetProperty("useMultihome", out var uMh) || root.TryGetProperty("UseMultihome", out uMh))
+            {
+                if (uMh.ValueKind == JsonValueKind.True || uMh.ValueKind == JsonValueKind.False) { Config.UseMultihome = uMh.GetBoolean(); changed = true; }
+                else if (uMh.ValueKind == JsonValueKind.String && bool.TryParse(uMh.GetString(), out bool bMh)) { Config.UseMultihome = bMh; changed = true; }
+            }
+            if (root.TryGetProperty("multihomeIp", out var mhIp) || root.TryGetProperty("MultihomeIp", out mhIp))
+            {
+                string val = mhIp.GetString()?.Trim() ?? "";
+                Config.MultihomeIp = val;
+                changed = true;
             }
 
             if (root.TryGetProperty("mods", out var mProp) || root.TryGetProperty("Mods", out mProp))
@@ -2185,6 +2242,7 @@ namespace ConanServerManager
             if (changed)
             {
                 SaveConfig();
+                SyncIniSettings();
                 Log($"[Remote Admin] Server configuration updated remotely (Server: \"{Config.ServerName}\", MaxPlayers: {Config.MaxPlayers})");
             }
         }
@@ -2223,10 +2281,9 @@ namespace ConanServerManager
             {
                 UpdateIniKey(ServerSettingsIni, "ServerSettings", "ServerName", Config.ServerName);
             }
-            if (Config.ServerPassword != null && !IsPlaceholderPassword(Config.ServerPassword))
-            {
-                UpdateIniKey(ServerSettingsIni, "ServerSettings", "ServerPassword", Config.ServerPassword);
-            }
+            // Always update ServerPassword in ServerSettings.ini (empty means no password)
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "ServerPassword", IsPlaceholderPassword(Config.ServerPassword) ? "" : (Config.ServerPassword ?? ""));
+
             if (!string.IsNullOrWhiteSpace(Config.AdminPassword) && !IsPlaceholderPassword(Config.AdminPassword))
             {
                 UpdateIniKey(ServerSettingsIni, "ServerSettings", "AdminPassword", Config.AdminPassword);
@@ -2238,16 +2295,21 @@ namespace ConanServerManager
             UpdateIniKey(ServerSettingsIni, "ServerSettings", "DedicatedServerLauncherModEnabled", "True");
             UpdateIniKey(ServerSettingsIni, "ServerSettings", "DedicatedServerLauncherModList", string.Join(",", Config.Mods));
             UpdateIniKey(ServerSettingsIni, "ServerSettings", "IsBattlEyeEnabled", Config.EnableBattlEye ? "True" : "False");
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "RconEnabled", Config.RconEnabled ? "True" : "False");
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "RconPort", Config.RconPort.ToString());
+            if (!IsPlaceholderPassword(Config.RconPassword))
+            {
+                UpdateIniKey(ServerSettingsIni, "ServerSettings", "RconPassword", Config.RconPassword ?? "");
+            }
 
             // Engine.ini - Steam Master Server and Unreal Engine OSS read identity from here!
             if (!string.IsNullOrWhiteSpace(Config.ServerName) && !IsPlaceholderServerName(Config.ServerName))
             {
                 UpdateIniKey(EngineIni, "OnlineSubsystem", "ServerName", Config.ServerName);
             }
-            if (Config.ServerPassword != null && !IsPlaceholderPassword(Config.ServerPassword))
-            {
-                UpdateIniKey(EngineIni, "OnlineSubsystem", "ServerPassword", Config.ServerPassword);
-            }
+            // Always update ServerPassword in Engine.ini so Unreal Engine removes the password when empty
+            UpdateIniKey(EngineIni, "OnlineSubsystem", "ServerPassword", IsPlaceholderPassword(Config.ServerPassword) ? "" : (Config.ServerPassword ?? ""));
+
             if (Config.UseMultihome && !string.IsNullOrWhiteSpace(Config.MultihomeIp))
             {
                 UpdateIniKey(EngineIni, "OnlineSubsystem", "DedicatedServerLauncherMultihomeEnabled", "True");
@@ -2265,9 +2327,9 @@ namespace ConanServerManager
             UpdateIniKey(GameIni, "/Script/Engine.GameSession", "MaxPlayers", Config.MaxPlayers.ToString());
             UpdateIniKey(GameIni, "RconPlugin", "RconEnabled", Config.RconEnabled ? "True" : "False");
             UpdateIniKey(GameIni, "RconPlugin", "RconPort", Config.RconPort.ToString());
-            if (!string.IsNullOrWhiteSpace(Config.RconPassword) && !IsPlaceholderPassword(Config.RconPassword))
+            if (!IsPlaceholderPassword(Config.RconPassword))
             {
-                UpdateIniKey(GameIni, "RconPlugin", "RconPassword", Config.RconPassword);
+                UpdateIniKey(GameIni, "RconPlugin", "RconPassword", Config.RconPassword ?? "");
             }
             UpdateIniKey(GameIni, "RconPlugin", "RconMaxKarma", "60");
             UpdateIniKey(GameIni, "RconPlugin", "RconMessageMethod", "0");

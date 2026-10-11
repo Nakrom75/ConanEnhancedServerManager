@@ -120,9 +120,9 @@
                     <StackPanel Orientation="Vertical">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Image Source="app.png" Width="22" Height="22" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.3.5" Style="{StaticResource HeaderTitle}"/>
+                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.3.6" Style="{StaticResource HeaderTitle}"/>
                             <Border CornerRadius="8" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" Margin="10,0,0,0" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="🚀 v1.3.5" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="🚀 v1.3.6" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="TxtServerPathInfo" Text="Mode: Local Server Host | Embedded Web Console: http://0.0.0.0:8088" Foreground="#94A3B8" FontSize="11"/>
@@ -1107,6 +1107,7 @@
                         <TextBlock Text="⚠️ WebView2 Runtime Required" FontSize="18" FontWeight="Bold" Foreground="#EF4444" Margin="0,0,0,10" TextAlignment="Center"/>
                         <TextBlock Text="The in-app browser uses Microsoft Edge WebView2. It could not be initialized (the runtime may not be installed on this Windows system)." TextWrapping="Wrap" Foreground="#94A3B8" Margin="0,0,0,18" TextAlignment="Center" FontSize="13"/>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Button Content="🔄 Retry In-App Browser" Style="{StaticResource BtnSecondary}" Click="BtnRetryWebView2_Click" Margin="0,0,10,0" Padding="14,6"/>
                             <Button Content="📥 Download WebView2" Style="{StaticResource BtnPrimary}" Click="BtnDownloadWebView2_Click" Margin="0,0,10,0" Padding="14,6"/>
                             <Button Content="🌐 Open Workshop in External Browser" Style="{StaticResource BtnSecondary}" Click="BtnOpenWorkshopExternal_Click" Padding="14,6"/>
                         </StackPanel>
