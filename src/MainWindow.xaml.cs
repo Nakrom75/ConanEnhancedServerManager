@@ -746,6 +746,41 @@ namespace ConanServerManager
                 }
             }
 
+            // Startup Map
+            if (CmbStartupMap != null)
+            {
+                string mapVal = string.IsNullOrWhiteSpace(cfg.StartupMap) ? "ConanSandbox (Exiled Lands)|/Game/Maps/ConanSandbox/ConanSandbox" : cfg.StartupMap.Trim();
+                bool matchedMap = false;
+                for (int i = 0; i < CmbStartupMap.Items.Count; i++)
+                {
+                    if (CmbStartupMap.Items[i] is ComboBoxItem item && item.Tag is string tag && tag != "CUSTOM")
+                    {
+                        string tagPath = tag.Contains("|") ? tag.Split('|')[1] : tag;
+                        string cfgPath = mapVal.Contains("|") ? mapVal.Split('|')[1] : mapVal;
+                        if (string.Equals(tag, mapVal, StringComparison.OrdinalIgnoreCase) || string.Equals(tagPath, cfgPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            CmbStartupMap.SelectedIndex = i;
+                            matchedMap = true;
+                            if (TxtStartupMapPath != null)
+                            {
+                                TxtStartupMapPath.Text = tagPath;
+                                TxtStartupMapPath.Visibility = Visibility.Collapsed;
+                            }
+                            break;
+                        }
+                    }
+                }
+                if (!matchedMap)
+                {
+                    CmbStartupMap.SelectedIndex = CmbStartupMap.Items.Count - 1; // Custom Map Path...
+                    if (TxtStartupMapPath != null)
+                    {
+                        TxtStartupMapPath.Text = mapVal.Contains("|") ? mapVal.Split('|')[1] : mapVal;
+                        TxtStartupMapPath.Visibility = Visibility.Visible;
+                    }
+                }
+            }
+
             // Auto-Update Mode
             if (!string.IsNullOrWhiteSpace(cfg.AutoUpdateRestartMode))
             {
@@ -783,6 +818,8 @@ namespace ConanServerManager
                 }
             }
 
+            if (TxtCustomServerDir != null) TxtCustomServerDir.Text = cfg.CustomServerDir ?? "";
+
             ChkDailyRestart.IsChecked = cfg.EnableDailyRestart;
             TxtDailyRestartTime.Text = cfg.DailyRestartTime;
             TxtMinUptime.Text = cfg.MinimumUptime;
@@ -819,9 +856,109 @@ namespace ConanServerManager
 
             ChkUseAllCores.IsChecked = cfg.UseAllAvailableCores;
 
+            // Gameplay Settings Tab Controls
+            PopulateGameplayUiFromConfig(cfg);
+
             PopulateModListUi(cfg.Mods);
             PopulateDisabledModListUi(cfg.DisabledMods);
             UpdateModUpdatesBannerUi();
+        }
+
+        private bool _suppressCombatPresetEvent = false;
+
+        private void PopulateGameplayUiFromConfig(ManagerConfig cfg)
+        {
+            if (ChkGameplayPvpEnabled == null) return;
+
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+
+            ChkGameplayPvpEnabled.IsChecked = cfg.PVPEnabled;
+            ChkGameplayCanDamageStructures.IsChecked = cfg.CanDamagePlayerOwnedStructures;
+            ChkGameplayDynamicBuildingDamage.IsChecked = cfg.DynamicBuildingDamage;
+            ChkGameplayEnableSandStorm.IsChecked = cfg.EnableSandStorm;
+
+            _suppressCombatPresetEvent = true;
+            try
+            {
+                if (!cfg.PVPEnabled && !cfg.CanDamagePlayerOwnedStructures)
+                    CmbCombatModePreset.SelectedIndex = 0; // PvE
+                else if (cfg.PVPEnabled && !cfg.CanDamagePlayerOwnedStructures)
+                    CmbCombatModePreset.SelectedIndex = 1; // PvE-Conflict
+                else if (cfg.PVPEnabled && cfg.CanDamagePlayerOwnedStructures)
+                    CmbCombatModePreset.SelectedIndex = 2; // PvP
+                else
+                    CmbCombatModePreset.SelectedIndex = 3; // Custom
+            }
+            finally
+            {
+                _suppressCombatPresetEvent = false;
+            }
+
+            CmbGameplayMaxNudity.SelectedIndex = Math.Clamp(cfg.MaxNudity, 0, 2);
+            TxtGameplayClanMaxSize.Text = cfg.ClanMaxSize.ToString(inv);
+            TxtGameplayMaxAllowedPing.Text = cfg.MaxAllowedPing.ToString(inv);
+
+            ChkGameplayDropEquipment.IsChecked = cfg.DropEquipmentOnDeath;
+            ChkGameplayDropShortcutBar.IsChecked = cfg.DropShortcutBarOnDeath;
+            ChkGameplayDropBackpack.IsChecked = cfg.DropBackpackOnDeath;
+            ChkGameplayEverybodyLootCorpse.IsChecked = cfg.EverybodyCanLootCorpse;
+            ChkGameplayLogoutCharsRemain.IsChecked = cfg.LogoutCharactersRemainInTheWorld;
+            ChkGameplayContainersIgnoreOwnership.IsChecked = cfg.ContainersIgnoreOwnership;
+            ChkGameplayNoOwnership.IsChecked = cfg.NoOwnership;
+
+            ChkGameplayDisableAbandonment.IsChecked = cfg.DisableBuildingAbandonment;
+            ChkGameplayBuildAnywhere.IsChecked = cfg.BuildAnywhere;
+            ChkGameplayEnablePurge.IsChecked = cfg.EnablePurge;
+            ChkGameplayAvatarsDisabled.IsChecked = cfg.AvatarsDisabled;
+
+            TxtGameplayBuildingDecayMult.Text = cfg.BuildingDecayTimeMultiplier.ToString("0.##", inv);
+            TxtGameplayLandClaimMult.Text = cfg.LandClaimRadiusMultiplier.ToString("0.##", inv);
+            TxtGameplayPurgeLevel.Text = cfg.PurgeLevel.ToString(inv);
+
+            TxtGameplayXpRateMult.Text = cfg.PlayerXPRateMultiplier.ToString("0.##", inv);
+            TxtGameplayXpTimeMult.Text = cfg.PlayerXPTimeMultiplier.ToString("0.##", inv);
+            TxtGameplayXpKillMult.Text = cfg.PlayerXPKillMultiplier.ToString("0.##", inv);
+            TxtGameplayXpHarvestMult.Text = cfg.PlayerXPHarvestMultiplier.ToString("0.##", inv);
+            TxtGameplayXpCraftMult.Text = cfg.PlayerXPCraftMultiplier.ToString("0.##", inv);
+
+            TxtGameplayHarvestMult.Text = cfg.HarvestAmountMultiplier.ToString("0.##", inv);
+            TxtGameplayResourceRespawnMult.Text = cfg.ResourceRespawnSpeedMultiplier.ToString("0.##", inv);
+            TxtGameplayEncumbranceMult.Text = cfg.PlayerEncumbranceMultiplier.ToString("0.##", inv);
+            TxtGameplayItemConvertMult.Text = cfg.ItemConvertionMultiplier.ToString("0.##", inv);
+            TxtGameplayThrallConvertMult.Text = cfg.ThrallConversionMultiplier.ToString("0.##", inv);
+            TxtGameplayAnimalPenMult.Text = cfg.AnimalPenCraftingTimeMultiplier.ToString("0.##", inv);
+            TxtGameplaySpoilRateScale.Text = cfg.SpoilRateScale.ToString("0.##", inv);
+            TxtGameplayFuelBurnMult.Text = cfg.FuelBurnTimeMultiplier.ToString("0.##", inv);
+            TxtGameplayCraftingCostMult.Text = cfg.CraftingCostMultiplier.ToString("0.##", inv);
+
+            TxtGameplayDayCycleScale.Text = cfg.DayCycleSpeedScale.ToString("0.##", inv);
+            TxtGameplayDayTimeScale.Text = cfg.DayTimeSpeedScale.ToString("0.##", inv);
+            TxtGameplayNightTimeScale.Text = cfg.NightTimeSpeedScale.ToString("0.##", inv);
+            TxtGameplayDawnDuskScale.Text = cfg.DawnDuskTimeSpeedScale.ToString("0.##", inv);
+
+            TxtGameplayStaminaCostMult.Text = cfg.PlayerStaminaCostMultiplier.ToString("0.##", inv);
+            TxtGameplayDurabilityMult.Text = cfg.DurabilityMultiplier.ToString("0.##", inv);
+            TxtGameplayShieldDurabilityMult.Text = cfg.ShieldDurabilityMultiplier.ToString("0.##", inv);
+            TxtGameplayActiveThirstMult.Text = cfg.PlayerActiveThirstMultiplier.ToString("0.##", inv);
+            TxtGameplayIdleThirstMult.Text = cfg.PlayerIdleThirstMultiplier.ToString("0.##", inv);
+            TxtGameplayActiveHungerMult.Text = cfg.PlayerActiveHungerMultiplier.ToString("0.##", inv);
+            TxtGameplayIdleHungerMult.Text = cfg.PlayerIdleHungerMultiplier.ToString("0.##", inv);
+
+            TxtGameplayPlayerDmgMult.Text = cfg.PlayerDamageMultiplier.ToString("0.##", inv);
+            TxtGameplayPlayerDmgTakenMult.Text = cfg.PlayerDamageTakenMultiplier.ToString("0.##", inv);
+            TxtGameplayNpcDmgMult.Text = cfg.NPCDamageMultiplier.ToString("0.##", inv);
+            TxtGameplayNpcDmgTakenMult.Text = cfg.NPCDamageTakenMultiplier.ToString("0.##", inv);
+            TxtGameplayThrallDmgPlayersMult.Text = cfg.ThrallDamageToPlayersMultiplier.ToString("0.##", inv);
+            TxtGameplayThrallDmgNpcsMult.Text = cfg.ThrallDamageToNPCsMultiplier.ToString("0.##", inv);
+        }
+
+        private static double ParseDoubleUi(TextBox? box, double fallback)
+        {
+            if (box == null || string.IsNullOrWhiteSpace(box.Text)) return fallback;
+            string raw = box.Text.Trim().Replace(',', '.');
+            if (double.TryParse(raw, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double d))
+                return d;
+            return fallback;
         }
 
         private ManagerConfig GetConfigFromUi()
@@ -844,6 +981,21 @@ namespace ConanServerManager
 
             if (CmbRegion.SelectedItem is ComboBoxItem regItem && regItem.Content != null)
                 cfg.Region = regItem.Content.ToString() ?? "0 - Europe";
+
+            if (CmbStartupMap?.SelectedItem is ComboBoxItem mapItem && mapItem.Tag is string mapTag)
+            {
+                if (mapTag == "CUSTOM")
+                {
+                    string customPath = TxtStartupMapPath?.Text?.Trim() ?? "/Game/Maps/ConanSandbox/ConanSandbox";
+                    cfg.StartupMap = string.IsNullOrWhiteSpace(customPath)
+                        ? "ConanSandbox (Exiled Lands)|/Game/Maps/ConanSandbox/ConanSandbox"
+                        : $"Custom Map|{customPath}";
+                }
+                else
+                {
+                    cfg.StartupMap = mapTag;
+                }
+            }
 
             cfg.ExternalIp = TxtExternalIp.Text.Trim();
             cfg.MacAddress = TxtMacAddress.Text.Trim();
@@ -868,6 +1020,7 @@ namespace ConanServerManager
                 cfg.PriorityClass = prioItem.Content.ToString() ?? "Unmanaged";
 
             cfg.UseAllAvailableCores = ChkUseAllCores.IsChecked == true;
+            if (TxtCustomServerDir != null) cfg.CustomServerDir = TxtCustomServerDir.Text.Trim();
 
             cfg.EnableDailyRestart = ChkDailyRestart.IsChecked == true;
             cfg.DailyRestartTime = TxtDailyRestartTime.Text;
@@ -892,6 +1045,73 @@ namespace ConanServerManager
             cfg.DiscordEnabled = ChkDiscordEnable.IsChecked == true;
             cfg.DiscordIncludeTime = ChkDiscordTime.IsChecked == true;
             cfg.DiscordWebhookUrl = TxtDiscordWebhook.Text.Trim();
+
+            // Gameplay Settings Tab Values
+            if (ChkGameplayPvpEnabled != null)
+            {
+                cfg.GameplaySettingsImported = true;
+                cfg.PVPEnabled = ChkGameplayPvpEnabled.IsChecked == true;
+                cfg.CanDamagePlayerOwnedStructures = ChkGameplayCanDamageStructures.IsChecked == true;
+                cfg.DynamicBuildingDamage = ChkGameplayDynamicBuildingDamage.IsChecked == true;
+                cfg.EnableSandStorm = ChkGameplayEnableSandStorm.IsChecked == true;
+
+                cfg.MaxNudity = CmbGameplayMaxNudity.SelectedIndex >= 0 ? CmbGameplayMaxNudity.SelectedIndex : 2;
+                if (int.TryParse(TxtGameplayClanMaxSize.Text, out int cms)) cfg.ClanMaxSize = cms;
+                if (int.TryParse(TxtGameplayMaxAllowedPing.Text, out int mapPing)) cfg.MaxAllowedPing = mapPing;
+
+                cfg.DropEquipmentOnDeath = ChkGameplayDropEquipment.IsChecked == true;
+                cfg.DropShortcutBarOnDeath = ChkGameplayDropShortcutBar.IsChecked == true;
+                cfg.DropBackpackOnDeath = ChkGameplayDropBackpack.IsChecked == true;
+                cfg.EverybodyCanLootCorpse = ChkGameplayEverybodyLootCorpse.IsChecked == true;
+                cfg.LogoutCharactersRemainInTheWorld = ChkGameplayLogoutCharsRemain.IsChecked == true;
+                cfg.ContainersIgnoreOwnership = ChkGameplayContainersIgnoreOwnership.IsChecked == true;
+                cfg.NoOwnership = ChkGameplayNoOwnership.IsChecked == true;
+
+                cfg.DisableBuildingAbandonment = ChkGameplayDisableAbandonment.IsChecked == true;
+                cfg.BuildAnywhere = ChkGameplayBuildAnywhere.IsChecked == true;
+                cfg.EnablePurge = ChkGameplayEnablePurge.IsChecked == true;
+                cfg.AvatarsDisabled = ChkGameplayAvatarsDisabled.IsChecked == true;
+
+                cfg.BuildingDecayTimeMultiplier = ParseDoubleUi(TxtGameplayBuildingDecayMult, 1.0);
+                cfg.LandClaimRadiusMultiplier = ParseDoubleUi(TxtGameplayLandClaimMult, 1.0);
+                if (int.TryParse(TxtGameplayPurgeLevel.Text, out int pLvl)) cfg.PurgeLevel = Math.Clamp(pLvl, 0, 6);
+
+                cfg.PlayerXPRateMultiplier = ParseDoubleUi(TxtGameplayXpRateMult, 1.0);
+                cfg.PlayerXPTimeMultiplier = ParseDoubleUi(TxtGameplayXpTimeMult, 1.0);
+                cfg.PlayerXPKillMultiplier = ParseDoubleUi(TxtGameplayXpKillMult, 1.0);
+                cfg.PlayerXPHarvestMultiplier = ParseDoubleUi(TxtGameplayXpHarvestMult, 1.0);
+                cfg.PlayerXPCraftMultiplier = ParseDoubleUi(TxtGameplayXpCraftMult, 1.0);
+
+                cfg.HarvestAmountMultiplier = ParseDoubleUi(TxtGameplayHarvestMult, 1.0);
+                cfg.ResourceRespawnSpeedMultiplier = ParseDoubleUi(TxtGameplayResourceRespawnMult, 1.0);
+                cfg.PlayerEncumbranceMultiplier = ParseDoubleUi(TxtGameplayEncumbranceMult, 1.0);
+                cfg.ItemConvertionMultiplier = ParseDoubleUi(TxtGameplayItemConvertMult, 1.0);
+                cfg.ThrallConversionMultiplier = ParseDoubleUi(TxtGameplayThrallConvertMult, 1.0);
+                cfg.AnimalPenCraftingTimeMultiplier = ParseDoubleUi(TxtGameplayAnimalPenMult, 1.0);
+                cfg.SpoilRateScale = ParseDoubleUi(TxtGameplaySpoilRateScale, 1.0);
+                cfg.FuelBurnTimeMultiplier = ParseDoubleUi(TxtGameplayFuelBurnMult, 1.0);
+                cfg.CraftingCostMultiplier = ParseDoubleUi(TxtGameplayCraftingCostMult, 1.0);
+
+                cfg.DayCycleSpeedScale = ParseDoubleUi(TxtGameplayDayCycleScale, 1.0);
+                cfg.DayTimeSpeedScale = ParseDoubleUi(TxtGameplayDayTimeScale, 1.0);
+                cfg.NightTimeSpeedScale = ParseDoubleUi(TxtGameplayNightTimeScale, 1.0);
+                cfg.DawnDuskTimeSpeedScale = ParseDoubleUi(TxtGameplayDawnDuskScale, 1.0);
+
+                cfg.PlayerStaminaCostMultiplier = ParseDoubleUi(TxtGameplayStaminaCostMult, 1.0);
+                cfg.DurabilityMultiplier = ParseDoubleUi(TxtGameplayDurabilityMult, 1.0);
+                cfg.ShieldDurabilityMultiplier = ParseDoubleUi(TxtGameplayShieldDurabilityMult, 1.0);
+                cfg.PlayerActiveThirstMultiplier = ParseDoubleUi(TxtGameplayActiveThirstMult, 1.0);
+                cfg.PlayerIdleThirstMultiplier = ParseDoubleUi(TxtGameplayIdleThirstMult, 1.0);
+                cfg.PlayerActiveHungerMultiplier = ParseDoubleUi(TxtGameplayActiveHungerMult, 1.0);
+                cfg.PlayerIdleHungerMultiplier = ParseDoubleUi(TxtGameplayIdleHungerMult, 1.0);
+
+                cfg.PlayerDamageMultiplier = ParseDoubleUi(TxtGameplayPlayerDmgMult, 1.0);
+                cfg.PlayerDamageTakenMultiplier = ParseDoubleUi(TxtGameplayPlayerDmgTakenMult, 1.0);
+                cfg.NPCDamageMultiplier = ParseDoubleUi(TxtGameplayNpcDmgMult, 1.0);
+                cfg.NPCDamageTakenMultiplier = ParseDoubleUi(TxtGameplayNpcDmgTakenMult, 1.0);
+                cfg.ThrallDamageToPlayersMultiplier = ParseDoubleUi(TxtGameplayThrallDmgPlayersMult, 1.0);
+                cfg.ThrallDamageToNPCsMultiplier = ParseDoubleUi(TxtGameplayThrallDmgNpcsMult, 0.5);
+            }
 
             cfg.Mods = LstMods.Items.Cast<object>()
                 .Select(item => item is ModDisplayItem m ? m.Id : item?.ToString()?.Trim() ?? "")
@@ -1534,6 +1754,198 @@ namespace ConanServerManager
             if (dlg.ShowDialog() == true)
             {
                 TxtCustomBackupDir.Text = dlg.FolderName;
+            }
+        }
+
+        private void BtnBrowseServerDir_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new Microsoft.Win32.OpenFolderDialog
+            {
+                Title = "Select Custom Conan Exiles Server Installation Directory"
+            };
+            if (TxtCustomServerDir != null && !string.IsNullOrWhiteSpace(TxtCustomServerDir.Text) && System.IO.Directory.Exists(TxtCustomServerDir.Text))
+            {
+                dlg.InitialDirectory = TxtCustomServerDir.Text;
+            }
+            else if (System.IO.Directory.Exists(_engine.ServerRootDir))
+            {
+                dlg.InitialDirectory = _engine.ServerRootDir;
+            }
+            if (dlg.ShowDialog() == true && TxtCustomServerDir != null)
+            {
+                TxtCustomServerDir.Text = dlg.FolderName;
+            }
+        }
+
+        private void CmbStartupMap_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_isInitialized || CmbStartupMap == null || TxtStartupMapPath == null) return;
+            if (CmbStartupMap.SelectedItem is ComboBoxItem item && item.Tag is string tag)
+            {
+                if (tag == "CUSTOM")
+                {
+                    TxtStartupMapPath.Visibility = Visibility.Visible;
+                    if (string.IsNullOrWhiteSpace(TxtStartupMapPath.Text))
+                        TxtStartupMapPath.Text = "/Game/Maps/ConanSandbox/ConanSandbox";
+                }
+                else
+                {
+                    TxtStartupMapPath.Visibility = Visibility.Collapsed;
+                    TxtStartupMapPath.Text = tag.Contains("|") ? tag.Split('|')[1] : tag;
+                }
+            }
+        }
+
+        private void CmbCombatModePreset_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_isInitialized || _suppressCombatPresetEvent || CmbCombatModePreset == null) return;
+            if (CmbCombatModePreset.SelectedItem is ComboBoxItem item && item.Tag is string tag)
+            {
+                if (tag == "PVE")
+                {
+                    if (ChkGameplayPvpEnabled != null) ChkGameplayPvpEnabled.IsChecked = false;
+                    if (ChkGameplayCanDamageStructures != null) ChkGameplayCanDamageStructures.IsChecked = false;
+                    if (ChkGameplayDynamicBuildingDamage != null) ChkGameplayDynamicBuildingDamage.IsChecked = false;
+                }
+                else if (tag == "PVEC")
+                {
+                    if (ChkGameplayPvpEnabled != null) ChkGameplayPvpEnabled.IsChecked = true;
+                    if (ChkGameplayCanDamageStructures != null) ChkGameplayCanDamageStructures.IsChecked = false;
+                    if (ChkGameplayDynamicBuildingDamage != null) ChkGameplayDynamicBuildingDamage.IsChecked = false;
+                }
+                else if (tag == "PVP")
+                {
+                    if (ChkGameplayPvpEnabled != null) ChkGameplayPvpEnabled.IsChecked = true;
+                    if (ChkGameplayCanDamageStructures != null) ChkGameplayCanDamageStructures.IsChecked = true;
+                }
+            }
+        }
+
+        private async void BtnReloadGameplayIni_Click(object sender, RoutedEventArgs e)
+        {
+            if (IsRemoteMode)
+            {
+                string baseUrl = GetRemoteBaseUrl();
+                await FetchAndPopulateRemoteConfigAsync(baseUrl);
+                MessageBox.Show("Reloaded gameplay settings from remote server.", "Gameplay Settings Reloaded", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            _engine.ImportGameplaySettingsFromIni();
+            PopulateGameplayUiFromConfig(_engine.Config);
+            LoadIniFilesToTabs();
+            MessageBox.Show("Reloaded gameplay settings directly from ServerSettings.ini on disk.", "Gameplay Settings Reloaded", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void BtnResetGameplayDefaults_Click(object sender, RoutedEventArgs e)
+        {
+            var confirm = MessageBox.Show(
+                "Reset all Gameplay Settings multipliers and rules to official Funcom Vanilla defaults (1.0x)?\n\n(Click 'Save & Apply Gameplay Settings' afterwards to write them to ServerSettings.ini.)",
+                "Reset Gameplay Defaults",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+            if (confirm != MessageBoxResult.Yes) return;
+
+            var vanillaDefaults = new ManagerConfig();
+            PopulateGameplayUiFromConfig(vanillaDefaults);
+        }
+
+        private async void BtnRestoreBackup_Click(object sender, RoutedEventArgs e)
+        {
+            if (IsRemoteMode)
+            {
+                try
+                {
+                    string baseUrl = GetRemoteBaseUrl();
+                    string json = await _httpClient.GetStringAsync($"{baseUrl}/api/backups");
+                    using var doc = JsonDocument.Parse(json);
+                    if (!doc.RootElement.TryGetProperty("backups", out var arr) || arr.ValueKind != JsonValueKind.Array || arr.GetArrayLength() == 0)
+                    {
+                        MessageBox.Show("No database backups (.db or .zip) were found on the remote server.", "No Backups Found", MessageBoxButton.OK, MessageBoxImage.Information);
+                        return;
+                    }
+
+                    var first = arr[0];
+                    string latestName = first.TryGetProperty("fileName", out var fn) ? fn.GetString() ?? "" : "";
+                    double latestSize = first.TryGetProperty("sizeMB", out var sz) ? sz.GetDouble() : 0;
+                    string latestTime = first.TryGetProperty("timestamp", out var ts) ? ts.GetString() ?? "" : "";
+
+                    var confirmRemote = MessageBox.Show(
+                        $"Restore latest remote database backup?\n\nFile: {latestName} ({latestSize} MB)\nCreated: {latestTime}\n\nThe remote server will automatically stop, create a safety backup of the current database, restore this backup, and restart.",
+                        "Confirm Remote Database Restore",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning);
+                    if (confirmRemote != MessageBoxResult.Yes) return;
+
+                    using var content = new StringContent(JsonSerializer.Serialize(new { fileName = latestName }), Encoding.UTF8, "application/json");
+                    var res = await _httpClient.PostAsync($"{baseUrl}/api/control/restore-backup", content);
+                    string body = await res.Content.ReadAsStringAsync();
+                    MessageBox.Show($"Remote Restore Response:\n{body}", "Restore Database", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Remote Restore Error:\n{ex.Message}", "Restore Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                return;
+            }
+
+            var openDlg = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "Select Database Backup (.db or .zip) to Restore",
+                Filter = "Conan Database Backups (*.db;*.zip)|*.db;*.zip|All Files (*.*)|*.*",
+                InitialDirectory = System.IO.Directory.Exists(_engine.BackupDir) ? _engine.BackupDir : ServerEngine.AppWorkingDir
+            };
+
+            if (openDlg.ShowDialog() == true)
+            {
+                var confirm = MessageBox.Show(
+                    $"Are you sure you want to restore '{System.IO.Path.GetFileName(openDlg.FileName)}'?\n\n• If the server is running, it will be stopped gracefully first.\n• A safety backup of your current database will be saved automatically.\n• The selected backup will replace the active world database.",
+                    "Confirm Database Restoration",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+                if (confirm != MessageBoxResult.Yes) return;
+
+                var result = await _engine.RestoreDatabaseBackupAsync(openDlg.FileName);
+                MessageBox.Show(result.Message, result.Success ? "Database Restored" : "Restore Failed", MessageBoxButton.OK, result.Success ? MessageBoxImage.Information : MessageBoxImage.Error);
+            }
+        }
+
+        private async void BtnConfigureFirewall_Click(object sender, RoutedEventArgs e)
+        {
+            if (IsRemoteMode)
+            {
+                await SendRemoteActionAsync("firewall");
+                return;
+            }
+
+            SaveConfigFromUi();
+            var confirm = MessageBox.Show(
+                $"Configure Windows Firewall inbound allow rules for your configured ports?\n\n• Game Port (UDP): {_engine.Config.GamePort}\n• Peer Port (UDP): {_engine.Config.RawUdpPort}\n• Query Port (UDP): {_engine.Config.QueryPort}\n• RCON Port (TCP): {_engine.Config.RconPort}\n• Web API Port (TCP): {_engine.Config.WebPagePort}\n\nWindows will prompt for Administrator permission (UAC).",
+                "Configure Windows Firewall",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+            if (confirm != MessageBoxResult.Yes) return;
+
+            var res = _engine.ConfigureWindowsFirewall();
+            MessageBox.Show(res.Message, res.Success ? "Firewall Rules Configured" : "Firewall Configuration Note", MessageBoxButton.OK, res.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        }
+
+        private void BtnQuickWorkshopSearch_Click(object sender, RoutedEventArgs e)
+        {
+            string query = TxtQuickWorkshopSearch?.Text?.Trim() ?? "";
+            if (!string.IsNullOrWhiteSpace(query) && TxtBrowserSearchQuery != null)
+            {
+                TxtBrowserSearchQuery.Text = query;
+            }
+            OpenFullPageBrowser(string.IsNullOrWhiteSpace(query) ? null : query);
+        }
+
+        private void TxtQuickWorkshopSearch_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                BtnQuickWorkshopSearch_Click(sender, e);
+                e.Handled = true;
             }
         }
 

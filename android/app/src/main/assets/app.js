@@ -7,7 +7,7 @@ let savedServers = [];
 let latestApkUrl = "";
 let lastKnownConfig = null;
 let lastCrashCulpritModId = "";
-let APP_VERSION = "1.3.7";
+let APP_VERSION = "1.3.8";
 if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
 }
@@ -913,6 +913,7 @@ function applyConfigToForm(cfg) {
     const be = cfg.battlEyeEnabled ?? cfg.enableBattlEye ?? cfg.EnableBattlEye;
     const vac = cfg.vacEnabled ?? cfg.enableVAC ?? cfg.EnableVAC;
     const rawReg = cfg.region ?? cfg.serverRegion ?? cfg.Region;
+    const rawMap = cfg.startupMap ?? cfg.StartupMap;
 
     const elName = document.getElementById("cfgServerName");
     const elPass = document.getElementById("cfgServerPassword");
@@ -920,6 +921,7 @@ function applyConfigToForm(cfg) {
     const elMaxPl = document.getElementById("cfgMaxPlayers");
     const elTick = document.getElementById("cfgMaxTickRate");
     const elReg = document.getElementById("cfgRegion");
+    const elMap = document.getElementById("cfgStartupMap");
     const elBe = document.getElementById("cfgBattlEye");
     const elVac = document.getElementById("cfgVac");
 
@@ -949,6 +951,50 @@ function applyConfigToForm(cfg) {
             elReg.value = matchVal;
         }
     }
+
+    if (rawMap !== undefined && elMap) {
+        const mapStr = String(rawMap).trim();
+        for (let i = 0; i < elMap.options.length; i++) {
+            const opt = elMap.options[i];
+            if (opt.value === mapStr || opt.value.split("|")[1] === mapStr.split("|")[1]) {
+                elMap.value = opt.value;
+                break;
+            }
+        }
+    }
+
+    const setVal = (id, val) => {
+        const el = document.getElementById(id);
+        if (el && val !== undefined && val !== null) el.value = val;
+    };
+    const setChk = (id, val) => {
+        const el = document.getElementById(id);
+        if (el && val !== undefined && val !== null) el.checked = !!val;
+    };
+
+    setVal("cfgMaxNudity", cfg.maxNudity ?? cfg.MaxNudity);
+    setVal("cfgClanMaxSize", cfg.clanMaxSize ?? cfg.ClanMaxSize);
+    setChk("cfgPVPEnabled", cfg.pVPEnabled ?? cfg.PVPEnabled);
+    setChk("cfgCanDamageStructures", cfg.canDamagePlayerOwnedStructures ?? cfg.CanDamagePlayerOwnedStructures);
+    setChk("cfgDropEquipmentOnDeath", cfg.dropEquipmentOnDeath ?? cfg.DropEquipmentOnDeath);
+    setChk("cfgDropBackpackOnDeath", cfg.dropBackpackOnDeath ?? cfg.DropBackpackOnDeath);
+    setChk("cfgEverybodyCanLootCorpse", cfg.everybodyCanLootCorpse ?? cfg.EverybodyCanLootCorpse);
+    setChk("cfgContainersIgnoreOwnership", cfg.containersIgnoreOwnership ?? cfg.ContainersIgnoreOwnership);
+    setChk("cfgDisableBuildingAbandonment", cfg.disableBuildingAbandonment ?? cfg.DisableBuildingAbandonment);
+    setChk("cfgEnablePurge", cfg.enablePurge ?? cfg.EnablePurge);
+    setChk("cfgEnableSandStorm", cfg.enableSandStorm ?? cfg.EnableSandStorm);
+    setChk("cfgAvatarsDisabled", cfg.avatarsDisabled ?? cfg.AvatarsDisabled);
+
+    setVal("cfgPlayerXPRateMultiplier", cfg.playerXPRateMultiplier ?? cfg.PlayerXPRateMultiplier);
+    setVal("cfgHarvestAmountMultiplier", cfg.harvestAmountMultiplier ?? cfg.HarvestAmountMultiplier);
+    setVal("cfgItemConvertionMultiplier", cfg.itemConvertionMultiplier ?? cfg.ItemConvertionMultiplier);
+    setVal("cfgThrallConversionMultiplier", cfg.thrallConversionMultiplier ?? cfg.ThrallConversionMultiplier);
+    setVal("cfgResourceRespawnSpeedMultiplier", cfg.resourceRespawnSpeedMultiplier ?? cfg.ResourceRespawnSpeedMultiplier);
+    setVal("cfgPlayerStaminaCostMultiplier", cfg.playerStaminaCostMultiplier ?? cfg.PlayerStaminaCostMultiplier);
+    setVal("cfgDurabilityMultiplier", cfg.durabilityMultiplier ?? cfg.DurabilityMultiplier);
+    setVal("cfgSpoilRateScale", cfg.spoilRateScale ?? cfg.SpoilRateScale);
+    setVal("cfgDayCycleSpeedScale", cfg.dayCycleSpeedScale ?? cfg.DayCycleSpeedScale);
+    setVal("cfgNightTimeSpeedScale", cfg.nightTimeSpeedScale ?? cfg.NightTimeSpeedScale);
 
     if (srvName) {
         const dashName = document.getElementById("dashServerName");
@@ -1009,7 +1055,7 @@ async function fetchServerConfig(showFeedback = false) {
 async function saveServerConfig() {
     vibrate(40);
     const btn = document.getElementById("btnSaveConfig");
-    const originalText = btn ? btn.innerText : "💾 Save Configuration to Server";
+    const originalText = btn ? btn.innerText : "💾 Save Configuration & Gameplay Settings";
     if (btn) {
         btn.disabled = true;
         btn.innerText = "⏳ Saving to Server...";
@@ -1019,6 +1065,18 @@ async function saveServerConfig() {
         showToast("Saving settings to server...");
         const regSelect = document.getElementById("cfgRegion");
         const regText = regSelect ? (regSelect.options[regSelect.selectedIndex]?.text || regSelect.value) : "0 - Europe";
+        const mapSelect = document.getElementById("cfgStartupMap");
+
+        const getFloat = (id, fallback) => {
+            const el = document.getElementById(id);
+            if (!el) return fallback;
+            const v = parseFloat(el.value);
+            return isNaN(v) ? fallback : v;
+        };
+        const getChk = (id) => {
+            const el = document.getElementById(id);
+            return el ? !!el.checked : false;
+        };
 
         const payload = {
             serverName: document.getElementById("cfgServerName").value.trim(),
@@ -1028,10 +1086,33 @@ async function saveServerConfig() {
             maxTickRate: parseInt(document.getElementById("cfgMaxTickRate").value) || 30,
             region: regText,
             serverRegion: regSelect ? regSelect.value : "0",
+            startupMap: mapSelect ? mapSelect.value : "ConanSandbox (Exiled Lands)|/Game/Maps/ConanSandbox/ConanSandbox",
             enableBattlEye: document.getElementById("cfgBattlEye").checked,
             battlEyeEnabled: document.getElementById("cfgBattlEye").checked,
             enableVAC: document.getElementById("cfgVac").checked,
-            vacEnabled: document.getElementById("cfgVac").checked
+            vacEnabled: document.getElementById("cfgVac").checked,
+            maxNudity: parseInt(document.getElementById("cfgMaxNudity")?.value ?? "2"),
+            clanMaxSize: parseInt(document.getElementById("cfgClanMaxSize")?.value ?? "10") || 10,
+            pVPEnabled: getChk("cfgPVPEnabled"),
+            canDamagePlayerOwnedStructures: getChk("cfgCanDamageStructures"),
+            dropEquipmentOnDeath: getChk("cfgDropEquipmentOnDeath"),
+            dropBackpackOnDeath: getChk("cfgDropBackpackOnDeath"),
+            everybodyCanLootCorpse: getChk("cfgEverybodyCanLootCorpse"),
+            containersIgnoreOwnership: getChk("cfgContainersIgnoreOwnership"),
+            disableBuildingAbandonment: getChk("cfgDisableBuildingAbandonment"),
+            enablePurge: getChk("cfgEnablePurge"),
+            enableSandStorm: getChk("cfgEnableSandStorm"),
+            avatarsDisabled: getChk("cfgAvatarsDisabled"),
+            playerXPRateMultiplier: getFloat("cfgPlayerXPRateMultiplier", 1.0),
+            harvestAmountMultiplier: getFloat("cfgHarvestAmountMultiplier", 1.0),
+            itemConvertionMultiplier: getFloat("cfgItemConvertionMultiplier", 1.0),
+            thrallConversionMultiplier: getFloat("cfgThrallConversionMultiplier", 1.0),
+            resourceRespawnSpeedMultiplier: getFloat("cfgResourceRespawnSpeedMultiplier", 1.0),
+            playerStaminaCostMultiplier: getFloat("cfgPlayerStaminaCostMultiplier", 1.0),
+            durabilityMultiplier: getFloat("cfgDurabilityMultiplier", 1.0),
+            spoilRateScale: getFloat("cfgSpoilRateScale", 1.0),
+            dayCycleSpeedScale: getFloat("cfgDayCycleSpeedScale", 1.0),
+            nightTimeSpeedScale: getFloat("cfgNightTimeSpeedScale", 1.0)
         };
 
         const res = await fetch(`${currentServerUrl}/api/config?_t=${Date.now()}`, {

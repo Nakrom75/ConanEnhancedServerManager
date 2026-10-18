@@ -120,9 +120,9 @@
                     <StackPanel Orientation="Vertical">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Image Source="app.png" Width="22" Height="22" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.3.7" Style="{StaticResource HeaderTitle}"/>
+                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.3.8" Style="{StaticResource HeaderTitle}"/>
                             <Border CornerRadius="8" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" Margin="10,0,0,0" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="🚀 v1.3.7" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="🚀 v1.3.8" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="TxtServerPathInfo" Text="Mode: Local Server Host | Embedded Web Console: http://0.0.0.0:8088" Foreground="#94A3B8" FontSize="11"/>
@@ -274,15 +274,35 @@
                             </StackPanel>
                         </Grid>
 
-                        <TextBlock Text="Server Region" Style="{StaticResource FormLabel}" Margin="0,2,0,0"/>
-                        <ComboBox x:Name="CmbRegion" Style="{StaticResource FormCombo}">
-                            <ComboBoxItem Content="0 - Europe" IsSelected="True"/>
-                            <ComboBoxItem Content="1 - America (East)"/>
-                            <ComboBoxItem Content="2 - America (West)"/>
-                            <ComboBoxItem Content="3 - Asia"/>
-                            <ComboBoxItem Content="4 - Oceania"/>
-                            <ComboBoxItem Content="5 - South America"/>
-                        </ComboBox>
+                        <Grid Margin="0,2,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="4"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Server Region" Style="{StaticResource FormLabel}"/>
+                                <ComboBox x:Name="CmbRegion" Style="{StaticResource FormCombo}">
+                                    <ComboBoxItem Content="0 - Europe" IsSelected="True"/>
+                                    <ComboBoxItem Content="1 - America (East)"/>
+                                    <ComboBoxItem Content="2 - America (West)"/>
+                                    <ComboBoxItem Content="3 - Asia"/>
+                                    <ComboBoxItem Content="4 - Oceania"/>
+                                    <ComboBoxItem Content="5 - South America"/>
+                                </ComboBox>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Startup Map" Style="{StaticResource FormLabel}"/>
+                                <ComboBox x:Name="CmbStartupMap" Style="{StaticResource FormCombo}" SelectionChanged="CmbStartupMap_SelectionChanged">
+                                    <ComboBoxItem Content="ConanSandbox (Exiled Lands)" Tag="ConanSandbox (Exiled Lands)|/Game/Maps/ConanSandbox/ConanSandbox" IsSelected="True"/>
+                                    <ComboBoxItem Content="Isle of Siptah (DLC_EXT)" Tag="Isle of Siptah|/Game/DLC_EXT/DLC_Siptah/Maps/DLC_Isle_of_Siptah"/>
+                                    <ComboBoxItem Content="Savage Wilds (Mod Map)" Tag="Savage Wilds|/Game/Mods/Savage_Wilds/Savage_Wilds"/>
+                                    <ComboBoxItem Content="Custom Map Path..." Tag="CUSTOM"/>
+                                </ComboBox>
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBox x:Name="TxtStartupMapPath" Style="{StaticResource FormInput}" Margin="0,2,0,0" Visibility="Collapsed" ToolTip="Custom Unreal Engine map asset path (e.g. /Game/Mods/MyMap/MyMap)"/>
                     </StackPanel>
                 </Border>
             </StackPanel>
@@ -492,6 +512,16 @@
                                 <CheckBox x:Name="ChkUseAllCores" Content="-useallavailablecores" Style="{StaticResource FormCheck}" IsChecked="True"/>
                             </StackPanel>
                         </Grid>
+
+                        <TextBlock Text="Custom Server Directory" Style="{StaticResource FormLabel}" Margin="0,2,0,0"/>
+                        <Grid Margin="0,1,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="TxtCustomServerDir" Style="{StaticResource FormInput}" ToolTip="Leave empty for default (&lt;app&gt;\ConanServer). Specify a custom Conan Exiles Dedicated Server installation folder."/>
+                            <Button x:Name="BtnBrowseServerDir" Grid.Column="1" Content="📁" Width="26" Margin="4,0,0,0" Style="{StaticResource BtnSecondary}" Click="BtnBrowseServerDir_Click" ToolTip="Browse Server Installation Directory"/>
+                        </Grid>
                     </StackPanel>
                 </Border>
 
@@ -573,8 +603,10 @@
                     <Button x:Name="BtnRestartNoUpdate" Content="⚡ Restart (No Update)" Style="{StaticResource BtnSecondary}" Click="BtnRestartNoUpdate_Click" Margin="0,0,6,2"/>
                     <Button x:Name="BtnStop" Content="🛑 Stop Server" Style="{StaticResource BtnDanger}" Click="BtnStop_Click" Margin="0,0,6,2"/>
                     <Button x:Name="BtnBackup" Content="💾 Hot SQLite Backup" Style="{StaticResource BtnSecondary}" Click="BtnBackup_Click" Margin="0,0,6,2"/>
+                    <Button x:Name="BtnRestoreBackup" Content="📂 Restore DB" Style="{StaticResource BtnSecondary}" Click="BtnRestoreBackup_Click" Margin="0,0,6,2" ToolTip="Restore a game_0.db or .zip database backup from the Backups folder"/>
                     <Button x:Name="BtnSaveConfig" Content="💾 Save Configuration" Style="{StaticResource BtnSecondary}" Click="BtnSaveConfig_Click" Margin="0,0,6,2"/>
                     <Button x:Name="BtnTestPorts" Content="🔌 Test Ports" Style="{StaticResource BtnSecondary}" Click="BtnTestPorts_Click" Margin="0,0,6,2"/>
+                    <Button x:Name="BtnConfigureFirewall" Content="🛡️ Configure Firewall" Style="{StaticResource BtnSecondary}" Click="BtnConfigureFirewall_Click" Margin="0,0,6,2" ToolTip="Open Windows Firewall rules for Game, Peer, Query, RCON, and Web API ports"/>
                     <Button x:Name="BtnCheckAppUpdate" Content="🔄 Check App Updates" Style="{StaticResource BtnSecondary}" Click="BtnCheckAppUpdate_Click" Margin="0,0,6,2"/>
                     <Button x:Name="BtnOpenWorkshopBrowser" Content="🌐 Steam Workshop Browser" Style="{StaticResource BtnSuccess}" Click="BtnOpenWorkshopBrowser_Click" Margin="0,0,0,2" ToolTip="Open full-page Steam Workshop browser to search and install mods"/>
                 </WrapPanel>
@@ -741,7 +773,7 @@
                             <Grid Grid.Column="0">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/> <!-- Mod Updates Banner -->
-                                    <RowDefinition Height="Auto"/> <!-- Active Mods Header -->
+                                    <RowDefinition Height="Auto"/> <!-- Active Mods Header + Quick Workshop Search -->
                                     <RowDefinition Height="*"/>    <!-- Active Mods ListBox -->
                                     <RowDefinition Height="6"/>    <!-- Spacer -->
                                     <RowDefinition Height="Auto"/> <!-- Inactive Mods Section -->
@@ -762,7 +794,7 @@
                                     </Grid>
                                 </Border>
 
-                                <!-- Active Mods Header -->
+                                <!-- Active Mods Header & Quick Workshop Search -->
                                 <Grid Grid.Row="1" Margin="0,0,0,4">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -771,6 +803,10 @@
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                         <TextBlock Text="▶ Active Mods (Loaded by Server)" FontWeight="Bold" FontSize="11" Foreground="#38BDF8"/>
                                         <TextBlock x:Name="TxtActiveModsCount" Text="(0 mods)" Foreground="#94A3B8" FontSize="10" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBox x:Name="TxtQuickWorkshopSearch" Style="{StaticResource FormInput}" Width="180" Margin="0,0,4,0" KeyDown="TxtQuickWorkshopSearch_KeyDown" ToolTip="Quick search Steam Workshop mods by name or keyword"/>
+                                        <Button x:Name="BtnQuickWorkshopSearch" Content="🔍 Search Workshop" Style="{StaticResource BtnSecondary}" Padding="8,2" FontSize="10" Click="BtnQuickWorkshopSearch_Click" ToolTip="Search Steam Workshop in built-in browser"/>
                                     </StackPanel>
                                 </Grid>
 
@@ -905,7 +941,406 @@
                         </Grid>
                     </TabItem>
 
-                    <!-- Tab 5: SteamCMD Log -->
+                    <!-- Tab 5: Visual Gameplay Settings (ServerSettings.ini Configurator) -->
+                    <TabItem Header="⚙️ Gameplay Settings">
+                        <Grid Margin="8" VerticalAlignment="Stretch">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- Top Toolbar -->
+                            <Border Grid.Row="0" Background="#0F172A" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="0,0,0,8">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="⚙️ Conan Exiles Gameplay &amp; ServerSettings.ini Configurator" FontWeight="Bold" FontSize="12" Foreground="#38BDF8"/>
+                                        <TextBlock Text="Configure server rules, combat mode, harvest/XP multipliers, Purge, and building decay directly without logging into the game." Foreground="#94A3B8" FontSize="10"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button x:Name="BtnReloadGameplayIni" Content="🔄 Reload from INI" Style="{StaticResource BtnSecondary}" Click="BtnReloadGameplayIni_Click" Margin="0,0,6,0" ToolTip="Read current values from ServerSettings.ini on disk"/>
+                                        <Button x:Name="BtnResetGameplayDefaults" Content="↺ Reset to Vanilla (1.0x)" Style="{StaticResource BtnSecondary}" Click="BtnResetGameplayDefaults_Click" Margin="0,0,6,0" ToolTip="Reset multipliers and rules to official Funcom defaults"/>
+                                        <Button x:Name="BtnSaveGameplaySettings" Content="💾 Save &amp; Apply Gameplay Settings" Style="{StaticResource BtnSuccess}" Click="BtnSaveConfig_Click" ToolTip="Save configuration and write all settings to ServerSettings.ini"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- Scrollable 3-Column Settings Grid -->
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="8"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="8"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Column 0: Combat Mode, General Rules, Death & Ownership -->
+                                    <StackPanel Grid.Column="0">
+                                        <Border Style="{StaticResource GlassPanel}" Padding="8">
+                                            <StackPanel>
+                                                <TextBlock Text="⚔️ Combat Mode &amp; General Rules" Style="{StaticResource SectionHeading}"/>
+                                                <TextBlock Text="Server Combat Mode Preset" Style="{StaticResource FormLabel}"/>
+                                                <ComboBox x:Name="CmbCombatModePreset" Style="{StaticResource FormCombo}" SelectionChanged="CmbCombatModePreset_SelectionChanged" Margin="0,1,0,4">
+                                                    <ComboBoxItem Content="PvE (Players cannot damage players or buildings)" Tag="PVE" IsSelected="True"/>
+                                                    <ComboBoxItem Content="PvE-Conflict (Player PvP enabled, buildings indestructible)" Tag="PVEC"/>
+                                                    <ComboBoxItem Content="PvP (Full PvP &amp; building raid damage enabled)" Tag="PVP"/>
+                                                    <ComboBoxItem Content="Custom Combat Rules" Tag="CUSTOM"/>
+                                                </ComboBox>
+
+                                                <WrapPanel Margin="0,2,0,4">
+                                                    <CheckBox x:Name="ChkGameplayPvpEnabled" Content="PVPEnabled (Player Combat)" Style="{StaticResource FormCheck}"/>
+                                                    <CheckBox x:Name="ChkGameplayCanDamageStructures" Content="Damage Player Structures" Style="{StaticResource FormCheck}"/>
+                                                    <CheckBox x:Name="ChkGameplayDynamicBuildingDamage" Content="Dynamic Building Damage (Raid Window)" Style="{StaticResource FormCheck}"/>
+                                                    <CheckBox x:Name="ChkGameplayEnableSandStorm" Content="Enable Sandstorm" Style="{StaticResource FormCheck}" IsChecked="True"/>
+                                                </WrapPanel>
+
+                                                <Grid Margin="0,2,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="Max Nudity" Style="{StaticResource FormLabel}"/>
+                                                        <ComboBox x:Name="CmbGameplayMaxNudity" Style="{StaticResource FormCombo}">
+                                                            <ComboBoxItem Content="0 - None"/>
+                                                            <ComboBoxItem Content="1 - Partial"/>
+                                                            <ComboBoxItem Content="2 - Full" IsSelected="True"/>
+                                                        </ComboBox>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="Max Clan Size" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayClanMaxSize" Style="{StaticResource FormInput}" Text="10"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="4">
+                                                        <TextBlock Text="Max Ping (0=Off)" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayMaxAllowedPing" Style="{StaticResource FormInput}" Text="0"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border Style="{StaticResource GlassPanel}" Padding="8" Margin="2,4,2,2">
+                                            <StackPanel>
+                                                <TextBlock Text="💀 Death, Corpse &amp; Container Ownership" Style="{StaticResource SectionHeading}"/>
+                                                <CheckBox x:Name="ChkGameplayDropEquipment" Content="Drop Equipment on Death" Style="{StaticResource FormCheck}" IsChecked="True"/>
+                                                <CheckBox x:Name="ChkGameplayDropShortcutBar" Content="Drop Shortcut Bar on Death" Style="{StaticResource FormCheck}" IsChecked="True"/>
+                                                <CheckBox x:Name="ChkGameplayDropBackpack" Content="Drop Backpack Inventory on Death" Style="{StaticResource FormCheck}" IsChecked="True"/>
+                                                <CheckBox x:Name="ChkGameplayEverybodyLootCorpse" Content="Everybody Can Loot Corpse" Style="{StaticResource FormCheck}" IsChecked="True"/>
+                                                <CheckBox x:Name="ChkGameplayLogoutCharsRemain" Content="Logged-Out Bodies Remain in World" Style="{StaticResource FormCheck}" IsChecked="True"/>
+                                                <CheckBox x:Name="ChkGameplayContainersIgnoreOwnership" Content="Containers Ignore Ownership (Unlocked)" Style="{StaticResource FormCheck}" IsChecked="True"/>
+                                                <CheckBox x:Name="ChkGameplayNoOwnership" Content="No Ownership (All Structures Shared)" Style="{StaticResource FormCheck}"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border Style="{StaticResource GlassPanel}" Padding="8" Margin="2,4,2,2">
+                                            <StackPanel>
+                                                <TextBlock Text="🏰 Building Decay, Purge &amp; Avatars" Style="{StaticResource SectionHeading}"/>
+                                                <WrapPanel Margin="0,1,0,4">
+                                                    <CheckBox x:Name="ChkGameplayDisableAbandonment" Content="Disable Building Decay / Abandonment" Style="{StaticResource FormCheck}" IsChecked="True"/>
+                                                    <CheckBox x:Name="ChkGameplayBuildAnywhere" Content="Allow Building Anywhere" Style="{StaticResource FormCheck}"/>
+                                                    <CheckBox x:Name="ChkGameplayEnablePurge" Content="Enable The Purge" Style="{StaticResource FormCheck}" IsChecked="True"/>
+                                                    <CheckBox x:Name="ChkGameplayAvatarsDisabled" Content="Disable God Avatars" Style="{StaticResource FormCheck}"/>
+                                                </WrapPanel>
+
+                                                <Grid Margin="0,2,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="Decay Time Mult" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayBuildingDecayMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="Land Claim Radius" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayLandClaimMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="4">
+                                                        <TextBlock Text="Purge Level (0-6)" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayPurgeLevel" Style="{StaticResource FormInput}" Text="6"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <!-- Column 1: Progression (XP) & Harvesting / Crafting / Thralls -->
+                                    <StackPanel Grid.Column="2">
+                                        <Border Style="{StaticResource GlassPanel}" Padding="8">
+                                            <StackPanel>
+                                                <TextBlock Text="📈 Experience (XP) Multipliers" Style="{StaticResource SectionHeading}"/>
+                                                <Grid Margin="0,2,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="Overall XP Rate Multiplier" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayXpRateMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="XP Time (Passive) Multiplier" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayXpTimeMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <Grid Margin="0,4,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="XP Kill Mult" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayXpKillMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="XP Harvest Mult" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayXpHarvestMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="4">
+                                                        <TextBlock Text="XP Craft Mult" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayXpCraftMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border Style="{StaticResource GlassPanel}" Padding="8" Margin="2,4,2,2">
+                                            <StackPanel>
+                                                <TextBlock Text="⛏️ Harvesting, Crafting &amp; Thrall Multipliers" Style="{StaticResource SectionHeading}"/>
+                                                <Grid Margin="0,2,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="Harvest Amount Mult" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayHarvestMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="Resource Respawn Mult" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayResourceRespawnMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="4">
+                                                        <TextBlock Text="Encumbrance Mult" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayEncumbranceMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <Grid Margin="0,4,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="Crafting Time Mult" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayItemConvertMult" Style="{StaticResource FormInput}" Text="1.0" ToolTip="Lower = faster crafting (e.g. 0.5 is 2x faster)"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="Thrall Taming Time Mult" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayThrallConvertMult" Style="{StaticResource FormInput}" Text="1.0" ToolTip="Lower = faster thrall breaking on Wheel of Pain (e.g. 0.5)"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="4">
+                                                        <TextBlock Text="Pet Taming Time Mult" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayAnimalPenMult" Style="{StaticResource FormInput}" Text="1.0" ToolTip="Lower = faster pet taming in Animal Pens"/>
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <Grid Margin="0,4,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="Food Spoil Rate Scale" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplaySpoilRateScale" Style="{StaticResource FormInput}" Text="1.0" ToolTip="Lower = food spoils slower (0.5 = half speed)"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="Fuel Burn Time Mult" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayFuelBurnMult" Style="{StaticResource FormInput}" Text="1.0" ToolTip="Higher = fuel lasts longer (2.0 = lasts twice as long)"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="4">
+                                                        <TextBlock Text="Crafting Cost Mult" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayCraftingCostMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border Style="{StaticResource GlassPanel}" Padding="8" Margin="2,4,2,2">
+                                            <StackPanel>
+                                                <TextBlock Text="☀️ Day / Night Cycle Speeds" Style="{StaticResource SectionHeading}"/>
+                                                <Grid Margin="0,2,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="Overall Cycle" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayDayCycleScale" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="Daytime Speed" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayDayTimeScale" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="4">
+                                                        <TextBlock Text="Night Speed" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayNightTimeScale" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="6">
+                                                        <TextBlock Text="Dawn/Dusk" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayDawnDuskScale" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <!-- Column 2: Survival, Stamina, Durability & Combat Damage Multipliers -->
+                                    <StackPanel Grid.Column="4">
+                                        <Border Style="{StaticResource GlassPanel}" Padding="8">
+                                            <StackPanel>
+                                                <TextBlock Text="🍗 Survival, Stamina &amp; Durability Multipliers" Style="{StaticResource SectionHeading}"/>
+                                                <Grid Margin="0,2,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="Stamina Cost Mult" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayStaminaCostMult" Style="{StaticResource FormInput}" Text="1.0" ToolTip="Lower = uses less stamina (e.g. 0.5)"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="Item Durability Loss" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayDurabilityMult" Style="{StaticResource FormInput}" Text="1.0" ToolTip="Lower = weapons/tools last longer (0.0 = indestructible)"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="4">
+                                                        <TextBlock Text="Shield Durability Loss" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayShieldDurabilityMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <Grid Margin="0,4,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="Active Thirst" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayActiveThirstMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="Idle Thirst" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayIdleThirstMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="4">
+                                                        <TextBlock Text="Active Hunger" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayActiveHungerMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="6">
+                                                        <TextBlock Text="Idle Hunger" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayIdleHungerMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border Style="{StaticResource GlassPanel}" Padding="8" Margin="2,4,2,2">
+                                            <StackPanel>
+                                                <TextBlock Text="🗡️ Player, NPC &amp; Thrall Damage Multipliers" Style="{StaticResource SectionHeading}"/>
+                                                <Grid Margin="0,2,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="Player Damage Dealt Mult" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayPlayerDmgMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="Player Damage Taken Mult" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayPlayerDmgTakenMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <Grid Margin="0,4,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="NPC / Monster Damage Dealt" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayNpcDmgMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="NPC / Monster Damage Taken" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayNpcDmgTakenMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <Grid Margin="0,4,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="Thrall Damage to Players" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayThrallDmgPlayersMult" Style="{StaticResource FormInput}" Text="1.0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="Thrall Damage to NPCs" Style="{StaticResource FormLabel}"/>
+                                                        <TextBox x:Name="TxtGameplayThrallDmgNpcsMult" Style="{StaticResource FormInput}" Text="0.5"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </Grid>
+                            </ScrollViewer>
+                        </Grid>
+                    </TabItem>
+
+                    <!-- Tab 6: SteamCMD Log -->
                     <TabItem Header="SteamCMD Log">
                         <Grid VerticalAlignment="Stretch">
                             <TextBox x:Name="TxtSteamCmdLog" Background="#020617" Foreground="#FBBF24" 

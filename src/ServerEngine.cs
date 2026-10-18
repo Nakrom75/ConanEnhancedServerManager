@@ -128,6 +128,75 @@ namespace ConanServerManager
         public List<string> DisabledMods { get; set; } = new List<string>();
         public Dictionary<string, long> ModInstalledTimestamps { get; set; } = new Dictionary<string, long>();
         public bool AutoCheckModUpdates { get; set; } = true;
+
+        // ====================================================================
+        // Conan Exiles [ServerSettings] Gameplay & World Configuration
+        // ====================================================================
+        public bool GameplaySettingsImported { get; set; } = false;
+
+        // Combat, PvP & General Rules
+        public bool PVPEnabled { get; set; } = false;
+        public bool CanDamagePlayerOwnedStructures { get; set; } = false;
+        public bool DynamicBuildingDamage { get; set; } = false;
+        public int MaxNudity { get; set; } = 2; // 0 = None, 1 = Partial, 2 = Full
+        public int ClanMaxSize { get; set; } = 10;
+        public int MaxAllowedPing { get; set; } = 0;
+        public bool EnableSandStorm { get; set; } = true;
+
+        // Death, Inventory, Corpses & Ownership
+        public bool DropEquipmentOnDeath { get; set; } = true;
+        public bool DropShortcutBarOnDeath { get; set; } = true;
+        public bool DropBackpackOnDeath { get; set; } = true;
+        public bool EverybodyCanLootCorpse { get; set; } = false;
+        public bool LogoutCharactersRemainInTheWorld { get; set; } = true;
+        public bool ContainersIgnoreOwnership { get; set; } = false;
+        public bool NoOwnership { get; set; } = false;
+
+        // Progression & XP Multipliers
+        public double PlayerXPRateMultiplier { get; set; } = 1.0;
+        public double PlayerXPKillMultiplier { get; set; } = 1.0;
+        public double PlayerXPHarvestMultiplier { get; set; } = 1.0;
+        public double PlayerXPCraftMultiplier { get; set; } = 1.0;
+        public double PlayerXPTimeMultiplier { get; set; } = 1.0;
+
+        // Harvesting, Crafting, Thralls & Resources
+        public double HarvestAmountMultiplier { get; set; } = 1.0;
+        public double ItemConvertionMultiplier { get; set; } = 1.0;
+        public double ThrallConversionMultiplier { get; set; } = 1.0;
+        public double AnimalPenCraftingTimeMultiplier { get; set; } = 1.0;
+        public double ResourceRespawnSpeedMultiplier { get; set; } = 1.0;
+        public double SpoilRateScale { get; set; } = 1.0;
+        public double FuelBurnTimeMultiplier { get; set; } = 1.0;
+        public double CraftingCostMultiplier { get; set; } = 1.0;
+        public double PlayerEncumbranceMultiplier { get; set; } = 1.0;
+
+        // Survival, Stamina, Durability & Combat Scaling
+        public double PlayerStaminaCostMultiplier { get; set; } = 1.0;
+        public double PlayerActiveThirstMultiplier { get; set; } = 1.0;
+        public double PlayerIdleThirstMultiplier { get; set; } = 0.1;
+        public double PlayerActiveHungerMultiplier { get; set; } = 1.0;
+        public double PlayerIdleHungerMultiplier { get; set; } = 0.1;
+        public double DurabilityMultiplier { get; set; } = 1.0;
+        public double ShieldDurabilityMultiplier { get; set; } = 1.0;
+        public double PlayerDamageMultiplier { get; set; } = 1.0;
+        public double PlayerDamageTakenMultiplier { get; set; } = 1.0;
+        public double NPCDamageMultiplier { get; set; } = 1.0;
+        public double NPCDamageTakenMultiplier { get; set; } = 1.0;
+        public double ThrallDamageToPlayersMultiplier { get; set; } = 1.0;
+        public double ThrallDamageToNPCsMultiplier { get; set; } = 1.0;
+
+        // Building Decay, Land Claim, Purge, Avatars & Day/Night Cycle
+        public bool DisableBuildingAbandonment { get; set; } = false;
+        public double BuildingDecayTimeMultiplier { get; set; } = 1.0;
+        public double LandClaimRadiusMultiplier { get; set; } = 1.0;
+        public bool BuildAnywhere { get; set; } = false;
+        public bool EnablePurge { get; set; } = true;
+        public int PurgeLevel { get; set; } = 6;
+        public bool AvatarsDisabled { get; set; } = false;
+        public double DayCycleSpeedScale { get; set; } = 1.0;
+        public double DayTimeSpeedScale { get; set; } = 1.0;
+        public double NightTimeSpeedScale { get; set; } = 1.0;
+        public double DawnDuskTimeSpeedScale { get; set; } = 1.0;
     }
 
     public class AppUpdateInfo
@@ -289,7 +358,7 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.3.7";
+            return "1.3.8";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
@@ -450,6 +519,17 @@ namespace ConanServerManager
             if (!hadConfig)
             {
                 AutoDetectAndImportIniSettings();
+            }
+            else if (!Config.GameplaySettingsImported && File.Exists(ServerSettingsIni))
+            {
+                ImportGameplaySettingsFromIni();
+                Config.GameplaySettingsImported = true;
+                try
+                {
+                    string json = JsonSerializer.Serialize(Config, new JsonSerializerOptions { WriteIndented = true });
+                    File.WriteAllText(ConfigJsonPath, json);
+                }
+                catch { }
             }
             RefreshNetworkAdapters();
 
@@ -2217,11 +2297,130 @@ namespace ConanServerManager
                     Config.ServerName = "Conan Exiles Dedicated Server";
                 }
 
+                ImportGameplaySettingsFromIni();
+                Config.GameplaySettingsImported = true;
+
                 Log("Loaded existing server configuration from ServerSettings.ini, Engine.ini, and Game.ini.");
             }
             catch (Exception ex)
             {
                 Log($"INI import warning: {ex.Message}");
+            }
+        }
+
+        public void ImportGameplaySettingsFromIni()
+        {
+            if (!File.Exists(ServerSettingsIni)) return;
+
+            try
+            {
+                var lines = File.ReadAllLines(ServerSettingsIni);
+                string currentSection = "";
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
+
+                foreach (var rawLine in lines)
+                {
+                    string line = rawLine.Trim();
+                    if (line.StartsWith("[") && line.EndsWith("]"))
+                    {
+                        currentSection = line.Substring(1, line.Length - 2).Trim();
+                        continue;
+                    }
+
+                    if (!currentSection.Equals("ServerSettings", StringComparison.OrdinalIgnoreCase) || !line.Contains("="))
+                        continue;
+
+                    var parts = line.Split(new[] { '=' }, 2);
+                    string key = parts[0].Trim();
+                    string val = parts[1].Trim();
+
+                    bool ParseBool(string s, bool fallback)
+                    {
+                        if (bool.TryParse(s, out bool b)) return b;
+                        if (s == "1") return true;
+                        if (s == "0") return false;
+                        return fallback;
+                    }
+
+                    double ParseDouble(string s, double fallback) =>
+                        double.TryParse(s, System.Globalization.NumberStyles.Any, inv, out double d) ? Math.Round(d, 3) : fallback;
+
+                    int ParseInt(string s, int fallback) =>
+                        int.TryParse(s, out int i) ? i : (double.TryParse(s, System.Globalization.NumberStyles.Any, inv, out double d) ? (int)Math.Round(d) : fallback);
+
+                    switch (key.ToLowerInvariant())
+                    {
+                        case "pvpenabled": Config.PVPEnabled = ParseBool(val, Config.PVPEnabled); break;
+                        case "candamageplayerownedstructures": Config.CanDamagePlayerOwnedStructures = ParseBool(val, Config.CanDamagePlayerOwnedStructures); break;
+                        case "dynamicbuildingdamage": Config.DynamicBuildingDamage = ParseBool(val, Config.DynamicBuildingDamage); break;
+                        case "maxnudity": Config.MaxNudity = Math.Clamp(ParseInt(val, Config.MaxNudity), 0, 2); break;
+                        case "clanmaxsize": Config.ClanMaxSize = Math.Max(1, ParseInt(val, Config.ClanMaxSize)); break;
+                        case "maxallowedping": Config.MaxAllowedPing = Math.Max(0, ParseInt(val, Config.MaxAllowedPing)); break;
+                        case "enablesandstorm": Config.EnableSandStorm = ParseBool(val, Config.EnableSandStorm); break;
+
+                        case "dropequipmentondeath": Config.DropEquipmentOnDeath = ParseBool(val, Config.DropEquipmentOnDeath); break;
+                        case "dropshortcutbarondeath": Config.DropShortcutBarOnDeath = ParseBool(val, Config.DropShortcutBarOnDeath); break;
+                        case "dropbackpackondeath": Config.DropBackpackOnDeath = ParseBool(val, Config.DropBackpackOnDeath); break;
+                        case "everybodycanlootcorpse": Config.EverybodyCanLootCorpse = ParseBool(val, Config.EverybodyCanLootCorpse); break;
+                        case "logoutcharactersremainintheworld": Config.LogoutCharactersRemainInTheWorld = ParseBool(val, Config.LogoutCharactersRemainInTheWorld); break;
+                        case "containersignoreownership": Config.ContainersIgnoreOwnership = ParseBool(val, Config.ContainersIgnoreOwnership); break;
+                        case "noownership": Config.NoOwnership = ParseBool(val, Config.NoOwnership); break;
+
+                        case "playerxpratemultiplier": Config.PlayerXPRateMultiplier = ParseDouble(val, Config.PlayerXPRateMultiplier); break;
+                        case "playerxpkillmultiplier": Config.PlayerXPKillMultiplier = ParseDouble(val, Config.PlayerXPKillMultiplier); break;
+                        case "playerxpharvestmultiplier": Config.PlayerXPHarvestMultiplier = ParseDouble(val, Config.PlayerXPHarvestMultiplier); break;
+                        case "playerxpcraftmultiplier": Config.PlayerXPCraftMultiplier = ParseDouble(val, Config.PlayerXPCraftMultiplier); break;
+                        case "playerxptimemultiplier": Config.PlayerXPTimeMultiplier = ParseDouble(val, Config.PlayerXPTimeMultiplier); break;
+
+                        case "harvestamountmultiplier": Config.HarvestAmountMultiplier = ParseDouble(val, Config.HarvestAmountMultiplier); break;
+                        case "itemconvertionmultiplier": Config.ItemConvertionMultiplier = ParseDouble(val, Config.ItemConvertionMultiplier); break;
+                        case "thrallconversionmultiplier": Config.ThrallConversionMultiplier = ParseDouble(val, Config.ThrallConversionMultiplier); break;
+                        case "animalpencraftingtimemultiplier": Config.AnimalPenCraftingTimeMultiplier = ParseDouble(val, Config.AnimalPenCraftingTimeMultiplier); break;
+                        case "resourcerespawnspeedmultiplier": Config.ResourceRespawnSpeedMultiplier = ParseDouble(val, Config.ResourceRespawnSpeedMultiplier); break;
+                        case "spoilratescale": Config.SpoilRateScale = ParseDouble(val, Config.SpoilRateScale); break;
+                        case "fuelburntimemultiplier": Config.FuelBurnTimeMultiplier = ParseDouble(val, Config.FuelBurnTimeMultiplier); break;
+                        case "craftingcostmultiplier": Config.CraftingCostMultiplier = ParseDouble(val, Config.CraftingCostMultiplier); break;
+                        case "playerencumbrancemultiplier": Config.PlayerEncumbranceMultiplier = ParseDouble(val, Config.PlayerEncumbranceMultiplier); break;
+
+                        case "playerstaminacostmultiplier": Config.PlayerStaminaCostMultiplier = ParseDouble(val, Config.PlayerStaminaCostMultiplier); break;
+                        case "playeractivethirstmultiplier": Config.PlayerActiveThirstMultiplier = ParseDouble(val, Config.PlayerActiveThirstMultiplier); break;
+                        case "playeridethirstmultiplier":
+                        case "playeridlethirstmultiplier": Config.PlayerIdleThirstMultiplier = ParseDouble(val, Config.PlayerIdleThirstMultiplier); break;
+                        case "playeractivehungermultiplier": Config.PlayerActiveHungerMultiplier = ParseDouble(val, Config.PlayerActiveHungerMultiplier); break;
+                        case "playeridehungermultiplier":
+                        case "playeridlezhungermultiplier":
+                        case "playeridlezhunger":
+                        case "playeridleungermultiplier":
+                        case "playeridleHungermultiplier":
+                        case "playeridle_hungermultiplier":
+                        case "playeridlethungermultiplier":
+                        case "playeridlehungermultiplier": Config.PlayerIdleHungerMultiplier = ParseDouble(val, Config.PlayerIdleHungerMultiplier); break;
+                        case "durabilitymultiplier": Config.DurabilityMultiplier = ParseDouble(val, Config.DurabilityMultiplier); break;
+                        case "shielddurabilitymultiplier": Config.ShieldDurabilityMultiplier = ParseDouble(val, Config.ShieldDurabilityMultiplier); break;
+                        case "playerdamagemultiplier": Config.PlayerDamageMultiplier = ParseDouble(val, Config.PlayerDamageMultiplier); break;
+                        case "playerdamagetakenmultiplier": Config.PlayerDamageTakenMultiplier = ParseDouble(val, Config.PlayerDamageTakenMultiplier); break;
+                        case "npcdamagemultiplier": Config.NPCDamageMultiplier = ParseDouble(val, Config.NPCDamageMultiplier); break;
+                        case "npcdamagetakenmultiplier": Config.NPCDamageTakenMultiplier = ParseDouble(val, Config.NPCDamageTakenMultiplier); break;
+                        case "thralldamagetoplayersmultiplier": Config.ThrallDamageToPlayersMultiplier = ParseDouble(val, Config.ThrallDamageToPlayersMultiplier); break;
+                        case "thralldamagetonpcsmultiplier": Config.ThrallDamageToNPCsMultiplier = ParseDouble(val, Config.ThrallDamageToNPCsMultiplier); break;
+
+                        case "disablebuildingabandonment": Config.DisableBuildingAbandonment = ParseBool(val, Config.DisableBuildingAbandonment); break;
+                        case "buildingdecaytimemultiplier": Config.BuildingDecayTimeMultiplier = ParseDouble(val, Config.BuildingDecayTimeMultiplier); break;
+                        case "landclaimradiusmultiplier": Config.LandClaimRadiusMultiplier = ParseDouble(val, Config.LandClaimRadiusMultiplier); break;
+                        case "buildanywhere": Config.BuildAnywhere = ParseBool(val, Config.BuildAnywhere); break;
+                        case "enablepurge": Config.EnablePurge = ParseBool(val, Config.EnablePurge); break;
+                        case "purgelevel": Config.PurgeLevel = Math.Clamp(ParseInt(val, Config.PurgeLevel), 0, 6); break;
+                        case "avatarsdisabled": Config.AvatarsDisabled = ParseBool(val, Config.AvatarsDisabled); break;
+                        case "daycyclespeedscale": Config.DayCycleSpeedScale = ParseDouble(val, Config.DayCycleSpeedScale); break;
+                        case "daytimespeedscale": Config.DayTimeSpeedScale = ParseDouble(val, Config.DayTimeSpeedScale); break;
+                        case "nighttimespeedscale": Config.NightTimeSpeedScale = ParseDouble(val, Config.NightTimeSpeedScale); break;
+                        case "dawndusktimespeedscale": Config.DawnDuskTimeSpeedScale = ParseDouble(val, Config.DawnDuskTimeSpeedScale); break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Gameplay settings import note: {ex.Message}");
             }
         }
 
@@ -2273,6 +2472,41 @@ namespace ConanServerManager
         public void UpdateSettingsFromRemote(JsonElement root)
         {
             bool changed = false;
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+
+            bool TryReadBool(string camel, string pascal, out bool result)
+            {
+                result = false;
+                if (root.TryGetProperty(camel, out var el) || root.TryGetProperty(pascal, out el))
+                {
+                    if (el.ValueKind == JsonValueKind.True) { result = true; return true; }
+                    if (el.ValueKind == JsonValueKind.False) { result = false; return true; }
+                    if (el.ValueKind == JsonValueKind.String && bool.TryParse(el.GetString(), out bool b)) { result = b; return true; }
+                }
+                return false;
+            }
+
+            bool TryReadInt(string camel, string pascal, out int result)
+            {
+                result = 0;
+                if (root.TryGetProperty(camel, out var el) || root.TryGetProperty(pascal, out el))
+                {
+                    if (el.ValueKind == JsonValueKind.Number && el.TryGetInt32(out int i)) { result = i; return true; }
+                    if (el.ValueKind == JsonValueKind.String && int.TryParse(el.GetString(), out int si)) { result = si; return true; }
+                }
+                return false;
+            }
+
+            bool TryReadDouble(string camel, string pascal, out double result)
+            {
+                result = 1.0;
+                if (root.TryGetProperty(camel, out var el) || root.TryGetProperty(pascal, out el))
+                {
+                    if (el.ValueKind == JsonValueKind.Number && el.TryGetDouble(out double d)) { result = Math.Round(d, 3); return true; }
+                    if (el.ValueKind == JsonValueKind.String && double.TryParse(el.GetString(), System.Globalization.NumberStyles.Any, inv, out double sd)) { result = Math.Round(sd, 3); return true; }
+                }
+                return false;
+            }
 
             if (root.TryGetProperty("serverName", out var sName) || root.TryGetProperty("ServerName", out sName))
             {
@@ -2294,45 +2528,28 @@ namespace ConanServerManager
                 string val = rPass.GetString()?.Trim() ?? "";
                 if (!string.IsNullOrEmpty(val)) { Config.RconPassword = val; changed = true; }
             }
-            if (root.TryGetProperty("rconPort", out var rPort) || root.TryGetProperty("RconPort", out rPort))
-            {
-                if (rPort.ValueKind == JsonValueKind.Number && rPort.TryGetInt32(out int val)) { Config.RconPort = val; changed = true; }
-                else if (rPort.ValueKind == JsonValueKind.String && int.TryParse(rPort.GetString(), out int sVal)) { Config.RconPort = sVal; changed = true; }
-            }
-            if (root.TryGetProperty("rconEnabled", out var rEn) || root.TryGetProperty("RconEnabled", out rEn))
-            {
-                if (rEn.ValueKind == JsonValueKind.True || rEn.ValueKind == JsonValueKind.False) { Config.RconEnabled = rEn.GetBoolean(); changed = true; }
-                else if (rEn.ValueKind == JsonValueKind.String && bool.TryParse(rEn.GetString(), out bool bVal)) { Config.RconEnabled = bVal; changed = true; }
-            }
-            if (root.TryGetProperty("gamePort", out var gPort) || root.TryGetProperty("GamePort", out gPort))
-            {
-                if (gPort.ValueKind == JsonValueKind.Number && gPort.TryGetInt32(out int val)) { Config.GamePort = val; changed = true; }
-                else if (gPort.ValueKind == JsonValueKind.String && int.TryParse(gPort.GetString(), out int sVal)) { Config.GamePort = sVal; changed = true; }
-            }
-            if (root.TryGetProperty("rawUdpPort", out var ruPort) || root.TryGetProperty("RawUdpPort", out ruPort))
-            {
-                if (ruPort.ValueKind == JsonValueKind.Number && ruPort.TryGetInt32(out int val)) { Config.RawUdpPort = val; changed = true; }
-                else if (ruPort.ValueKind == JsonValueKind.String && int.TryParse(ruPort.GetString(), out int sVal)) { Config.RawUdpPort = sVal; changed = true; }
-            }
-            if (root.TryGetProperty("queryPort", out var qPort) || root.TryGetProperty("QueryPort", out qPort))
-            {
-                if (qPort.ValueKind == JsonValueKind.Number && qPort.TryGetInt32(out int val)) { Config.QueryPort = val; changed = true; }
-                else if (qPort.ValueKind == JsonValueKind.String && int.TryParse(qPort.GetString(), out int sVal)) { Config.QueryPort = sVal; changed = true; }
-            }
-            if (root.TryGetProperty("maxPlayers", out var mPl) || root.TryGetProperty("MaxPlayers", out mPl))
-            {
-                if (mPl.ValueKind == JsonValueKind.Number && mPl.TryGetInt32(out int val)) { Config.MaxPlayers = val; changed = true; }
-                else if (mPl.ValueKind == JsonValueKind.String && int.TryParse(mPl.GetString(), out int sVal)) { Config.MaxPlayers = sVal; changed = true; }
-            }
-            if (root.TryGetProperty("maxTickRate", out var mTick) || root.TryGetProperty("MaxTickRate", out mTick))
-            {
-                if (mTick.ValueKind == JsonValueKind.Number && mTick.TryGetInt32(out int val)) { Config.MaxTickRate = val; changed = true; }
-                else if (mTick.ValueKind == JsonValueKind.String && int.TryParse(mTick.GetString(), out int sVal)) { Config.MaxTickRate = sVal; changed = true; }
-            }
+            if (TryReadInt("rconPort", "RconPort", out int rPortVal)) { Config.RconPort = rPortVal; changed = true; }
+            if (TryReadBool("rconEnabled", "RconEnabled", out bool rEnVal)) { Config.RconEnabled = rEnVal; changed = true; }
+            if (TryReadInt("gamePort", "GamePort", out int gPortVal)) { Config.GamePort = gPortVal; changed = true; }
+            if (TryReadInt("rawUdpPort", "RawUdpPort", out int ruPortVal)) { Config.RawUdpPort = ruPortVal; changed = true; }
+            if (TryReadInt("queryPort", "QueryPort", out int qPortVal)) { Config.QueryPort = qPortVal; changed = true; }
+            if (TryReadInt("maxPlayers", "MaxPlayers", out int mPlVal)) { Config.MaxPlayers = mPlVal; changed = true; }
+            if (TryReadInt("maxTickRate", "MaxTickRate", out int mTickVal)) { Config.MaxTickRate = mTickVal; changed = true; }
+
             if (root.TryGetProperty("region", out var reg) || root.TryGetProperty("Region", out reg) || root.TryGetProperty("serverRegion", out reg))
             {
                 string val = reg.GetString()?.Trim() ?? "";
                 if (!string.IsNullOrEmpty(val)) { Config.Region = val; changed = true; }
+            }
+            if (root.TryGetProperty("startupMap", out var sMap) || root.TryGetProperty("StartupMap", out sMap))
+            {
+                string val = sMap.GetString()?.Trim() ?? "";
+                if (!string.IsNullOrEmpty(val)) { Config.StartupMap = val; changed = true; }
+            }
+            if (root.TryGetProperty("customServerDir", out var cDir) || root.TryGetProperty("CustomServerDir", out cDir))
+            {
+                Config.CustomServerDir = cDir.GetString()?.Trim() ?? "";
+                changed = true;
             }
             if (root.TryGetProperty("enableBattlEye", out var be) || root.TryGetProperty("EnableBattlEye", out be) || root.TryGetProperty("battlEyeEnabled", out be))
             {
@@ -2344,17 +2561,71 @@ namespace ConanServerManager
                 if (vac.ValueKind == JsonValueKind.True || vac.ValueKind == JsonValueKind.False) { Config.EnableVAC = vac.GetBoolean(); changed = true; }
                 else if (vac.ValueKind == JsonValueKind.String && bool.TryParse(vac.GetString(), out bool vVal)) { Config.EnableVAC = vVal; changed = true; }
             }
-            if (root.TryGetProperty("useMultihome", out var uMh) || root.TryGetProperty("UseMultihome", out uMh))
-            {
-                if (uMh.ValueKind == JsonValueKind.True || uMh.ValueKind == JsonValueKind.False) { Config.UseMultihome = uMh.GetBoolean(); changed = true; }
-                else if (uMh.ValueKind == JsonValueKind.String && bool.TryParse(uMh.GetString(), out bool bMh)) { Config.UseMultihome = bMh; changed = true; }
-            }
+            if (TryReadBool("useMultihome", "UseMultihome", out bool uMhVal)) { Config.UseMultihome = uMhVal; changed = true; }
             if (root.TryGetProperty("multihomeIp", out var mhIp) || root.TryGetProperty("MultihomeIp", out mhIp))
             {
-                string val = mhIp.GetString()?.Trim() ?? "";
-                Config.MultihomeIp = val;
+                Config.MultihomeIp = mhIp.GetString()?.Trim() ?? "";
                 changed = true;
             }
+
+            // Gameplay Settings ([ServerSettings])
+            if (TryReadBool("pvpEnabled", "PVPEnabled", out bool pvpVal)) { Config.PVPEnabled = pvpVal; changed = true; }
+            if (TryReadBool("canDamagePlayerOwnedStructures", "CanDamagePlayerOwnedStructures", out bool cdposVal)) { Config.CanDamagePlayerOwnedStructures = cdposVal; changed = true; }
+            if (TryReadBool("dynamicBuildingDamage", "DynamicBuildingDamage", out bool dbdVal)) { Config.DynamicBuildingDamage = dbdVal; changed = true; }
+            if (TryReadInt("maxNudity", "MaxNudity", out int nudVal)) { Config.MaxNudity = Math.Clamp(nudVal, 0, 2); changed = true; }
+            if (TryReadInt("clanMaxSize", "ClanMaxSize", out int clanVal)) { Config.ClanMaxSize = Math.Max(1, clanVal); changed = true; }
+            if (TryReadInt("maxAllowedPing", "MaxAllowedPing", out int pingVal)) { Config.MaxAllowedPing = Math.Max(0, pingVal); changed = true; }
+            if (TryReadBool("enableSandStorm", "EnableSandStorm", out bool sandVal)) { Config.EnableSandStorm = sandVal; changed = true; }
+
+            if (TryReadBool("dropEquipmentOnDeath", "DropEquipmentOnDeath", out bool deodVal)) { Config.DropEquipmentOnDeath = deodVal; changed = true; }
+            if (TryReadBool("dropShortcutBarOnDeath", "DropShortcutBarOnDeath", out bool dsbodVal)) { Config.DropShortcutBarOnDeath = dsbodVal; changed = true; }
+            if (TryReadBool("dropBackpackOnDeath", "DropBackpackOnDeath", out bool dbpodVal)) { Config.DropBackpackOnDeath = dbpodVal; changed = true; }
+            if (TryReadBool("everybodyCanLootCorpse", "EverybodyCanLootCorpse", out bool eclcVal)) { Config.EverybodyCanLootCorpse = eclcVal; changed = true; }
+            if (TryReadBool("logoutCharactersRemainInTheWorld", "LogoutCharactersRemainInTheWorld", out bool lcritwVal)) { Config.LogoutCharactersRemainInTheWorld = lcritwVal; changed = true; }
+            if (TryReadBool("containersIgnoreOwnership", "ContainersIgnoreOwnership", out bool cioVal)) { Config.ContainersIgnoreOwnership = cioVal; changed = true; }
+            if (TryReadBool("noOwnership", "NoOwnership", out bool noOwnVal)) { Config.NoOwnership = noOwnVal; changed = true; }
+
+            if (TryReadDouble("playerXPRateMultiplier", "PlayerXPRateMultiplier", out double xpRateVal)) { Config.PlayerXPRateMultiplier = xpRateVal; changed = true; }
+            if (TryReadDouble("playerXPKillMultiplier", "PlayerXPKillMultiplier", out double xpKillVal)) { Config.PlayerXPKillMultiplier = xpKillVal; changed = true; }
+            if (TryReadDouble("playerXPHarvestMultiplier", "PlayerXPHarvestMultiplier", out double xpHarvVal)) { Config.PlayerXPHarvestMultiplier = xpHarvVal; changed = true; }
+            if (TryReadDouble("playerXPCraftMultiplier", "PlayerXPCraftMultiplier", out double xpCraftVal)) { Config.PlayerXPCraftMultiplier = xpCraftVal; changed = true; }
+            if (TryReadDouble("playerXPTimeMultiplier", "PlayerXPTimeMultiplier", out double xpTimeVal)) { Config.PlayerXPTimeMultiplier = xpTimeVal; changed = true; }
+
+            if (TryReadDouble("harvestAmountMultiplier", "HarvestAmountMultiplier", out double harvVal)) { Config.HarvestAmountMultiplier = harvVal; changed = true; }
+            if (TryReadDouble("itemConvertionMultiplier", "ItemConvertionMultiplier", out double itemConvVal)) { Config.ItemConvertionMultiplier = itemConvVal; changed = true; }
+            if (TryReadDouble("thrallConversionMultiplier", "ThrallConversionMultiplier", out double thrallConvVal)) { Config.ThrallConversionMultiplier = thrallConvVal; changed = true; }
+            if (TryReadDouble("animalPenCraftingTimeMultiplier", "AnimalPenCraftingTimeMultiplier", out double animPenVal)) { Config.AnimalPenCraftingTimeMultiplier = animPenVal; changed = true; }
+            if (TryReadDouble("resourceRespawnSpeedMultiplier", "ResourceRespawnSpeedMultiplier", out double resRespVal)) { Config.ResourceRespawnSpeedMultiplier = resRespVal; changed = true; }
+            if (TryReadDouble("spoilRateScale", "SpoilRateScale", out double spoilVal)) { Config.SpoilRateScale = spoilVal; changed = true; }
+            if (TryReadDouble("fuelBurnTimeMultiplier", "FuelBurnTimeMultiplier", out double fuelVal)) { Config.FuelBurnTimeMultiplier = fuelVal; changed = true; }
+            if (TryReadDouble("craftingCostMultiplier", "CraftingCostMultiplier", out double craftCostVal)) { Config.CraftingCostMultiplier = craftCostVal; changed = true; }
+            if (TryReadDouble("playerEncumbranceMultiplier", "PlayerEncumbranceMultiplier", out double encVal)) { Config.PlayerEncumbranceMultiplier = encVal; changed = true; }
+
+            if (TryReadDouble("playerStaminaCostMultiplier", "PlayerStaminaCostMultiplier", out double stamVal)) { Config.PlayerStaminaCostMultiplier = stamVal; changed = true; }
+            if (TryReadDouble("playerActiveThirstMultiplier", "PlayerActiveThirstMultiplier", out double actThirstVal)) { Config.PlayerActiveThirstMultiplier = actThirstVal; changed = true; }
+            if (TryReadDouble("playerIdleThirstMultiplier", "PlayerIdleThirstMultiplier", out double idlThirstVal)) { Config.PlayerIdleThirstMultiplier = idlThirstVal; changed = true; }
+            if (TryReadDouble("playerActiveHungerMultiplier", "PlayerActiveHungerMultiplier", out double actHungerVal)) { Config.PlayerActiveHungerMultiplier = actHungerVal; changed = true; }
+            if (TryReadDouble("playerIdleHungerMultiplier", "PlayerIdleHungerMultiplier", out double idlHungerVal)) { Config.PlayerIdleHungerMultiplier = idlHungerVal; changed = true; }
+            if (TryReadDouble("durabilityMultiplier", "DurabilityMultiplier", out double durVal)) { Config.DurabilityMultiplier = durVal; changed = true; }
+            if (TryReadDouble("shieldDurabilityMultiplier", "ShieldDurabilityMultiplier", out double shDurVal)) { Config.ShieldDurabilityMultiplier = shDurVal; changed = true; }
+            if (TryReadDouble("playerDamageMultiplier", "PlayerDamageMultiplier", out double pDmgVal)) { Config.PlayerDamageMultiplier = pDmgVal; changed = true; }
+            if (TryReadDouble("playerDamageTakenMultiplier", "PlayerDamageTakenMultiplier", out double pDmgTknVal)) { Config.PlayerDamageTakenMultiplier = pDmgTknVal; changed = true; }
+            if (TryReadDouble("npcDamageMultiplier", "NPCDamageMultiplier", out double npcDmgVal)) { Config.NPCDamageMultiplier = npcDmgVal; changed = true; }
+            if (TryReadDouble("npcDamageTakenMultiplier", "NPCDamageTakenMultiplier", out double npcDmgTknVal)) { Config.NPCDamageTakenMultiplier = npcDmgTknVal; changed = true; }
+            if (TryReadDouble("thrallDamageToPlayersMultiplier", "ThrallDamageToPlayersMultiplier", out double thrallPvpVal)) { Config.ThrallDamageToPlayersMultiplier = thrallPvpVal; changed = true; }
+            if (TryReadDouble("thrallDamageToNPCsMultiplier", "ThrallDamageToNPCsMultiplier", out double thrallPveVal)) { Config.ThrallDamageToNPCsMultiplier = thrallPveVal; changed = true; }
+
+            if (TryReadBool("disableBuildingAbandonment", "DisableBuildingAbandonment", out bool dbaVal)) { Config.DisableBuildingAbandonment = dbaVal; changed = true; }
+            if (TryReadDouble("buildingDecayTimeMultiplier", "BuildingDecayTimeMultiplier", out double bdtVal)) { Config.BuildingDecayTimeMultiplier = bdtVal; changed = true; }
+            if (TryReadDouble("landClaimRadiusMultiplier", "LandClaimRadiusMultiplier", out double lcrVal)) { Config.LandClaimRadiusMultiplier = lcrVal; changed = true; }
+            if (TryReadBool("buildAnywhere", "BuildAnywhere", out bool baVal)) { Config.BuildAnywhere = baVal; changed = true; }
+            if (TryReadBool("enablePurge", "EnablePurge", out bool purgeVal)) { Config.EnablePurge = purgeVal; changed = true; }
+            if (TryReadInt("purgeLevel", "PurgeLevel", out int purgeLvlVal)) { Config.PurgeLevel = Math.Clamp(purgeLvlVal, 0, 6); changed = true; }
+            if (TryReadBool("avatarsDisabled", "AvatarsDisabled", out bool avDisVal)) { Config.AvatarsDisabled = avDisVal; changed = true; }
+            if (TryReadDouble("dayCycleSpeedScale", "DayCycleSpeedScale", out double dayCycVal)) { Config.DayCycleSpeedScale = dayCycVal; changed = true; }
+            if (TryReadDouble("dayTimeSpeedScale", "DayTimeSpeedScale", out double daySpdVal)) { Config.DayTimeSpeedScale = daySpdVal; changed = true; }
+            if (TryReadDouble("nightTimeSpeedScale", "NightTimeSpeedScale", out double nightSpdVal)) { Config.NightTimeSpeedScale = nightSpdVal; changed = true; }
+            if (TryReadDouble("dawnDuskTimeSpeedScale", "DawnDuskTimeSpeedScale", out double ddSpdVal)) { Config.DawnDuskTimeSpeedScale = ddSpdVal; changed = true; }
 
             if (root.TryGetProperty("mods", out var mProp) || root.TryGetProperty("Mods", out mProp))
             {
@@ -2432,6 +2703,9 @@ namespace ConanServerManager
             if (!Directory.Exists(ServerRootDir)) return;
 
             Directory.CreateDirectory(ConfigDir);
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            string FmtDbl(double d) => d.ToString("0.0#####", inv);
+            string FmtBool(bool b) => b ? "True" : "False";
 
             // ServerSettings.ini
             if (!string.IsNullOrWhiteSpace(Config.ServerName) && !IsPlaceholderServerName(Config.ServerName))
@@ -2451,13 +2725,72 @@ namespace ConanServerManager
             }
             UpdateIniKey(ServerSettingsIni, "ServerSettings", "DedicatedServerLauncherModEnabled", "True");
             UpdateIniKey(ServerSettingsIni, "ServerSettings", "DedicatedServerLauncherModList", string.Join(",", Config.Mods));
-            UpdateIniKey(ServerSettingsIni, "ServerSettings", "IsBattlEyeEnabled", Config.EnableBattlEye ? "True" : "False");
-            UpdateIniKey(ServerSettingsIni, "ServerSettings", "RconEnabled", Config.RconEnabled ? "True" : "False");
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "IsBattlEyeEnabled", FmtBool(Config.EnableBattlEye));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "RconEnabled", FmtBool(Config.RconEnabled));
             UpdateIniKey(ServerSettingsIni, "ServerSettings", "RconPort", Config.RconPort.ToString());
             if (!IsPlaceholderPassword(Config.RconPassword))
             {
                 UpdateIniKey(ServerSettingsIni, "ServerSettings", "RconPassword", Config.RconPassword ?? "");
             }
+
+            // Sync [ServerSettings] Gameplay & World Settings
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "PVPEnabled", FmtBool(Config.PVPEnabled));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "CanDamagePlayerOwnedStructures", FmtBool(Config.CanDamagePlayerOwnedStructures));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "DynamicBuildingDamage", FmtBool(Config.DynamicBuildingDamage));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "MaxNudity", Math.Clamp(Config.MaxNudity, 0, 2).ToString());
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "ClanMaxSize", Math.Max(1, Config.ClanMaxSize).ToString());
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "MaxAllowedPing", Math.Max(0, Config.MaxAllowedPing).ToString());
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "EnableSandStorm", FmtBool(Config.EnableSandStorm));
+
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "DropEquipmentOnDeath", FmtBool(Config.DropEquipmentOnDeath));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "DropShortcutBarOnDeath", FmtBool(Config.DropShortcutBarOnDeath));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "DropBackpackOnDeath", FmtBool(Config.DropBackpackOnDeath));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "EverybodyCanLootCorpse", FmtBool(Config.EverybodyCanLootCorpse));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "LogoutCharactersRemainInTheWorld", FmtBool(Config.LogoutCharactersRemainInTheWorld));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "ContainersIgnoreOwnership", FmtBool(Config.ContainersIgnoreOwnership));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "NoOwnership", FmtBool(Config.NoOwnership));
+
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "PlayerXPRateMultiplier", FmtDbl(Config.PlayerXPRateMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "PlayerXPKillMultiplier", FmtDbl(Config.PlayerXPKillMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "PlayerXPHarvestMultiplier", FmtDbl(Config.PlayerXPHarvestMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "PlayerXPCraftMultiplier", FmtDbl(Config.PlayerXPCraftMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "PlayerXPTimeMultiplier", FmtDbl(Config.PlayerXPTimeMultiplier));
+
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "HarvestAmountMultiplier", FmtDbl(Config.HarvestAmountMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "ItemConvertionMultiplier", FmtDbl(Config.ItemConvertionMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "ThrallConversionMultiplier", FmtDbl(Config.ThrallConversionMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "AnimalPenCraftingTimeMultiplier", FmtDbl(Config.AnimalPenCraftingTimeMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "ResourceRespawnSpeedMultiplier", FmtDbl(Config.ResourceRespawnSpeedMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "SpoilRateScale", FmtDbl(Config.SpoilRateScale));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "FuelBurnTimeMultiplier", FmtDbl(Config.FuelBurnTimeMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "CraftingCostMultiplier", FmtDbl(Config.CraftingCostMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "PlayerEncumbranceMultiplier", FmtDbl(Config.PlayerEncumbranceMultiplier));
+
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "PlayerStaminaCostMultiplier", FmtDbl(Config.PlayerStaminaCostMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "PlayerActiveThirstMultiplier", FmtDbl(Config.PlayerActiveThirstMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "PlayerIdleThirstMultiplier", FmtDbl(Config.PlayerIdleThirstMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "PlayerActiveHungerMultiplier", FmtDbl(Config.PlayerActiveHungerMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "PlayerIdleHungerMultiplier", FmtDbl(Config.PlayerIdleHungerMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "DurabilityMultiplier", FmtDbl(Config.DurabilityMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "ShieldDurabilityMultiplier", FmtDbl(Config.ShieldDurabilityMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "PlayerDamageMultiplier", FmtDbl(Config.PlayerDamageMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "PlayerDamageTakenMultiplier", FmtDbl(Config.PlayerDamageTakenMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "NPCDamageMultiplier", FmtDbl(Config.NPCDamageMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "NPCDamageTakenMultiplier", FmtDbl(Config.NPCDamageTakenMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "ThrallDamageToPlayersMultiplier", FmtDbl(Config.ThrallDamageToPlayersMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "ThrallDamageToNPCsMultiplier", FmtDbl(Config.ThrallDamageToNPCsMultiplier));
+
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "DisableBuildingAbandonment", FmtBool(Config.DisableBuildingAbandonment));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "BuildingDecayTimeMultiplier", FmtDbl(Config.BuildingDecayTimeMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "LandClaimRadiusMultiplier", FmtDbl(Config.LandClaimRadiusMultiplier));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "BuildAnywhere", FmtBool(Config.BuildAnywhere));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "EnablePurge", FmtBool(Config.EnablePurge));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "PurgeLevel", Math.Clamp(Config.PurgeLevel, 0, 6).ToString());
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "AvatarsDisabled", FmtBool(Config.AvatarsDisabled));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "DayCycleSpeedScale", FmtDbl(Config.DayCycleSpeedScale));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "DayTimeSpeedScale", FmtDbl(Config.DayTimeSpeedScale));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "NightTimeSpeedScale", FmtDbl(Config.NightTimeSpeedScale));
+            UpdateIniKey(ServerSettingsIni, "ServerSettings", "DawnDuskTimeSpeedScale", FmtDbl(Config.DawnDuskTimeSpeedScale));
 
             // Engine.ini - Steam Master Server and Unreal Engine OSS read identity from here!
             if (!string.IsNullOrWhiteSpace(Config.ServerName) && !IsPlaceholderServerName(Config.ServerName))
@@ -2479,10 +2812,11 @@ namespace ConanServerManager
             UpdateIniKey(EngineIni, "URL", "Port", Config.GamePort.ToString());
             UpdateIniKey(EngineIni, "OnlineSubsystemSteam", "GameServerQueryPort", Config.QueryPort.ToString());
             UpdateIniKey(EngineIni, "/Script/OnlineSubsystemUtils.IpNetDriver", "NetServerMaxTickRate", Config.MaxTickRate.ToString());
+            UpdateIniKey(EngineIni, "Engine.GameEngine", "bVACEnabled", FmtBool(Config.EnableVAC));
 
             // Game.ini - Conan Exiles reads MaxPlayers and RconPlugin from Game.ini
             UpdateIniKey(GameIni, "/Script/Engine.GameSession", "MaxPlayers", Config.MaxPlayers.ToString());
-            UpdateIniKey(GameIni, "RconPlugin", "RconEnabled", Config.RconEnabled ? "True" : "False");
+            UpdateIniKey(GameIni, "RconPlugin", "RconEnabled", FmtBool(Config.RconEnabled));
             UpdateIniKey(GameIni, "RconPlugin", "RconPort", Config.RconPort.ToString());
             if (!IsPlaceholderPassword(Config.RconPassword))
             {
@@ -2544,6 +2878,10 @@ namespace ConanServerManager
         {
             Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
             File.WriteAllText(filePath, content);
+            if (Path.GetFileName(filePath).Equals("ServerSettings.ini", StringComparison.OrdinalIgnoreCase))
+            {
+                ImportGameplaySettingsFromIni();
+            }
             Log($"Updated INI file: {Path.GetFileName(filePath)}");
         }
 
@@ -2722,6 +3060,7 @@ namespace ConanServerManager
             }
 
             EnsureSteamDependencies();
+            ExecuteCustomScriptIfConfigured("Run .BAT on startup");
 
             Log("Launching Conan Sandbox Dedicated Server executable...");
 
@@ -3245,6 +3584,234 @@ namespace ConanServerManager
             catch { }
         }
 
+        private void ExecuteCustomScriptIfConfigured(string expectedMode)
+        {
+            if (!string.Equals(Config.BackupScriptMode, expectedMode, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            string scriptName = expectedMode == "Run .BAT before backup" ? "pre_backup.bat" : "pre_start.bat";
+            string scriptPath = Path.Combine(AppWorkingDir, scriptName);
+            if (!File.Exists(scriptPath))
+            {
+                string altPath = Path.Combine(ServerRootDir, scriptName);
+                if (File.Exists(altPath)) scriptPath = altPath;
+                else
+                {
+                    Log($"[Custom Script] Mode '{expectedMode}' is active, but '{scriptName}' was not found in {AppWorkingDir}.");
+                    return;
+                }
+            }
+
+            try
+            {
+                Log($"[Custom Script] Executing '{scriptPath}'...");
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = $"/c \"{scriptPath}\"",
+                    WorkingDirectory = Path.GetDirectoryName(scriptPath) ?? AppWorkingDir,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+                using var proc = Process.Start(psi);
+                if (proc != null)
+                {
+                    string stdout = proc.StandardOutput.ReadToEnd();
+                    string stderr = proc.StandardError.ReadToEnd();
+                    proc.WaitForExit(30000);
+                    if (!string.IsNullOrWhiteSpace(stdout)) Log($"[Custom Script Output] {stdout.Trim()}");
+                    if (!string.IsNullOrWhiteSpace(stderr)) Log($"[Custom Script Error] {stderr.Trim()}");
+                    Log($"[Custom Script] Finished '{scriptName}' with exit code {proc.ExitCode}.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[Custom Script] Error executing '{scriptName}': {ex.Message}");
+            }
+        }
+
+        public void PruneOldBackups()
+        {
+            try
+            {
+                if (Config.BackupLimitDays <= 0 || !Directory.Exists(BackupDir)) return;
+                DateTime cutoff = DateTime.Now.AddDays(-Config.BackupLimitDays);
+                var files = Directory.GetFiles(BackupDir, "*.*")
+                    .Where(f => f.EndsWith(".db", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                    .Select(f => new FileInfo(f))
+                    .Where(fi => fi.LastWriteTime < cutoff && !fi.Name.Contains("_prerestore_", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                foreach (var fi in files)
+                {
+                    try
+                    {
+                        fi.Delete();
+                        Log($"[Backup Retention] Pruned old backup '{fi.Name}' (older than {Config.BackupLimitDays} days).");
+                    }
+                    catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[Backup Retention] Note: {ex.Message}");
+            }
+        }
+
+        public List<object> GetAvailableBackups()
+        {
+            var list = new List<object>();
+            try
+            {
+                if (!Directory.Exists(BackupDir)) return list;
+                var files = Directory.GetFiles(BackupDir, "*.*")
+                    .Where(f => f.EndsWith(".db", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                    .Select(f => new FileInfo(f))
+                    .OrderByDescending(fi => fi.LastWriteTime)
+                    .ToList();
+
+                foreach (var fi in files)
+                {
+                    list.Add(new
+                    {
+                        fileName = fi.Name,
+                        fullPath = fi.FullName,
+                        sizeMB = Math.Round((double)fi.Length / (1024 * 1024), 2),
+                        timestamp = fi.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
+                    });
+                }
+            }
+            catch { }
+            return list;
+        }
+
+        public async Task<(bool Success, string Message)> RestoreDatabaseBackupAsync(string backupFilePath)
+        {
+            if (string.IsNullOrWhiteSpace(backupFilePath) || !File.Exists(backupFilePath))
+            {
+                return (false, $"Backup file not found: {backupFilePath}");
+            }
+
+            try
+            {
+                bool wasRunning = ServerStatus == "RUNNING" || ServerStatus == "STARTING" || DetectAndAdoptRunningServerProcess();
+                if (wasRunning)
+                {
+                    Log("[Restore DB] Stopping server gracefully before restoring database backup...");
+                    await StopServerAsync();
+                    await Task.Delay(2000);
+                }
+
+                string targetDb = GetActiveGameDbPath();
+                string savedDir = Path.GetDirectoryName(targetDb) ?? Path.Combine(ServerRootDir, "ConanSandbox", "Saved");
+                Directory.CreateDirectory(savedDir);
+                Directory.CreateDirectory(BackupDir);
+
+                if (File.Exists(targetDb))
+                {
+                    string safetyName = $"{Path.GetFileNameWithoutExtension(targetDb)}_prerestore_{DateTime.Now:yyyyMMdd_HHmmss}.db";
+                    string safetyPath = Path.Combine(BackupDir, safetyName);
+                    File.Copy(targetDb, safetyPath, true);
+                    Log($"[Restore DB] Created safety backup of current database: {safetyName}");
+                }
+
+                if (backupFilePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                {
+                    string tempExtract = Path.Combine(BackupDir, "_temp_restore_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+                    Directory.CreateDirectory(tempExtract);
+                    try
+                    {
+                        System.IO.Compression.ZipFile.ExtractToDirectory(backupFilePath, tempExtract, true);
+                        var dbFiles = Directory.GetFiles(tempExtract, "*.db", SearchOption.AllDirectories);
+                        if (dbFiles.Length == 0)
+                        {
+                            return (false, "No .db file found inside the selected .zip archive.");
+                        }
+                        File.Copy(dbFiles[0], targetDb, true);
+                    }
+                    finally
+                    {
+                        try { Directory.Delete(tempExtract, true); } catch { }
+                    }
+                }
+                else
+                {
+                    File.Copy(backupFilePath, targetDb, true);
+                }
+
+                // Clean up stale SQLite WAL/SHM journal files so the restored DB opens cleanly
+                string walFile = targetDb + "-wal";
+                string shmFile = targetDb + "-shm";
+                if (File.Exists(walFile)) try { File.Delete(walFile); } catch { }
+                if (File.Exists(shmFile)) try { File.Delete(shmFile); } catch { }
+
+                Log($"[Restore DB] Successfully restored '{Path.GetFileName(backupFilePath)}' to '{targetDb}'.");
+
+                if (wasRunning)
+                {
+                    Log("[Restore DB] Restarting server after database restoration...");
+                    await StartServerWithoutUpdateAsync();
+                }
+
+                return (true, $"Restored '{Path.GetFileName(backupFilePath)}' to '{Path.GetFileName(targetDb)}' successfully.");
+            }
+            catch (Exception ex)
+            {
+                Log($"[Restore DB] Error restoring backup: {ex.Message}");
+                return (false, $"Restore failed: {ex.Message}");
+            }
+        }
+
+        public (bool Success, string Message) ConfigureWindowsFirewall()
+        {
+            try
+            {
+                int gamePort = Config.GamePort;
+                int rawUdpPort = Config.RawUdpPort > 0 ? Config.RawUdpPort : (Config.GamePort + 1);
+                int queryPort = Config.QueryPort;
+                int rconPort = Config.RconPort;
+                int webPort = Config.WebPagePort;
+
+                string[] commands = new[]
+                {
+                    $"netsh advfirewall firewall delete rule name=\"Conan Server Manager - Game UDP\"",
+                    $"netsh advfirewall firewall delete rule name=\"Conan Server Manager - Raw UDP\"",
+                    $"netsh advfirewall firewall delete rule name=\"Conan Server Manager - Query UDP\"",
+                    $"netsh advfirewall firewall delete rule name=\"Conan Server Manager - RCON TCP\"",
+                    $"netsh advfirewall firewall delete rule name=\"Conan Server Manager - Web API TCP\"",
+                    $"netsh advfirewall firewall add rule name=\"Conan Server Manager - Game UDP\" dir=in action=allow protocol=UDP localport={gamePort}",
+                    $"netsh advfirewall firewall add rule name=\"Conan Server Manager - Raw UDP\" dir=in action=allow protocol=UDP localport={rawUdpPort}",
+                    $"netsh advfirewall firewall add rule name=\"Conan Server Manager - Query UDP\" dir=in action=allow protocol=UDP localport={queryPort}",
+                    $"netsh advfirewall firewall add rule name=\"Conan Server Manager - RCON TCP\" dir=in action=allow protocol=TCP localport={rconPort}",
+                    $"netsh advfirewall firewall add rule name=\"Conan Server Manager - Web API TCP\" dir=in action=allow protocol=TCP localport={webPort}"
+                };
+
+                string fullCmd = string.Join(" && ", commands);
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = $"/c \"{fullCmd}\"",
+                    Verb = "runas",
+                    UseShellExecute = true,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+
+                using var proc = Process.Start(psi);
+                proc?.WaitForExit(15000);
+
+                string summary = $"Windows Firewall rules configured for UDP ({gamePort}, {rawUdpPort}, {queryPort}) and TCP ({rconPort}, {webPort}).";
+                Log($"[Firewall] {summary}");
+                return (true, summary);
+            }
+            catch (Exception ex)
+            {
+                Log($"[Firewall] Could not configure Windows Firewall rules: {ex.Message}");
+                return (false, $"Firewall configuration failed or was canceled: {ex.Message}");
+            }
+        }
+
         public async Task<string> CreateHotBackupAsync()
         {
             string activeDb = GetActiveGameDbPath();
@@ -3256,6 +3823,7 @@ namespace ConanServerManager
 
             try
             {
+                ExecuteCustomScriptIfConfigured("Run .BAT before backup");
                 Directory.CreateDirectory(BackupDir);
                 string dbBaseName = Path.GetFileNameWithoutExtension(activeDb);
                 string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
@@ -3276,6 +3844,8 @@ namespace ConanServerManager
 
                     srcConn.BackupDatabase(destConn);
                 });
+
+                PruneOldBackups();
 
                 var fi = new FileInfo(backupPath);
                 double mb = Math.Round((double)fi.Length / (1024 * 1024), 2);

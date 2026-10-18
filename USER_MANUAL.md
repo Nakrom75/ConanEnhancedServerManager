@@ -97,70 +97,89 @@ In the top-right header of the application, you will see the **Steam Master Serv
 
 ---
 
-## 4. Dashboard & Server Configuration Guide
+## 4. Dashboard, Server Configuration & Gameplay Settings (`ServerSettings.ini`)
 
-The upper section of the window is divided into **4 compact configuration cards**:
+### Top Configuration Cards (Row 2)
+The upper configuration area is organized into **4 quick-access cards**:
 
-### Card 1: Server Identity & Passwords
+#### Card 1: Server Configuration & Identity
 - **Server Name**: The public name displayed in the Conan Exiles server browser.
-- **Max Players**: Maximum simultaneous players (`1` to `70`, default `40`).
+- **Startup Map**:
+  - **ConanSandbox (Exiled Lands)** — Standard base-game map.
+  - **Isle of Siptah (DLC_EXT)** — Expansion map (`/Game/DLC_EXT/DLC_Siptah/Maps/DLC_Isle_of_Siptah`).
+  - **Savage Wilds (Mod Map)** — Pre-configured `/Game/Mods/Savage_Wilds/Savage_Wilds` path.
+  - **Custom Map Path...** — Enter any custom mod map path directly.
 - **Server Join Password**:
   - **Leave completely blank** to run a **Public Server** that anyone can join.
   - Enter a password to run a **Private Server**.
 - **Admin Password**: Used in-game via `Settings -> Server Settings -> Make Me Admin` to unlock the Admin Panel (`Shift + Insert`).
+- **Server Region** (`EU`, `US`, `Asia`, `OC`, `SA`, `JP`), **Max Players** (default `40`), **Idle Kick Time**, and **PvP Enabled** / **VAC Enabled** checkboxes.
 
-### Card 2: Network, Ports & RCON
+#### Card 2: Network, Ports & RCON
 - **Game Port (`7777`)**, **Raw UDP Port (`7778`)**, and **Query Port (`27015`)**.
-- **RCON Enabled & RCON Port (`25575`)**: Keep RCON enabled! The manager uses RCON for graceful shutdowns, in-game broadcast announcements, live player lists, and freeze/deadlock detection.
-- **RCON Password**: Secret password used between the manager and the server process.
-- **Use Multi-Home IP (`MULTIHOME`)**:
-  - Leave **unchecked** on standard single-network-card machines.
-  - Only enable if your machine has multiple network adapters/IPs and you need to bind the server to a specific local IPv4 address.
+- **Enable RCON (`25575`) & RCON Password**: Keep RCON enabled! The manager uses RCON for graceful shutdowns, in-game broadcast announcements, live player lists, and freeze/deadlock detection.
+- **Enable Web UI & Mobile Port (`8088`)**: Hosts the built-in Web Console and Remote/Android REST API.
+- **Bind Specific IP (`MULTIHOME`)**: Leave unchecked on standard single-NIC servers; only enable if binding to a specific local adapter IP.
 
-### Card 3: World, Map & Gameplay Multipliers
-- **Map Selection**:
-  - **Exiled Lands** (`ConanSandbox`)
-  - **Isle of Siptah** (`/Game/DLC_EXT/DLC_Siptah/Maps/DLC_Isle_of_Siptah`)
-  - **Custom Map** (Allows entering a custom mod map path such as Savage Wilds).
-- **Combat & PvP Mode**:
-  - `PvE` (Players cannot damage each other)
-  - `PvE-Conflict` (PvP combat during designated hours, no building damage)
-  - `PvP` (Full PvP and raiding)
-- **Max Nudity**: `None`, `Partial`, or `Full`.
-- **Sliders & Multipliers**:
-  - **Player XP Rate**, **Harvest Amount**, **Crafting Time / Speed**, **Thrall Conversion Speed**, **Day/Night Cycle Speed**, **Stamina Cost**, and **Idle Thirst/Hunger**.
-- **World Rule Checkboxes**:
-  - **Logout Characters Remain in World** (Uncheck so sleeping bodies disappear when players log off)
-  - **Drop Equipment on Death** (Uncheck to allow players to keep their inventory when they die)
-  - **Everyone Can Loot Corpse**
-  - **Building Decay Enabled** (Uncheck to disable building abandonment decay timers)
-  - **Enable Purge**, **Disable Avatars (Gods)**, and **Containers Ignore Ownership**.
+#### Card 3: Branch & Process Scaling
+- **Steam Branch (`public` or `testlive`)** and optional Beta Password.
+- **Process Priority** (`Normal`, `AboveNormal`, `High`, `Realtime`) and **All Cores (`UseAllAvailableCores`)**.
+- **Custom Server Dir (`📁` Browse)**: Leave blank to use the default `ConanExilesDedicatedServer` subfolder, or browse to an existing server installation directory anywhere on disk.
+- **Operation Mode**: Switch between **Local Server Host** and **Remote Client Mode** (with Remote Host URL, API Password, and `🔗 Connect` button).
 
-### Card 4: Watchdog, Automation & Remote Mode
-- **Auto-Restart on Crash (Watchdog)**: Monitors the server every 30 seconds. If the server process crashes or freezes (fails 3 consecutive RCON heartbeats), the manager automatically recovers and restarts it.
-- **Daily Scheduled Restart**: Automatically performs a graceful countdown announcement in-game and restarts/updates the server at a set time each day (e.g., `04:00`).
-- **Auto-Backup on Server Stop / Pre-Start Backup**: Automatically creates a timestamped `.zip` backup of your world database whenever the server stops or before it starts.
-- **Discord Webhook URL**: Paste a Discord channel webhook URL to receive automatic rich notifications when the server starts, stops, updates, or crashes.
-- **Operation Mode**:
-  - **Local Server Host**: Manages the server installed on this machine (and hosts the embedded Web/Remote API on port `8088`).
-  - **Remote Client Mode**: Connects this desktop app to another machine running Conan Server Manager over your network.
+#### Card 4: Automation, Backups & Alerts
+- **Auto-Restart on Crash (Watchdog)** & **Update on Restart**: Monitors process health and RCON heartbeats, automatically recovering from crashes or hangs.
+- **Daily Scheduled Restart**: Automatically broadcasts in-game countdown warnings (`10m`, `5m`, `2m`, `1m`) and restarts at the configured 24h time (e.g., `04:00`).
+- **Pre-Backup / Startup `.BAT` Script Mode**: Optionally run `pre_backup.bat` before backups or `pre_start.bat` before server startup, plus **Keep Backups (Days)** automatic retention pruning.
+- **Discord Webhook URL & `Test` Button**: Receive rich Discord notifications on server start, stop, update, or crash.
 
-> **Saving Your Settings:**
-> Clicking **`💾 Save Config & Sync INI`** immediately saves your settings to `manager_config.json` **and** writes them into Conan Exiles' `ServerSettings.ini` and `Engine.ini`. Furthermore, clicking any **Start** or **Restart** button automatically saves and syncs your UI settings first so no changes are ever lost.
+---
+
+### The **`⚙️ Gameplay Settings`** Tab (Visual `ServerSettings.ini` Configurator)
+You no longer need to log into the game as an admin to configure server multipliers or world rules! Switch to the **`⚙️ Gameplay Settings`** tab (`Tab 5`) to visually configure **45 Conan Exiles `ServerSettings.ini` parameters** across 8 categories:
+
+1. **⚔️ Combat Mode & General Rules**:
+   - **Quick Combat Mode Preset**: One-click presets for **`PvE (Cooperative)`**, **`PvE-Conflict`**, **`PvP (Full Raiding)`**, or **`Custom`**.
+   - **PvP Enabled (`PVPEnabled`)**, **Building Damage (`CanDamagePlayerOwnedStructures`)**, **Dynamic Building Damage (Raid Protection)**, **Sandstorm Enabled**, **Max Nudity** (`None`, `Partial`, `Full`), **Max Clan Size**, and **Max Allowed Ping**.
+2. **💀 Death, Loot & Ownership Rules**:
+   - **Drop Equipment on Death**, **Drop Shortcut Bar on Death**, **Drop Backpack on Death** *(uncheck all three to let players keep all items on death)*.
+   - **Everyone Can Loot Corpse**, **Logged-Out Bodies Remain in World**, **Containers Ignore Ownership**, and **No Ownership**.
+3. **🏰 Building Decay, Land Claim, Purge & Avatars**:
+   - **Disable Building Abandonment (No Decay)**, **Building Decay Time Multiplier**, **Land Claim Radius Multiplier**, **Build Anywhere**, **Enable Purge**, **Purge Level (`0`–`6`)**, and **Disable Avatars (Gods)**.
+4. **✨ Experience (XP) Multipliers**:
+   - **Overall XP Rate (`PlayerXPRateMultiplier`)**, **Kill XP**, **Harvest XP**, **Crafting XP**, and **Passive Time XP**.
+5. **⛏️ Harvesting, Crafting, Thralls & Resources**:
+   - **Harvest Amount Multiplier**, **Crafting Time Multiplier** (`< 1.0` = faster), **Thrall Conversion Time** (`< 1.0` = faster breaking), **Animal Pen Taming Time**, **Resource Respawn Speed**, **Food Spoil Rate Scale**, **Fuel Burn Time Multiplier**, **Crafting Cost Multiplier**, and **Player Encumbrance Multiplier**.
+6. **☀️ Day / Night Cycle Speed**:
+   - **Overall Day Cycle Speed**, **Daytime Speed**, **Nighttime Speed**, and **Dawn / Dusk Speed**.
+7. **🛡️ Stamina, Durability, Thirst & Hunger**:
+   - **Stamina Cost Multiplier**, **Item Durability Multiplier**, **Shield Durability Multiplier**, **Active/Idle Thirst Multipliers**, and **Active/Idle Hunger Multipliers**.
+8. **🗡️ Combat Damage Multipliers (Player, NPC & Thrall)**:
+   - **Player Damage Dealt/Taken**, **NPC/Monster Damage Dealt/Taken**, and **Thrall Damage to Players/NPCs**.
+
+**Gameplay Toolbar Actions:**
+- **`🔄 Reload from INI`**: Re-imports current values directly from `ServerSettings.ini` on disk.
+- **`↺ Reset to Vanilla (1.0x)`**: Resets all gameplay multipliers and rules back to official Funcom defaults.
+- **`💾 Save & Apply Gameplay Settings`**: Saves your settings to `manager_config.json` and immediately writes all 45 keys to `ServerSettings.ini` (and syncs remotely if in Remote Client Mode).
 
 ---
 
 ## 5. Starting, Stopping & Updating Your Server
 
-The **Action Control Bar** provides full control over the server lifecycle:
+The **Action Control Bar** provides full control over the server lifecycle and system maintenance:
 
 | Button | What It Does |
 | :--- | :--- |
-| **`▶ Update & Start`** | Saves config, runs **SteamCMD** to verify/update the Conan Exiles Dedicated Server and download/update all active Workshop mods, syncs `modlist.txt`, and launches the server. |
-| **`⚡ Quick Start (No Update)`** | Skips SteamCMD verification and launches the server immediately using the files currently on disk. *(Note: If a newly added mod is missing on disk, it will still download that missing mod automatically).* |
+| **`▶ Update & Start`** | Saves config, runs **SteamCMD** to verify/update the Conan Exiles Dedicated Server and download/update all active Workshop mods, syncs `modlist.txt` & `ServerSettings.ini`, and launches the server. |
+| **`⚡ Start (No Update)`** | Skips SteamCMD verification and launches the server immediately using the files currently on disk. *(Missing mods are still downloaded automatically).* |
 | **`🔄 Restart & Update`** | Broadcasts a graceful countdown to online players via RCON, saves the world, stops the server, runs SteamCMD updates for server + mods, and starts the server back up. |
 | **`⚡ Quick Restart`** | Gracefully stops the server and restarts it immediately without running SteamCMD updates. |
 | **`⏹ Stop Server`** | Sends a graceful RCON shutdown announcement and `exit` command, waits for the database to flush cleanly, and ensures no zombie processes remain. |
+| **`💾 Save Config`** | Immediately saves all UI settings and synchronizes `ServerSettings.ini`, `Engine.ini`, `Game.ini`, and `modlist.txt`. |
+| **`📦 Hot Backup DB`** | Creates an online SQLite backup (`game.db` + `.ini` configs) in `Backups\` without stopping the server, and prunes backups older than `Keep Backups (Days)`. |
+| **`📂 Restore DB`** | Opens a backup selector dialog to restore any `.zip` or `.db` backup (automatically stopping the server and creating a pre-restore safety backup first). |
+| **`🛡️ Configure Firewall`** | Automatically creates Windows Firewall inbound rules for UDP (`GamePort`, `RawUdpPort`, `QueryPort`) and TCP (`RconPort`, `WebPagePort`). |
+| **`🌐 Steam Workshop Browser`** | Opens the built-in Chromium Steam Workshop browser for 1-click mod installation. |
 
 ---
 

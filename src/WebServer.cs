@@ -346,6 +346,44 @@ namespace ConanServerManager
                 string res = await _engine.CreateHotBackupAsync();
                 await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = true, result = res, backupDir = _engine.BackupDir }));
             }
+            else if (path == "/api/backups" && method == "GET")
+            {
+                var backups = _engine.GetAvailableBackups();
+                await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { backups = backups, backupDir = _engine.BackupDir }));
+            }
+            else if (path == "/api/control/restore-backup" && method == "POST")
+            {
+                try
+                {
+                    string fileName = "";
+                    using (var doc = JsonDocument.Parse(body))
+                    {
+                        if (doc.RootElement.TryGetProperty("fileName", out var fnProp))
+                            fileName = fnProp.GetString() ?? "";
+                        else if (doc.RootElement.TryGetProperty("fullPath", out var fpProp))
+                            fileName = fpProp.GetString() ?? "";
+                    }
+
+                    if (string.IsNullOrWhiteSpace(fileName))
+                    {
+                        await SendHttpResponseAsync(stream, 400, "application/json", "{\"success\": false, \"error\": \"Missing fileName.\"}");
+                        return;
+                    }
+
+                    string targetPath = File.Exists(fileName) ? fileName : Path.Combine(_engine.BackupDir, Path.GetFileName(fileName));
+                    var restoreRes = await _engine.RestoreDatabaseBackupAsync(targetPath);
+                    await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = restoreRes.Success, message = restoreRes.Message }));
+                }
+                catch (Exception ex)
+                {
+                    await SendHttpResponseAsync(stream, 500, "application/json", JsonSerializer.Serialize(new { success = false, error = ex.Message }));
+                }
+            }
+            else if (path == "/api/control/firewall" && method == "POST")
+            {
+                var fwRes = _engine.ConfigureWindowsFirewall();
+                await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(new { success = fwRes.Success, message = fwRes.Message }));
+            }
             else if (path == "/api/control/rcon" && method == "POST")
             {
                 string cmd = "";
@@ -383,47 +421,17 @@ namespace ConanServerManager
             else if (path == "/api/config" && method == "GET")
             {
                 var cfg = _engine.Config;
-                var res = new Dictionary<string, object>
+                var jsonElement = JsonSerializer.SerializeToElement(cfg);
+                var res = new Dictionary<string, object>();
+                foreach (var prop in jsonElement.EnumerateObject())
                 {
-                    ["serverName"] = cfg.ServerName,
-                    ["serverPassword"] = cfg.ServerPassword,
-                    ["adminPassword"] = cfg.AdminPassword,
-                    ["rconPassword"] = cfg.RconPassword,
-                    ["rconPort"] = cfg.RconPort,
-                    ["gamePort"] = cfg.GamePort,
-                    ["rawUdpPort"] = cfg.RawUdpPort,
-                    ["queryPort"] = cfg.QueryPort,
-                    ["maxPlayers"] = cfg.MaxPlayers,
-                    ["maxTickRate"] = cfg.MaxTickRate,
-                    ["region"] = cfg.Region,
-                    ["serverRegion"] = cfg.Region,
-                    ["enableBattlEye"] = cfg.EnableBattlEye,
-                    ["battlEyeEnabled"] = cfg.EnableBattlEye,
-                    ["enableVAC"] = cfg.EnableVAC,
-                    ["vacEnabled"] = cfg.EnableVAC,
-                    // PascalCase aliases for backward compatibility
-                    ["ServerName"] = cfg.ServerName,
-                    ["ServerPassword"] = cfg.ServerPassword,
-                    ["AdminPassword"] = cfg.AdminPassword,
-                    ["RconPassword"] = cfg.RconPassword,
-                    ["RconPort"] = cfg.RconPort,
-                    ["GamePort"] = cfg.GamePort,
-                    ["MaxPlayers"] = cfg.MaxPlayers,
-                    ["MaxTickRate"] = cfg.MaxTickRate,
-                    ["Region"] = cfg.Region,
-                    ["EnableBattlEye"] = cfg.EnableBattlEye,
-                    ["EnableVAC"] = cfg.EnableVAC,
-                    ["rconEnabled"] = cfg.RconEnabled,
-                    ["RconEnabled"] = cfg.RconEnabled,
-                    ["useMultihome"] = cfg.UseMultihome,
-                    ["UseMultihome"] = cfg.UseMultihome,
-                    ["multihomeIp"] = cfg.MultihomeIp,
-                    ["MultihomeIp"] = cfg.MultihomeIp,
-                    ["mods"] = cfg.Mods,
-                    ["Mods"] = cfg.Mods,
-                    ["disabledMods"] = cfg.DisabledMods,
-                    ["DisabledMods"] = cfg.DisabledMods
-                };
+                    res[prop.Name] = prop.Value;
+                    string camelName = char.ToLowerInvariant(prop.Name[0]) + prop.Name.Substring(1);
+                    res[camelName] = prop.Value;
+                }
+                res["serverRegion"] = cfg.Region;
+                res["battlEyeEnabled"] = cfg.EnableBattlEye;
+                res["vacEnabled"] = cfg.EnableVAC;
                 await SendHttpResponseAsync(stream, 200, "application/json", JsonSerializer.Serialize(res));
             }
             else if (path == "/api/config" && method == "POST")

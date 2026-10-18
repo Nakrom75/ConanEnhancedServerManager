@@ -1806,4 +1806,65 @@ The following items were identified during the v1.3.2 feature audit and schedule
 - **Zero Remote Deployment Compliance**: All builds, packages, and APKs remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
 
 ---
+
+## 45. Visual `ServerSettings.ini` Gameplay Configurator, Map Selector, Restore DB, Firewall Automation & Full Feature Parity (v1.3.8 - Build 10308)
+
+### 1. Visual `⚙️ Gameplay Settings` Tab (`ServerSettings.ini` Configurator)
+- **Motivation**:
+  - Previously, administrators had to either log into the game via Make Me Admin (`Shift+Insert`) or manually edit raw keys in `ServerSettings.ini` to adjust PvE/PvP rules, XP rates, harvesting/crafting multipliers, thrall conversion speed, purge settings, and combat damage scaling.
+- **45 `[ServerSettings]` Keys & Bi-Directional INI Synchronization (`ServerEngine.cs`)**:
+  - Added 45 gameplay properties + `GameplaySettingsImported` to `ManagerConfig`:
+    - **Combat Mode & General Rules**: `PVPEnabled`, `CanDamagePlayerOwnedStructures`, `DynamicBuildingDamage`, `MaxNudity` (`0`=None, `1`=Partial, `2`=Full), `ClanMaxSize`, `MaxAllowedPing`, `EnableSandStorm`, plus a **Combat Mode Preset** selector (`PvE`, `PvE-Conflict`, `PvP`, `Custom`).
+    - **Death, Loot & Ownership Rules**: `DropEquipmentOnDeath`, `DropShortcutBarOnDeath`, `DropBackpackOnDeath`, `EverybodyCanLootCorpse`, `LogoutCharactersRemainInTheWorld`, `ContainersIgnoreOwnership`, `NoOwnership`.
+    - **Building Decay, Land Claim, Purge & Avatars**: `DisableBuildingAbandonment`, `BuildingDecayTimeMultiplier`, `LandClaimRadiusMultiplier`, `BuildAnywhere`, `EnablePurge`, `PurgeLevel` (`0`–`6`), `AvatarsDisabled`.
+    - **XP Rate Multipliers**: `PlayerXPRateMultiplier`, `PlayerXPKillMultiplier`, `PlayerXPHarvestMultiplier`, `PlayerXPCraftMultiplier`, `PlayerXPTimeMultiplier`.
+    - **Harvesting, Crafting, Thralls & Resources**: `HarvestAmountMultiplier`, `ItemConvertionMultiplier` (Crafting Speed), `ThrallConversionMultiplier`, `AnimalPenCraftingTimeMultiplier`, `ResourceRespawnSpeedMultiplier`, `SpoilRateScale`, `FuelBurnTimeMultiplier`, `CraftingCostMultiplier`, `PlayerEncumbranceMultiplier`.
+    - **Day / Night Cycle Speeds**: `DayCycleSpeedScale`, `DayTimeSpeedScale`, `NightTimeSpeedScale`, `DawnDuskTimeSpeedScale`.
+    - **Stamina, Durability, Thirst & Hunger**: `PlayerStaminaCostMultiplier`, `DurabilityMultiplier`, `ShieldDurabilityMultiplier`, `PlayerActiveThirstMultiplier`, `PlayerIdleThirstMultiplier`, `PlayerActiveHungerMultiplier`, `PlayerIdleHungerMultiplier`.
+    - **Combat Damage Multipliers (Player, NPC & Thrall)**: `PlayerDamageMultiplier`, `PlayerDamageTakenMultiplier`, `NPCDamageMultiplier`, `NPCDamageTakenMultiplier`, `ThrallDamageToPlayersMultiplier`, `ThrallDamageToNPCsMultiplier`.
+  - **`ImportGameplaySettingsFromIni()`**: Automatically imports existing `[ServerSettings]` values from `ServerSettings.ini` on first upgrade (`!Config.GameplaySettingsImported`), when saving `ServerSettings.ini` in the Direct INI Editor, or when clicking **`🔄 Reload from INI`**.
+  - **`SyncIniSettings()`**: Writes all 45 gameplay settings into `[ServerSettings]` using `CultureInfo.InvariantCulture` (with `0.0######` formatting) whenever settings are saved or the server is started/restarted.
+- **Desktop & Android UI Integration**:
+  - **Desktop (`MainWindow.xaml` & `MainWindow.xaml.cs`)**: Added **Tab 5 (`⚙️ Gameplay Settings`)** with 8 categorized cards, a Combat Mode quick preset dropdown, `🔄 Reload from INI`, `↺ Reset to Vanilla (1.0x)`, and `💾 Save & Apply Gameplay Settings` buttons.
+  - **Android Companion App (`index.html` & `app.js`)**: Expanded **Tab 3 (`⚙️ Settings`)** with Startup Map selection, Combat & World Rules toggles, and Server Multipliers, synchronized via `GET /api/config` and `POST /api/config`.
+
+### 2. Startup Map Selector & Custom Server Directory
+- **Startup Map Selector (`CmbStartupMap` & `TxtStartupMapPath`)**:
+  - Added interactive map selector in the **Server Configuration** panel supporting:
+    1. `ConanSandbox (Exiled Lands)`
+    2. `/Game/DLC_EXT/DLC_Siptah/Maps/DLC_Isle_of_Siptah (Isle of Siptah)`
+    3. `/Game/Mods/Savage_Wilds/Savage_Wilds (Savage Wilds Mod Map)`
+    4. `Custom Map Path...` (reveals editable `TxtStartupMapPath` textbox).
+- **Custom Server Directory (`TxtCustomServerDir` & `BtnBrowseServerDir`)**:
+  - Added folder path input and `📁` native folder picker in **Branch & Process Scaling** so admins can manage an existing Conan Exiles server installation outside the default `ConanExilesDedicatedServer` subfolder.
+
+### 3. Database Backup Restore (`📂 Restore DB`), Retention Pruning & `.BAT` Script Hooks
+- **1-Click Database Backup Restore (`BtnRestoreBackup`)**:
+  - Added `GetAvailableBackups()` and `RestoreDatabaseBackupAsync(string backupFileName)` in `ServerEngine.cs`, plus `GET /api/backups` and `POST /api/control/restore-backup` in `WebServer.cs`.
+  - Automatically stops the server if running, creates a pre-restore safety backup (`game_pre_restore_<timestamp>.db`), extracts `.zip` or copies `.db` backups to `game.db` (cleaning stale `.db-wal` / `.db-shm` journal files), and optionally restarts the server.
+- **Automated Backup Retention Pruning (`PruneOldBackups`)**:
+  - Wired `Config.BackupLimitDays` into `CreateHotBackupAsync()` to automatically prune backup files older than `BackupLimitDays` days.
+- **Custom `.BAT` Script Execution (`ExecuteCustomScriptIfConfigured`)**:
+  - Wired `Config.BackupScriptMode` (`1` = `pre_backup.bat` before backup; `2` = `pre_start.bat` on server startup) with full stdout/stderr streaming to the Live Console.
+
+### 4. One-Click Windows Firewall Configuration & Quick Workshop Search
+- **Windows Firewall Automation (`BtnConfigureFirewall` / `ConfigureWindowsFirewall`)**:
+  - Added **`🛡️ Configure Firewall`** button in the primary action bar (and `POST /api/control/firewall` for Remote Client mode) that configures inbound UDP rules (`GamePort`, `RawUdpPort`, `QueryPort`) and TCP rules (`RconPort`, `WebPagePort`) via `netsh advfirewall firewall` (auto-elevating via UAC if needed).
+- **Quick Steam Workshop Search Bar in Desktop `Mods` Tab (`TxtQuickWorkshopSearch`)**:
+  - Added an inline search bar in the `Mods` tab header that launches the integrated Workshop browser directly to the search query.
+
+### 5. Synchronized Dual-Platform Release (`v1.3.8` / `10308`)
+- Removed legacy `ConanServerManager-v1.3.7.apk` from Git tracking (`git rm ConanServerManager-v1.3.7.apk`) so only `ConanServerManager-v1.3.8.apk` is stored in the repository root.
+- Synchronized all 7 core version locations to `1.3.8` (Version Code `10308`):
+  1. `version.txt` -> `1.3.8`
+  2. `src/ServerEngine.cs` -> fallback `GetAppVersion()` = `"1.3.8"`
+  3. `src/MainWindow.xaml` -> `TxtAppHeaderTitle` = `"Conan Enhanced Server Manager v1.3.8"`, `TxtAppHeaderVersionBadge` = `"🚀 v1.3.8"`
+  4. `android/app/build.gradle` -> `getAppVersionName() = "1.3.8"`, `getAppVersionCode() = 10308`
+  5. `android/app/src/main/assets/app.js` -> `APP_VERSION = "1.3.8"`
+  6. `android/app/src/main/assets/index.html` -> badge `#appInstalledVersion` = `v1.3.8`
+  7. `android/app/src/main/java/com/conan/servermanager/MainActivity.java` -> fallback `"1.3.8"`, `10308`
+- **Zero Remote Deployment Compliance**: All builds, packages, and APKs remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
+
+---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
+
