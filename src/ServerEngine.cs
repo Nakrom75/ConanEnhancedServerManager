@@ -62,7 +62,7 @@ namespace ConanServerManager
         public bool EnableVAC { get; set; } = false;
 
         // Startup Map & Extra Params
-        public string StartupMap { get; set; } = "Exiled Lands|/Game/Maps/ConanSandbox/ConanSandbox";
+        public string StartupMap { get; set; } = "ConanSandbox (Merged Enhanced World)|/Game/Maps/ConanSandbox/ConanSandbox";
         public string GameServerExtraParams { get; set; } = "";
         public string SteamCmdExtraParams { get; set; } = "";
 
@@ -358,7 +358,7 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.3.8";
+            return "1.3.9";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;

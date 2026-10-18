@@ -99,16 +99,19 @@ In the top-right header of the application, you will see the **Steam Master Serv
 
 ## 4. Dashboard, Server Configuration & Gameplay Settings (`ServerSettings.ini`)
 
-### Top Configuration Cards (Row 2)
+The main application window is organized into **two full-size top-level workspace tabs** right below the header bar:
+- **`🖥️ Main Server Dashboard`**: Server configuration cards, lifecycle action buttons, live Players Online sidebar, console logs, and Mod Manager.
+- **`⚙️ Gameplay & ServerSettings.ini`**: A full-window visual configurator for all 45 Conan Exiles gameplay rules and multipliers.
+
+### Top Configuration Cards (`🖥️ Main Server Dashboard`)
 The upper configuration area is organized into **4 quick-access cards**:
 
 #### Card 1: Server Configuration & Identity
 - **Server Name**: The public name displayed in the Conan Exiles server browser.
 - **Startup Map**:
-  - **ConanSandbox (Exiled Lands)** — Standard base-game map.
-  - **Isle of Siptah (DLC_EXT)** — Expansion map (`/Game/DLC_EXT/DLC_Siptah/Maps/DLC_Isle_of_Siptah`).
+  - **ConanSandbox (Merged Enhanced World)** — Default unified world map for Conan Exiles Enhanced (merges Exiled Lands & Isle of Siptah).
   - **Savage Wilds (Mod Map)** — Pre-configured `/Game/Mods/Savage_Wilds/Savage_Wilds` path.
-  - **Custom Map Path...** — Enter any custom mod map path directly.
+  - **Custom Map Path...** — Reveals a text box to enter any custom mod map asset path directly.
 - **Server Join Password**:
   - **Leave completely blank** to run a **Public Server** that anyone can join.
   - Enter a password to run a **Private Server**.
@@ -135,8 +138,8 @@ The upper configuration area is organized into **4 quick-access cards**:
 
 ---
 
-### The **`⚙️ Gameplay Settings`** Tab (Visual `ServerSettings.ini` Configurator)
-You no longer need to log into the game as an admin to configure server multipliers or world rules! Switch to the **`⚙️ Gameplay Settings`** tab (`Tab 5`) to visually configure **45 Conan Exiles `ServerSettings.ini` parameters** across 8 categories:
+### Top-Level Tab 2: **`⚙️ Gameplay & ServerSettings.ini`** (Full-Window Visual Configurator)
+You no longer need to log into the game as an admin to configure server multipliers or world rules! Click the top **`⚙️ Gameplay & ServerSettings.ini`** tab next to `🖥️ Main Server Dashboard` to open a full-window visual configurator for **45 Conan Exiles `ServerSettings.ini` parameters** across 8 categories:
 
 1. **⚔️ Combat Mode & General Rules**:
    - **Quick Combat Mode Preset**: One-click presets for **`PvE (Cooperative)`**, **`PvE-Conflict`**, **`PvP (Full Raiding)`**, or **`Custom`**.

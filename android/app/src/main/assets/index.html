@@ -236,11 +236,12 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label">Startup Map</label>
-                        <select id="cfgStartupMap">
-                            <option value="ConanSandbox (Exiled Lands)|/Game/Maps/ConanSandbox/ConanSandbox">Exiled Lands</option>
-                            <option value="Isle of Siptah|/Game/DLC_EXT/DLC_Siptah/Maps/DLC_Isle_of_Siptah">Isle of Siptah</option>
-                            <option value="Savage Wilds|/Game/Mods/Savage_Wilds/Savage_Wilds">Savage Wilds</option>
+                        <select id="cfgStartupMap" onchange="onAndroidStartupMapChange()">
+                            <option value="ConanSandbox (Merged Enhanced World)|/Game/Maps/ConanSandbox/ConanSandbox">ConanSandbox (Merged Enhanced World)</option>
+                            <option value="Savage Wilds|/Game/Mods/Savage_Wilds/Savage_Wilds">Savage Wilds (Mod Map)</option>
+                            <option value="CUSTOM">Custom Map Path...</option>
                         </select>
+                        <input type="text" id="cfgCustomMapPath" placeholder="/Game/Mods/CustomMap/CustomMap" style="display:none;margin-top:6px;">
                     </div>
                 </div>
 
@@ -387,7 +388,7 @@
             <div class="card">
                 <div class="card-title">✨ Application Updates</div>
                 <div style="font-size:0.85rem;color:#cbd5e1;margin-bottom:12px;">
-                    <div>App Version: <strong class="badge badge-ver" id="appInstalledVersion">v1.3.8</strong></div>
+                    <div>App Version: <strong class="badge badge-ver" id="appInstalledVersion">v1.3.9</strong></div>
                     <div style="margin-top:6px;">Server Manager Version: <strong id="serverInstalledVersion" style="color:#38bdf8;">--</strong></div>
                 </div>
 

@@ -749,7 +749,11 @@ namespace ConanServerManager
             // Startup Map
             if (CmbStartupMap != null)
             {
-                string mapVal = string.IsNullOrWhiteSpace(cfg.StartupMap) ? "ConanSandbox (Exiled Lands)|/Game/Maps/ConanSandbox/ConanSandbox" : cfg.StartupMap.Trim();
+                string mapVal = string.IsNullOrWhiteSpace(cfg.StartupMap) ? "ConanSandbox (Merged Enhanced World)|/Game/Maps/ConanSandbox/ConanSandbox" : cfg.StartupMap.Trim();
+                if (mapVal.Contains("DLC_Isle_of_Siptah", StringComparison.OrdinalIgnoreCase))
+                {
+                    mapVal = "ConanSandbox (Merged Enhanced World)|/Game/Maps/ConanSandbox/ConanSandbox";
+                }
                 bool matchedMap = false;
                 for (int i = 0; i < CmbStartupMap.Items.Count; i++)
                 {
@@ -988,7 +992,7 @@ namespace ConanServerManager
                 {
                     string customPath = TxtStartupMapPath?.Text?.Trim() ?? "/Game/Maps/ConanSandbox/ConanSandbox";
                     cfg.StartupMap = string.IsNullOrWhiteSpace(customPath)
-                        ? "ConanSandbox (Exiled Lands)|/Game/Maps/ConanSandbox/ConanSandbox"
+                        ? "ConanSandbox (Merged Enhanced World)|/Game/Maps/ConanSandbox/ConanSandbox"
                         : $"Custom Map|{customPath}";
                 }
                 else

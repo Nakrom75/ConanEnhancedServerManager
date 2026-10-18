@@ -7,7 +7,7 @@ let savedServers = [];
 let latestApkUrl = "";
 let lastKnownConfig = null;
 let lastCrashCulpritModId = "";
-let APP_VERSION = "1.3.8";
+let APP_VERSION = "1.3.9";
 if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
 }
@@ -953,13 +953,30 @@ function applyConfigToForm(cfg) {
     }
 
     if (rawMap !== undefined && elMap) {
-        const mapStr = String(rawMap).trim();
+        let mapStr = String(rawMap).trim();
+        if (mapStr.toLowerCase().includes("dlc_isle_of_siptah")) {
+            mapStr = "ConanSandbox (Merged Enhanced World)|/Game/Maps/ConanSandbox/ConanSandbox";
+        }
+        let matched = false;
+        const mapPath = mapStr.includes("|") ? mapStr.split("|")[1] : mapStr;
         for (let i = 0; i < elMap.options.length; i++) {
             const opt = elMap.options[i];
-            if (opt.value === mapStr || opt.value.split("|")[1] === mapStr.split("|")[1]) {
+            if (opt.value !== "CUSTOM" && (opt.value === mapStr || opt.value.split("|")[1] === mapPath)) {
                 elMap.value = opt.value;
+                matched = true;
                 break;
             }
+        }
+        const customInput = document.getElementById("cfgCustomMapPath");
+        if (!matched) {
+            elMap.value = "CUSTOM";
+            if (customInput) {
+                customInput.value = mapPath;
+                customInput.style.display = "block";
+            }
+        } else if (customInput) {
+            customInput.value = mapPath;
+            customInput.style.display = "none";
         }
     }
 
@@ -1052,6 +1069,17 @@ async function fetchServerConfig(showFeedback = false) {
     }
 }
 
+function onAndroidStartupMapChange() {
+    const elMap = document.getElementById("cfgStartupMap");
+    const customInput = document.getElementById("cfgCustomMapPath");
+    if (!elMap || !customInput) return;
+    if (elMap.value === "CUSTOM") {
+        customInput.style.display = "block";
+    } else {
+        customInput.style.display = "none";
+    }
+}
+
 async function saveServerConfig() {
     vibrate(40);
     const btn = document.getElementById("btnSaveConfig");
@@ -1066,6 +1094,16 @@ async function saveServerConfig() {
         const regSelect = document.getElementById("cfgRegion");
         const regText = regSelect ? (regSelect.options[regSelect.selectedIndex]?.text || regSelect.value) : "0 - Europe";
         const mapSelect = document.getElementById("cfgStartupMap");
+        const customMapInput = document.getElementById("cfgCustomMapPath");
+        let startupMapValue = "ConanSandbox (Merged Enhanced World)|/Game/Maps/ConanSandbox/ConanSandbox";
+        if (mapSelect) {
+            if (mapSelect.value === "CUSTOM") {
+                const customPath = customMapInput ? customMapInput.value.trim() : "";
+                startupMapValue = customPath ? `Custom Map|${customPath}` : startupMapValue;
+            } else {
+                startupMapValue = mapSelect.value;
+            }
+        }
 
         const getFloat = (id, fallback) => {
             const el = document.getElementById(id);
@@ -1086,7 +1124,7 @@ async function saveServerConfig() {
             maxTickRate: parseInt(document.getElementById("cfgMaxTickRate").value) || 30,
             region: regText,
             serverRegion: regSelect ? regSelect.value : "0",
-            startupMap: mapSelect ? mapSelect.value : "ConanSandbox (Exiled Lands)|/Game/Maps/ConanSandbox/ConanSandbox",
+            startupMap: startupMapValue,
             enableBattlEye: document.getElementById("cfgBattlEye").checked,
             battlEyeEnabled: document.getElementById("cfgBattlEye").checked,
             enableVAC: document.getElementById("cfgVac").checked,

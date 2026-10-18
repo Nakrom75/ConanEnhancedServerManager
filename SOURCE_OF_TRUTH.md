@@ -1866,5 +1866,37 @@ The following items were identified during the v1.3.2 feature audit and schedule
 - **Zero Remote Deployment Compliance**: All builds, packages, and APKs remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
 
 ---
-*End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
 
+## 46. Top-Level Workspace Tabs & Conan Exiles Enhanced Merged World Map Selector (v1.3.9 - Build 10309)
+
+### 1. Top-Level Workspace Tab Architecture (`RootWorkspaceTabControl`)
+- **Motivation**:
+  - Placing the 45-setting **`⚙️ Gameplay Settings`** configurator inside the lower console/log `MainTabControl` restricted its vertical height to the bottom half of the window, making the 3-column settings grid cramped and harder to read.
+- **Architectural Redesign (`src/MainWindow.xaml`)**:
+  - Wrapped the main window workspace (`Grid.Row="1"`) in a top-level `TabControl` (`RootWorkspaceTabControl`) with two full-window tabs:
+    1. **`🖥️ Main Server Dashboard`**: Houses the 4-column server configuration cards, the primary server lifecycle & maintenance action bar, the permanent Players Online sidebar, and the lower `MainTabControl` (`Server Log`, `Errors`, `Chat`, `Mods`, `SteamCMD Log`, `Engine.ini`, `ServerSettings.ini`, `Game.ini`, `Launcher Log`).
+    2. **`⚙️ Gameplay & ServerSettings.ini`**: Utilizes the entire vertical height of the main window for the 3-column `ServerSettings.ini` configurator, with increased font sizes (`11pt`–`14pt`) and generous card padding for effortless readability.
+  - The top Header bar (`Grid.Row="0"`), bottom RCON Input bar (`Grid.Row="2"`), and Multi-Tier Uptime & RAM Status bar (`Grid.Row="3"`) remain permanently visible across both workspace tabs.
+
+### 2. Conan Exiles Enhanced Merged World Map Selector
+- **Context**:
+  - In **Conan Exiles Enhanced**, the Exiled Lands and Isle of Siptah are merged into a single unified world map (`ConanSandbox`), so a separate Isle of Siptah map entry is no longer needed.
+- **Implementation (`MainWindow.xaml`, `MainWindow.xaml.cs`, `ServerEngine.cs`, `index.html`, `app.js`)**:
+  - Removed the separate `Isle of Siptah` dropdown item across both Windows and Android.
+  - Updated the default map option to **`ConanSandbox (Merged Enhanced World)`** (`/Game/Maps/ConanSandbox/ConanSandbox`), while keeping **`Savage Wilds (Mod Map)`** (`/Game/Mods/Savage_Wilds/Savage_Wilds`) and **`Custom Map Path...`** (`CUSTOM`) with an editable custom Unreal map path input on both Windows and Android.
+  - Added automatic migration in `PopulateUiFromConfig()` and `applyConfigToForm()`: if a legacy config had `DLC_Isle_of_Siptah`, it automatically maps to `ConanSandbox (Merged Enhanced World)`.
+
+### 3. Synchronized Dual-Platform Release (`v1.3.9` / `10309`)
+- Removed `ConanServerManager-v1.3.8.apk` from Git tracking (`git rm ConanServerManager-v1.3.8.apk`) so only `ConanServerManager-v1.3.9.apk` is stored in the repository root.
+- Synchronized all 7 core version locations to `1.3.9` (Version Code `10309`):
+  1. `version.txt` -> `1.3.9`
+  2. `src/ServerEngine.cs` -> fallback `GetAppVersion()` = `"1.3.9"`
+  3. `src/MainWindow.xaml` -> `TxtAppHeaderTitle` = `"Conan Enhanced Server Manager v1.3.9"`, `TxtAppHeaderVersionBadge` = `"🚀 v1.3.9"`
+  4. `android/app/build.gradle` -> `getAppVersionName() = "1.3.9"`, `getAppVersionCode() = 10309`
+  5. `android/app/src/main/assets/app.js` -> `APP_VERSION = "1.3.9"`
+  6. `android/app/src/main/assets/index.html` -> badge `#appInstalledVersion` = `v1.3.9`
+  7. `android/app/src/main/java/com/conan/servermanager/MainActivity.java` -> fallback `"1.3.9"`, `10309`
+- **Zero Remote Deployment Compliance**: All builds, packages, and APKs remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
+
+---
+*End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
