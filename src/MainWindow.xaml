@@ -30,11 +30,50 @@
             <Setter Property="Margin" Value="0,0,0,2"/>
         </Style>
 
+        <!-- Rich Dark Glassmorphic ToolTip Style -->
+        <Style TargetType="ToolTip">
+            <Setter Property="Background" Value="#0F172A"/>
+            <Setter Property="Foreground" Value="#F8FAFC"/>
+            <Setter Property="BorderBrush" Value="#38BDF8"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="MaxWidth" Value="440"/>
+            <Setter Property="HasDropShadow" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToolTip">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter>
+                                <ContentPresenter.Resources>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextWrapping" Value="Wrap"/>
+                                        <Setter Property="LineHeight" Value="17"/>
+                                    </Style>
+                                </ContentPresenter.Resources>
+                            </ContentPresenter>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="StackPanel">
+            <Setter Property="ToolTipService.InitialShowDelay" Value="200"/>
+            <Setter Property="ToolTipService.ShowDuration" Value="30000"/>
+        </Style>
+
         <Style x:Key="FormLabel" TargetType="TextBlock">
             <Setter Property="FontSize" Value="10"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Foreground" Value="#94A3B8"/>
             <Setter Property="Margin" Value="0,1,0,1"/>
+            <Setter Property="ToolTipService.InitialShowDelay" Value="200"/>
+            <Setter Property="ToolTipService.ShowDuration" Value="30000"/>
         </Style>
 
         <Style x:Key="FormInput" TargetType="TextBox">
@@ -44,6 +83,8 @@
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="4,2"/>
             <Setter Property="FontSize" Value="10"/>
+            <Setter Property="ToolTipService.InitialShowDelay" Value="200"/>
+            <Setter Property="ToolTipService.ShowDuration" Value="30000"/>
         </Style>
 
         <Style x:Key="FormCombo" TargetType="ComboBox">
@@ -53,12 +94,16 @@
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="3,1"/>
             <Setter Property="FontSize" Value="10"/>
+            <Setter Property="ToolTipService.InitialShowDelay" Value="200"/>
+            <Setter Property="ToolTipService.ShowDuration" Value="30000"/>
         </Style>
 
         <Style x:Key="FormCheck" TargetType="CheckBox">
             <Setter Property="Foreground" Value="#E2E8F0"/>
             <Setter Property="FontSize" Value="10"/>
             <Setter Property="Margin" Value="0,1,4,1"/>
+            <Setter Property="ToolTipService.InitialShowDelay" Value="200"/>
+            <Setter Property="ToolTipService.ShowDuration" Value="30000"/>
         </Style>
 
         <Style x:Key="BtnPrimary" TargetType="Button">
@@ -118,9 +163,9 @@
                     <StackPanel Orientation="Vertical">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Image Source="app.png" Width="22" Height="22" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.3.9" Style="{StaticResource HeaderTitle}"/>
+                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.3.10" Style="{StaticResource HeaderTitle}"/>
                             <Border CornerRadius="8" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" Margin="10,0,0,0" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="🚀 v1.3.9" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="🚀 v1.3.10" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="TxtServerPathInfo" Text="Mode: Local Server Host | Embedded Web Console: http://0.0.0.0:8088" Foreground="#94A3B8" FontSize="11"/>
@@ -217,8 +262,8 @@
                                 <StackPanel>
                                     <TextBlock Text="Connection Mode" Style="{StaticResource SectionHeading}"/>
                                     <WrapPanel Margin="0,1,0,3">
-                                        <RadioButton x:Name="RadLocalMode" Content="Local Host" Foreground="#E2E8F0" FontWeight="Bold" IsChecked="True" Checked="RadMode_Checked" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                        <RadioButton x:Name="RadRemoteMode" Content="Remote Client" Foreground="#E2E8F0" FontWeight="Bold" Checked="RadMode_Checked" VerticalAlignment="Center"/>
+                                        <RadioButton x:Name="RadLocalMode" Content="Local Host" Foreground="#E2E8F0" FontWeight="Bold" IsChecked="True" Checked="RadMode_Checked" Margin="0,0,8,0" VerticalAlignment="Center" ToolTip="Local Host Mode: Directly manages a Conan Exiles Dedicated Server installed on this machine and hosts the HTTP/WebSocket Remote API on the Web API Port."/>
+                                        <RadioButton x:Name="RadRemoteMode" Content="Remote Client" Foreground="#E2E8F0" FontWeight="Bold" Checked="RadMode_Checked" VerticalAlignment="Center" ToolTip="Remote Client Mode: Connects over LAN/Internet to another machine running Conan Server Manager on its Web API Port (default 8088)."/>
                                     </WrapPanel>
 
                                     <!-- Remote Server Dropdown Selection & LAN/VM Scan -->
@@ -228,8 +273,8 @@
                                             <ColumnDefinition Width="4"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <ComboBox Grid.Column="0" x:Name="CmbRemoteServers" Style="{StaticResource FormCombo}" DisplayMemberPath="DisplayText" SelectionChanged="CmbRemoteServers_SelectionChanged" ToolTip="Select server (Localhost, Discovered on LAN/VM, or Custom)"/>
-                                        <Button Grid.Column="2" x:Name="BtnDiscoverServers" Content="🔍 Scan" Style="{StaticResource BtnSecondary}" Padding="6,1" FontSize="10" ToolTip="Scan network &amp; VMs for active servers" Click="BtnDiscoverServers_Click"/>
+                                        <ComboBox Grid.Column="0" x:Name="CmbRemoteServers" Style="{StaticResource FormCombo}" DisplayMemberPath="DisplayText" SelectionChanged="CmbRemoteServers_SelectionChanged" ToolTip="Select a target server (Localhost, Discovered on LAN/VM subnet, or Custom URL)."/>
+                                        <Button Grid.Column="2" x:Name="BtnDiscoverServers" Content="🔍 Scan" Style="{StaticResource BtnSecondary}" Padding="6,1" FontSize="10" ToolTip="Scan local network &amp; VM subnets for active Conan Server Manager instances." Click="BtnDiscoverServers_Click"/>
                                     </Grid>
 
                                     <!-- Target Server URL & Connect Button -->
@@ -239,8 +284,8 @@
                                             <ColumnDefinition Width="4"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <TextBox Grid.Column="0" x:Name="TxtRemoteUrl" Style="{StaticResource FormInput}" Text="http://127.0.0.1:8088" ToolTip="Remote Server URL (e.g. http://192.168.1.100:8088)"/>
-                                        <Button Grid.Column="2" x:Name="BtnConnectRemote" Content="Connect" Style="{StaticResource BtnPrimary}" Padding="8,1" FontSize="10" Click="BtnConnectRemote_Click"/>
+                                        <TextBox Grid.Column="0" x:Name="TxtRemoteUrl" Style="{StaticResource FormInput}" Text="http://127.0.0.1:8088" ToolTip="Target Remote Server API URL (e.g. http://192.168.1.100:8088)."/>
+                                        <Button Grid.Column="2" x:Name="BtnConnectRemote" Content="Connect" Style="{StaticResource BtnPrimary}" Padding="8,1" FontSize="10" ToolTip="Connect to the specified Remote Server Manager instance." Click="BtnConnectRemote_Click"/>
                                     </Grid>
 
                                     <StackPanel x:Name="PnlRemoteStatusIndicator" Orientation="Horizontal" Margin="0,3,0,0" Visibility="Collapsed">
@@ -253,8 +298,10 @@
                             <Border Style="{StaticResource GlassPanel}">
                                 <StackPanel>
                                     <TextBlock Text="Server Identity &amp; Rules" Style="{StaticResource SectionHeading}"/>
-                                    <TextBlock Text="Server Name" Style="{StaticResource FormLabel}"/>
-                                    <TextBox x:Name="TxtServerName" Style="{StaticResource FormInput}"/>
+                                    <StackPanel ToolTip="ServerName (Engine.ini / ServerSettings.ini)&#x0a;Summary: Public display name shown in the Conan Exiles in-game server browser and Steam server list.&#x0a;Hint: Avoid special symbols that may break command-line parsing; use letters, numbers, spaces, and brackets.">
+                                        <TextBlock Text="Server Name" Style="{StaticResource FormLabel}"/>
+                                        <TextBox x:Name="TxtServerName" Style="{StaticResource FormInput}"/>
+                                    </StackPanel>
 
                                     <Grid Margin="0,2,0,0">
                                         <Grid.ColumnDefinitions>
@@ -262,11 +309,11 @@
                                             <ColumnDefinition Width="4"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
+                                        <StackPanel Grid.Column="0" ToolTip="ServerPassword (ServerSettings.ini / Engine.ini)&#x0a;Summary: Password required for players to join the server.&#x0a;Options &amp; Hints:&#x0a;• Leave completely BLANK for a public (open) server&#x0a;• Enter a password to restrict access to invited players">
                                             <TextBlock Text="Server Password" Style="{StaticResource FormLabel}"/>
                                             <TextBox x:Name="TxtServerPass" Style="{StaticResource FormInput}"/>
                                         </StackPanel>
-                                        <StackPanel Grid.Column="2">
+                                        <StackPanel Grid.Column="2" ToolTip="AdminPassword (ServerSettings.ini)&#x0a;Summary: Password used inside the game (Settings → Server Settings → Make Me Admin) to unlock the in-game Admin Panel, teleport, spawn items, and change rules live.&#x0a;Hint: Choose a strong password so regular players cannot grant themselves admin privileges.">
                                             <TextBlock Text="Admin Password" Style="{StaticResource FormLabel}"/>
                                             <TextBox x:Name="TxtAdminPass" Style="{StaticResource FormInput}"/>
                                         </StackPanel>
@@ -278,11 +325,11 @@
                                             <ColumnDefinition Width="4"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
+                                        <StackPanel Grid.Column="0" ToolTip="MaxPlayers ([/Script/Engine.GameSession] in Game.ini &amp; -MaxPlayers CLI)&#x0a;Summary: Maximum number of concurrent players allowed on the server at one time.&#x0a;Vanilla Default: 40&#x0a;Options &amp; Hints:&#x0a;• 10–20 = Small private / co-op server&#x0a;• 40 = Official standard capacity&#x0a;• 60–70 = High-population server (requires strong CPU)">
                                             <TextBlock Text="Max Players" Style="{StaticResource FormLabel}"/>
                                             <TextBox x:Name="TxtMaxPlayers" Style="{StaticResource FormInput}"/>
                                         </StackPanel>
-                                        <StackPanel Grid.Column="2">
+                                        <StackPanel Grid.Column="2" ToolTip="NetServerMaxTickRate ([/Script/OnlineSubsystemUtils.IpNetDriver] in Engine.ini)&#x0a;Summary: Maximum server simulation updates (ticks / frames) per second.&#x0a;Vanilla Default: 30&#x0a;Options &amp; Hints:&#x0a;• 30 = Official default (balanced CPU usage)&#x0a;• 60 = Smoother NPC AI &amp; combat responsiveness (higher CPU load)">
                                             <TextBlock Text="Max Tick Rate" Style="{StaticResource FormLabel}"/>
                                             <TextBox x:Name="TxtMaxTickRate" Style="{StaticResource FormInput}"/>
                                         </StackPanel>
@@ -294,7 +341,7 @@
                                             <ColumnDefinition Width="4"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
+                                        <StackPanel Grid.Column="0" ToolTip="serverRegion (ServerSettings.ini)&#x0a;Summary: Geographic region tag displayed in the in-game server browser filter.&#x0a;Options:&#x0a;• 0 = Europe&#x0a;• 1 = America (East)&#x0a;• 2 = America (West)&#x0a;• 3 = Asia&#x0a;• 4 = Oceania&#x0a;• 5 = South America">
                                             <TextBlock Text="Server Region" Style="{StaticResource FormLabel}"/>
                                             <ComboBox x:Name="CmbRegion" Style="{StaticResource FormCombo}">
                                                 <ComboBoxItem Content="0 - Europe" IsSelected="True"/>
@@ -305,7 +352,7 @@
                                                 <ComboBoxItem Content="5 - South America"/>
                                             </ComboBox>
                                         </StackPanel>
-                                        <StackPanel Grid.Column="2">
+                                        <StackPanel Grid.Column="2" ToolTip="Startup Map (First CLI argument to ConanSandboxServer.exe)&#x0a;Summary: Selects which map world the dedicated server loads on startup.&#x0a;Options &amp; Hints:&#x0a;• ConanSandbox (Merged Enhanced World) = Standard Conan Exiles Enhanced world (Exiled Lands + Isle of Siptah merged)&#x0a;• Savage Wilds = Popular Workshop mod map&#x0a;• Custom Map Path... = Enter any custom Workshop map asset path">
                                             <TextBlock Text="Startup Map" Style="{StaticResource FormLabel}"/>
                                             <ComboBox x:Name="CmbStartupMap" Style="{StaticResource FormCombo}" SelectionChanged="CmbStartupMap_SelectionChanged">
                                                 <ComboBoxItem Content="ConanSandbox (Merged Enhanced World)" Tag="ConanSandbox (Merged Enhanced World)|/Game/Maps/ConanSandbox/ConanSandbox" IsSelected="True"/>
@@ -315,7 +362,7 @@
                                         </StackPanel>
                                     </Grid>
 
-                                    <TextBox x:Name="TxtStartupMapPath" Style="{StaticResource FormInput}" Margin="0,2,0,0" Visibility="Collapsed" ToolTip="Custom Unreal Engine map asset path (e.g. /Game/Mods/MyMap/MyMap)"/>
+                                    <TextBox x:Name="TxtStartupMapPath" Style="{StaticResource FormInput}" Margin="0,2,0,0" Visibility="Collapsed" ToolTip="Custom Unreal Engine map asset path (e.g. /Game/Mods/MyMap/MyMap). Passed as the first startup argument to ConanSandboxServer.exe."/>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -325,8 +372,10 @@
                             <Border Style="{StaticResource GlassPanel}">
                                 <StackPanel>
                                     <TextBlock Text="Network Interface &amp; IP" Style="{StaticResource SectionHeading}"/>
-                                    <TextBlock Text="Network Adapter (NIC)" Style="{StaticResource FormLabel}"/>
-                                    <ComboBox x:Name="CmbNetworkAdapter" Style="{StaticResource FormCombo}" SelectionChanged="CmbNetworkAdapter_SelectionChanged"/>
+                                    <StackPanel ToolTip="Network Adapter (NIC)&#x0a;Summary: Selects which physical or virtual network card's IPv4 address is used when Multihome binding is enabled.">
+                                        <TextBlock Text="Network Adapter (NIC)" Style="{StaticResource FormLabel}"/>
+                                        <ComboBox x:Name="CmbNetworkAdapter" Style="{StaticResource FormCombo}" SelectionChanged="CmbNetworkAdapter_SelectionChanged"/>
+                                    </StackPanel>
 
                                     <Grid Margin="0,2,0,0">
                                         <Grid.ColumnDefinitions>
@@ -334,24 +383,24 @@
                                             <ColumnDefinition Width="4"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
+                                        <StackPanel Grid.Column="0" ToolTip="Public External IP&#x0a;Summary: Your router's public WAN IPv4 address detected automatically. Share this IP + Game Port with external friends for Direct Connect.">
                                             <TextBlock Text="Public External IP" Style="{StaticResource FormLabel}"/>
                                             <TextBox x:Name="TxtExternalIp" Style="{StaticResource FormInput}" IsReadOnly="True" Background="#1E293B"/>
                                         </StackPanel>
-                                        <StackPanel Grid.Column="2">
+                                        <StackPanel Grid.Column="2" ToolTip="Adapter MAC Address&#x0a;Summary: Hardware MAC address of the selected network interface (useful for setting a static DHCP reservation on your router).">
                                             <TextBlock Text="Adapter MAC" Style="{StaticResource FormLabel}"/>
                                             <TextBox x:Name="TxtMacAddress" Style="{StaticResource FormInput}" IsReadOnly="True" Background="#1E293B"/>
                                         </StackPanel>
                                     </Grid>
 
-                                    <Button x:Name="BtnCopyConnectionInfo" Content="📋 Copy Connection Info" Style="{StaticResource BtnSecondary}" Click="BtnCopyConnectionInfo_Click" Margin="0,3,0,0"/>
+                                    <Button x:Name="BtnCopyConnectionInfo" Content="📋 Copy Connection Info" Style="{StaticResource BtnSecondary}" Click="BtnCopyConnectionInfo_Click" Margin="0,3,0,0" ToolTip="Copy server Name, Direct Connect IP:Port, and Steam Query address to clipboard to share on Discord."/>
                                 </StackPanel>
                             </Border>
 
                             <Border Style="{StaticResource GlassPanel}">
                                 <StackPanel>
                                     <TextBlock Text="Port Matrix &amp; Multihome" Style="{StaticResource SectionHeading}"/>
-                                    <WrapPanel>
+                                    <WrapPanel ToolTip="MULTIHOME (-MULTIHOME=&lt;IP&gt;)&#x0a;Summary: Forces the Unreal Engine server to bind specifically to the chosen local IPv4 address.&#x0a;Hint: Enable this if your PC has multiple network cards, VPN adapters, or VMware/Hyper-V switches.">
                                         <CheckBox x:Name="ChkUseMultihome" Content="Use Multihome" Style="{StaticResource FormCheck}"/>
                                         <TextBox x:Name="TxtMultihomeIp" Style="{StaticResource FormInput}" Width="90"/>
                                     </WrapPanel>
@@ -362,14 +411,14 @@
                                             <ColumnDefinition Width="4"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
+                                        <StackPanel Grid.Column="0" ToolTip="Game Port (UDP)&#x0a;Summary: Primary UDP port used for all in-game player traffic and Direct Connect.&#x0a;Default: 7777 (UDP)&#x0a;Hint: Must be port-forwarded (UDP) on your router.">
                                             <StackPanel Orientation="Horizontal">
                                                 <Ellipse x:Name="LedGamePort" Width="8" Height="8" Fill="#EF4444" Margin="0,0,4,0" VerticalAlignment="Center" ToolTip="Game Port Status (Green = Bound/Accessible, Red = Not Bound)"/>
                                                 <TextBlock Text="Game Port (UDP)" Style="{StaticResource FormLabel}"/>
                                             </StackPanel>
                                             <TextBox x:Name="TxtGamePort" Style="{StaticResource FormInput}"/>
                                         </StackPanel>
-                                        <StackPanel Grid.Column="2">
+                                        <StackPanel Grid.Column="2" ToolTip="Peer / Raw UDP Port (GamePort + 1)&#x0a;Summary: Secondary UDP port required by Conan Exiles (always Game Port + 1).&#x0a;Default: 7778 (UDP)&#x0a;Hint: Forward UDP 7777–7778 together on your router.">
                                             <StackPanel Orientation="Horizontal">
                                                 <Ellipse x:Name="LedRawPort" Width="8" Height="8" Fill="#EF4444" Margin="0,0,4,0" VerticalAlignment="Center" ToolTip="Raw UDP Port Status (Green = Bound/Accessible, Red = Not Bound)"/>
                                                 <TextBlock Text="Peer Port (UDP)" Style="{StaticResource FormLabel}"/>
@@ -386,21 +435,21 @@
                                             <ColumnDefinition Width="4"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
+                                        <StackPanel Grid.Column="0" ToolTip="Steam Query Port (UDP)&#x0a;Summary: Used by the Steam Master Server and server browser to list your server, player count, and ping.&#x0a;Default: 27015 (UDP)&#x0a;Hint: Must be port-forwarded (UDP) for your server to appear in the public list.">
                                             <StackPanel Orientation="Horizontal">
                                                 <Ellipse x:Name="LedQueryPort" Width="8" Height="8" Fill="#EF4444" Margin="0,0,4,0" VerticalAlignment="Center" ToolTip="Query Port Status (Green = Bound/Accessible, Red = Not Bound)"/>
                                                 <TextBlock Text="Query (UDP)" Style="{StaticResource FormLabel}"/>
                                             </StackPanel>
                                             <TextBox x:Name="TxtQueryPort" Style="{StaticResource FormInput}"/>
                                         </StackPanel>
-                                        <StackPanel Grid.Column="2">
+                                        <StackPanel Grid.Column="2" ToolTip="RCON Port (TCP)&#x0a;Summary: Remote Console TCP port used by this manager to broadcast restart warnings, list online players, and run admin commands.&#x0a;Default: 25575 (TCP)">
                                             <StackPanel Orientation="Horizontal">
                                                 <Ellipse x:Name="LedRconPort" Width="8" Height="8" Fill="#EF4444" Margin="0,0,4,0" VerticalAlignment="Center" ToolTip="RCON Port Status (Green = Bound/Accessible, Red = Not Bound)"/>
                                                 <TextBlock Text="RCON (TCP)" Style="{StaticResource FormLabel}"/>
                                             </StackPanel>
                                             <TextBox x:Name="TxtRconPort" Style="{StaticResource FormInput}"/>
                                         </StackPanel>
-                                        <StackPanel Grid.Column="4">
+                                        <StackPanel Grid.Column="4" ToolTip="Web API Port (TCP)&#x0a;Summary: HTTP &amp; WebSocket port for the embedded Web Console and Android Companion App.&#x0a;Default: 8088 (TCP)">
                                             <StackPanel Orientation="Horizontal">
                                                 <Ellipse x:Name="LedWebPort" Width="8" Height="8" Fill="#EF4444" Margin="0,0,4,0" VerticalAlignment="Center" ToolTip="Web API Port Status (Green = Bound/Accessible, Red = Not Bound)"/>
                                                 <TextBlock Text="Web API" Style="{StaticResource FormLabel}"/>
@@ -410,12 +459,14 @@
                                     </Grid>
 
                                     <WrapPanel Margin="0,2,0,0">
-                                        <CheckBox x:Name="ChkRconEnable" Content="Enable RCON" Style="{StaticResource FormCheck}" IsChecked="True"/>
-                                        <CheckBox x:Name="ChkBattlEye" Content="BattlEye" Style="{StaticResource FormCheck}"/>
-                                        <CheckBox x:Name="ChkVAC" Content="VAC" Style="{StaticResource FormCheck}"/>
+                                        <CheckBox x:Name="ChkRconEnable" Content="Enable RCON" Style="{StaticResource FormCheck}" IsChecked="True" ToolTip="RconEnabled (Game.ini)&#x0a;Summary: Enables Remote Console (RCON) support on the server.&#x0a;Hint: Keep enabled so the manager can send graceful shutdown warnings and fetch live player lists."/>
+                                        <CheckBox x:Name="ChkBattlEye" Content="BattlEye" Style="{StaticResource FormCheck}" ToolTip="IsBattlEyeEnabled (ServerSettings.ini)&#x0a;Summary: Enables BattlEye anti-cheat protection.&#x0a;Hint: Leave unchecked on modded private servers for faster loading and fewer client kicks."/>
+                                        <CheckBox x:Name="ChkVAC" Content="VAC" Style="{StaticResource FormCheck}" ToolTip="IsVACEnabled (ServerSettings.ini)&#x0a;Summary: Enables Valve Anti-Cheat (VAC) verification for connecting Steam accounts."/>
                                     </WrapPanel>
-                                    <TextBlock Text="RCON Password" Style="{StaticResource FormLabel}"/>
-                                    <TextBox x:Name="TxtRconPass" Style="{StaticResource FormInput}"/>
+                                    <StackPanel ToolTip="RconPassword (Game.ini)&#x0a;Summary: Secret password authenticating RCON TCP sessions between this manager and the Conan server.">
+                                        <TextBlock Text="RCON Password" Style="{StaticResource FormLabel}"/>
+                                        <TextBox x:Name="TxtRconPass" Style="{StaticResource FormInput}"/>
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -425,7 +476,7 @@
                             <Border Style="{StaticResource GlassPanel}">
                                 <StackPanel>
                                     <TextBlock Text="Automatic Restart Schedule" Style="{StaticResource SectionHeading}"/>
-                                    <WrapPanel>
+                                    <WrapPanel ToolTip="Daily Scheduled Restart&#x0a;Summary: Automatically triggers a graceful warning countdown and restarts the server at the specified 24-hour time (HH:mm:ss).&#x0a;Default: 06:00:00 (6:00 AM)">
                                         <CheckBox x:Name="ChkDailyRestart" Content="Restart Daily At:" Style="{StaticResource FormCheck}"/>
                                         <TextBox x:Name="TxtDailyRestartTime" Style="{StaticResource FormInput}" Text="06:00:00" Width="65"/>
                                     </WrapPanel>
@@ -436,11 +487,11 @@
                                             <ColumnDefinition Width="4"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
+                                        <StackPanel Grid.Column="0" ToolTip="Minimum Uptime (HH:mm:ss)&#x0a;Summary: Prevents a scheduled daily restart from triggering if the server was already manually restarted very recently (within this duration).">
                                             <TextBlock Text="Min Uptime" Style="{StaticResource FormLabel}"/>
                                             <TextBox x:Name="TxtMinUptime" Style="{StaticResource FormInput}" Text="02:00:00"/>
                                         </StackPanel>
-                                        <StackPanel Grid.Column="2">
+                                        <StackPanel Grid.Column="2" ToolTip="Restarts Per Day&#x0a;Summary: Number of evenly spaced automatic restarts per 24-hour cycle (1 = once daily at the scheduled time, 2 = every 12 hours, 4 = every 6 hours).">
                                             <TextBlock Text="Restarts / Day" Style="{StaticResource FormLabel}"/>
                                             <TextBox x:Name="TxtRestartsPerDay" Style="{StaticResource FormInput}" Text="1"/>
                                         </StackPanel>
@@ -457,8 +508,8 @@
                                             <ColumnDefinition Width="4"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <TextBox Grid.Column="0" x:Name="TxtWarn1Time" Style="{StaticResource FormInput}" Text="10:00" ToolTip="1st warning countdown time"/>
-                                        <TextBox Grid.Column="2" x:Name="TxtWarn1Msg" Style="{StaticResource FormInput}" Text="Server will restart in 10 minutes!" ToolTip="1st warning announcement message"/>
+                                        <TextBox Grid.Column="0" x:Name="TxtWarn1Time" Style="{StaticResource FormInput}" Text="10:00" ToolTip="1st Warning Lead Time (MM:SS before shutdown/restart, e.g. 10:00 = 10 minutes before)"/>
+                                        <TextBox Grid.Column="2" x:Name="TxtWarn1Msg" Style="{StaticResource FormInput}" Text="Server will restart in 10 minutes!" ToolTip="1st Warning Broadcast Message sent to all in-game players via RCON"/>
                                     </Grid>
 
                                     <Grid Margin="0,1,0,1">
@@ -467,8 +518,8 @@
                                             <ColumnDefinition Width="4"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <TextBox Grid.Column="0" x:Name="TxtWarn2Time" Style="{StaticResource FormInput}" Text="05:00" ToolTip="2nd warning countdown time"/>
-                                        <TextBox Grid.Column="2" x:Name="TxtWarn2Msg" Style="{StaticResource FormInput}" Text="Server will restart in 5 minutes!" ToolTip="2nd warning announcement message"/>
+                                        <TextBox Grid.Column="0" x:Name="TxtWarn2Time" Style="{StaticResource FormInput}" Text="05:00" ToolTip="2nd Warning Lead Time (MM:SS before shutdown/restart, e.g. 05:00 = 5 minutes before)"/>
+                                        <TextBox Grid.Column="2" x:Name="TxtWarn2Msg" Style="{StaticResource FormInput}" Text="Server will restart in 5 minutes!" ToolTip="2nd Warning Broadcast Message sent to all in-game players via RCON"/>
                                     </Grid>
 
                                     <Grid Margin="0,1,0,1">
@@ -477,11 +528,11 @@
                                             <ColumnDefinition Width="4"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <TextBox Grid.Column="0" x:Name="TxtWarn3Time" Style="{StaticResource FormInput}" Text="02:00" ToolTip="3rd warning countdown time"/>
-                                        <TextBox Grid.Column="2" x:Name="TxtWarn3Msg" Style="{StaticResource FormInput}" Text="Server will restart in 2 minutes! Find a safe area." ToolTip="3rd warning announcement message"/>
+                                        <TextBox Grid.Column="0" x:Name="TxtWarn3Time" Style="{StaticResource FormInput}" Text="02:00" ToolTip="3rd Warning Lead Time (MM:SS before shutdown/restart, e.g. 02:00 = 2 minutes before)"/>
+                                        <TextBox Grid.Column="2" x:Name="TxtWarn3Msg" Style="{StaticResource FormInput}" Text="Server will restart in 2 minutes! Find a safe area." ToolTip="3rd Warning Broadcast Message sent to all in-game players via RCON"/>
                                     </Grid>
 
-                                    <CheckBox x:Name="ChkFastRestartZeroPlayers" Content="Early restart if 0 connected players" Style="{StaticResource FormCheck}" IsChecked="True" Margin="0,2,0,0"/>
+                                    <CheckBox x:Name="ChkFastRestartZeroPlayers" Content="Early restart if 0 connected players" Style="{StaticResource FormCheck}" IsChecked="True" Margin="0,2,0,0" ToolTip="Fast Restart When Empty&#x0a;Summary: Skips the 10-minute RCON countdown and restarts immediately if 0 players are currently online on the server."/>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -491,19 +542,19 @@
                             <Border Style="{StaticResource GlassPanel}">
                                 <StackPanel>
                                     <TextBlock Text="Branch &amp; Process Scaling" Style="{StaticResource SectionHeading}"/>
-                                    <ComboBox x:Name="CmbAutoUpdate" Style="{StaticResource FormCombo}">
+                                    <ComboBox x:Name="CmbAutoUpdate" Style="{StaticResource FormCombo}" ToolTip="SteamCMD Update Policy&#x0a;Summary: Controls when SteamCMD checks for and installs Conan Exiles Dedicated Server (AppID 443030) &amp; Workshop mod updates.">
                                         <ComboBoxItem Content="Auto-Update On Restart" IsSelected="True"/>
                                         <ComboBoxItem Content="Don't Auto-Update on Restart"/>
                                         <ComboBoxItem Content="Check for Updates and Restart"/>
                                     </ComboBox>
 
                                     <WrapPanel Margin="0,2,0,0">
-                                        <CheckBox x:Name="ChkValidateFiles" Content="Validate Files" Style="{StaticResource FormCheck}"/>
-                                        <CheckBox x:Name="ChkStartIfNotRunning" Content="Start if Stopped" Style="{StaticResource FormCheck}" IsChecked="True"/>
-                                        <CheckBox x:Name="ChkAutoStartOnAppLaunch" Content="Auto-Start on Launch" Style="{StaticResource FormCheck}"/>
-                                        <CheckBox x:Name="ChkZombieWatch" Content="Zombie Watch / Auto-Restart" Style="{StaticResource FormCheck}" IsChecked="True"/>
-                                        <CheckBox x:Name="ChkAutoCheckAppUpdates" Content="Auto-Check App Updates" Style="{StaticResource FormCheck}" IsChecked="True"/>
-                                        <CheckBox x:Name="ChkAutoInstallAppUpdates" Content="Auto-Install App Updates" Style="{StaticResource FormCheck}"/>
+                                        <CheckBox x:Name="ChkValidateFiles" Content="Validate Files" Style="{StaticResource FormCheck}" ToolTip="Validate Server Files&#x0a;Summary: Passes 'validate' to SteamCMD during updates to verify and repair corrupted server files (takes longer)."/>
+                                        <CheckBox x:Name="ChkStartIfNotRunning" Content="Start if Stopped" Style="{StaticResource FormCheck}" IsChecked="True" ToolTip="Start If Stopped&#x0a;Summary: Automatically starts the server when scheduled tasks or update checks finish."/>
+                                        <CheckBox x:Name="ChkAutoStartOnAppLaunch" Content="Auto-Start on Launch" Style="{StaticResource FormCheck}" ToolTip="Auto-Start Server on App Launch&#x0a;Summary: Automatically boots the Conan Exiles Dedicated Server as soon as you open this Server Manager application."/>
+                                        <CheckBox x:Name="ChkZombieWatch" Content="Zombie Watch / Auto-Restart" Style="{StaticResource FormCheck}" IsChecked="True" ToolTip="Zombie Watchdog &amp; Crash Recovery&#x0a;Summary: Monitors ConanSandboxServer.exe for unexpected crashes or deadlocks and automatically restarts the server (includes Crash-Loop Mod Culprit detection)."/>
+                                        <CheckBox x:Name="ChkAutoCheckAppUpdates" Content="Auto-Check App Updates" Style="{StaticResource FormCheck}" IsChecked="True" ToolTip="Auto-Check Manager Updates&#x0a;Summary: Periodically checks GitHub Releases for newer versions of Conan Server Manager."/>
+                                        <CheckBox x:Name="ChkAutoInstallAppUpdates" Content="Auto-Install App Updates" Style="{StaticResource FormCheck}" ToolTip="Auto-Install Manager Updates&#x0a;Summary: Automatically downloads and applies new Conan Server Manager updates when found."/>
                                     </WrapPanel>
 
                                     <Grid Margin="0,2,0,0">
@@ -512,7 +563,7 @@
                                             <ColumnDefinition Width="4"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
+                                        <StackPanel Grid.Column="0" ToolTip="CPU Process Priority Class&#x0a;Summary: Sets the Windows OS scheduling priority for ConanSandboxServer-Win64-Shipping.exe.&#x0a;Options &amp; Hints:&#x0a;• Unmanaged / Normal = Standard OS scheduling&#x0a;• Above Normal / High = Prioritizes server tick rate over background Windows tasks">
                                             <TextBlock Text="Priority Class" Style="{StaticResource FormLabel}"/>
                                             <ComboBox x:Name="CmbPriorityClass" Style="{StaticResource FormCombo}">
                                                 <ComboBoxItem Content="Unmanaged" IsSelected="True"/>
@@ -522,7 +573,7 @@
                                             </ComboBox>
                                         </StackPanel>
                                         <StackPanel Grid.Column="2" VerticalAlignment="Bottom">
-                                            <CheckBox x:Name="ChkUseAllCores" Content="-useallavailablecores" Style="{StaticResource FormCheck}" IsChecked="True"/>
+                                            <CheckBox x:Name="ChkUseAllCores" Content="-useallavailablecores" Style="{StaticResource FormCheck}" IsChecked="True" ToolTip="-useallavailablecores CLI Flag&#x0a;Summary: Instructs Unreal Engine 4 to distribute worker threads across all physical and logical CPU cores."/>
                                         </StackPanel>
                                     </Grid>
 
@@ -532,8 +583,8 @@
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <TextBox x:Name="TxtCustomServerDir" Style="{StaticResource FormInput}" ToolTip="Leave empty for default (&lt;app&gt;\ConanServer). Specify a custom Conan Exiles Dedicated Server installation folder."/>
-                                        <Button x:Name="BtnBrowseServerDir" Grid.Column="1" Content="📁" Width="26" Margin="4,0,0,0" Style="{StaticResource BtnSecondary}" Click="BtnBrowseServerDir_Click" ToolTip="Browse Server Installation Directory"/>
+                                        <TextBox x:Name="TxtCustomServerDir" Style="{StaticResource FormInput}" ToolTip="Custom Server Directory&#x0a;Summary: Path where ConanSandboxServer.exe is installed.&#x0a;Hint: Leave empty to use the default &lt;AppFolder&gt;\ConanServer directory."/>
+                                        <Button x:Name="BtnBrowseServerDir" Grid.Column="1" Content="📁" Width="26" Margin="4,0,0,0" Style="{StaticResource BtnSecondary}" Click="BtnBrowseServerDir_Click" ToolTip="Browse for a custom Conan Exiles Dedicated Server installation folder"/>
                                     </Grid>
                                 </StackPanel>
                             </Border>
@@ -542,10 +593,10 @@
                                 <StackPanel>
                                     <TextBlock Text="Discord &amp; Backup Automation" Style="{StaticResource SectionHeading}"/>
                                     <WrapPanel>
-                                        <CheckBox x:Name="ChkDiscordEnable" Content="Discord Webhook" Style="{StaticResource FormCheck}"/>
-                                        <CheckBox x:Name="ChkDiscordTime" Content="Include Time" Style="{StaticResource FormCheck}" IsChecked="True"/>
+                                        <CheckBox x:Name="ChkDiscordEnable" Content="Discord Webhook" Style="{StaticResource FormCheck}" ToolTip="Enable Discord Webhook Notifications&#x0a;Summary: Posts server start, stop, crash, and update alerts to your Discord channel via Webhook."/>
+                                        <CheckBox x:Name="ChkDiscordTime" Content="Include Time" Style="{StaticResource FormCheck}" IsChecked="True" ToolTip="Include Timestamp&#x0a;Summary: Prefixes Discord webhook messages with the server's local timestamp."/>
                                     </WrapPanel>
-                                    <TextBox x:Name="TxtDiscordWebhook" Style="{StaticResource FormInput}" ToolTip="Discord Webhook URL"/>
+                                    <TextBox x:Name="TxtDiscordWebhook" Style="{StaticResource FormInput}" ToolTip="Discord Webhook URL&#x0a;Summary: Paste the Webhook URL from your Discord Server (Channel Settings → Integrations → Webhooks)."/>
 
                                     <Grid Margin="0,2,0,0">
                                         <Grid.ColumnDefinitions>
@@ -554,9 +605,9 @@
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0">
-                                            <CheckBox x:Name="ChkShutdownBackup" Content="Shutdown Backup" Style="{StaticResource FormCheck}" IsChecked="True"/>
+                                            <CheckBox x:Name="ChkShutdownBackup" Content="Shutdown Backup" Style="{StaticResource FormCheck}" IsChecked="True" ToolTip="Automatic Backup on Shutdown/Restart&#x0a;Summary: Creates a timestamped ZIP archive of Saved/ (game.db, modlist.txt, and Config/WindowsServer/*.ini) every time the server stops or restarts."/>
                                         </StackPanel>
-                                        <StackPanel Grid.Column="2">
+                                        <StackPanel Grid.Column="2" ToolTip="Backup Retention Limit (Days)&#x0a;Summary: Automatically deletes old backup .zip archives older than this number of days.&#x0a;Options &amp; Hints:&#x0a;• 7 = Keep 1 week of backups (Recommended)&#x0a;• 0 = Keep all backups forever (never auto-delete)">
                                             <TextBlock Text="Backup Limit (Days)" Style="{StaticResource FormLabel}"/>
                                             <TextBox x:Name="TxtBackupDays" Style="{StaticResource FormInput}" Text="7"/>
                                         </StackPanel>
@@ -568,16 +619,18 @@
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <TextBox x:Name="TxtCustomBackupDir" Style="{StaticResource FormInput}" ToolTip="Leave empty for default (&lt;app&gt;\Backups). Supports local drives or UNC network shares (e.g. \\NAS\backups)."/>
-                                        <Button x:Name="BtnBrowseBackupDir" Grid.Column="1" Content="📁" Width="26" Margin="4,0,0,0" Style="{StaticResource BtnSecondary}" Click="BtnBrowseBackupDir_Click" ToolTip="Browse Backup Directory"/>
+                                        <TextBox x:Name="TxtCustomBackupDir" Style="{StaticResource FormInput}" ToolTip="Custom Backup Directory&#x0a;Summary: Folder where backup ZIP archives are stored.&#x0a;Hint: Leave empty for default (&lt;AppFolder&gt;\Backups), or point to a secondary drive / NAS share."/>
+                                        <Button x:Name="BtnBrowseBackupDir" Grid.Column="1" Content="📁" Width="26" Margin="4,0,0,0" Style="{StaticResource BtnSecondary}" Click="BtnBrowseBackupDir_Click" ToolTip="Browse for a custom backup storage directory"/>
                                     </Grid>
 
-                                    <TextBlock Text="Pre/Post Script Execution" Style="{StaticResource FormLabel}" Margin="0,2,0,0"/>
-                                    <ComboBox x:Name="CmbBackupScriptMode" Style="{StaticResource FormCombo}">
-                                        <ComboBoxItem Content="Don't Run Scripts" IsSelected="True"/>
-                                        <ComboBoxItem Content="Run .BAT before backup"/>
-                                        <ComboBoxItem Content="Run .BAT on startup"/>
-                                    </ComboBox>
+                                    <StackPanel ToolTip="Pre/Post Script Execution&#x0a;Summary: Optionally runs a custom batch script (backup_script.bat / startup_script.bat) before backups or on server startup.">
+                                        <TextBlock Text="Pre/Post Script Execution" Style="{StaticResource FormLabel}" Margin="0,2,0,0"/>
+                                        <ComboBox x:Name="CmbBackupScriptMode" Style="{StaticResource FormCombo}">
+                                            <ComboBoxItem Content="Don't Run Scripts" IsSelected="True"/>
+                                            <ComboBoxItem Content="Run .BAT before backup"/>
+                                            <ComboBoxItem Content="Run .BAT on startup"/>
+                                        </ComboBox>
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -1064,19 +1117,21 @@
                                 <Border Style="{StaticResource GlassPanel}" Padding="10">
                                     <StackPanel>
                                         <TextBlock Text="⚔️ Combat Mode &amp; General Rules" Style="{StaticResource SectionHeading}" FontSize="12" Margin="0,0,0,4"/>
-                                        <TextBlock Text="Server Combat Mode Preset" Style="{StaticResource FormLabel}" FontSize="11"/>
-                                        <ComboBox x:Name="CmbCombatModePreset" Style="{StaticResource FormCombo}" FontSize="11" Padding="5,3" SelectionChanged="CmbCombatModePreset_SelectionChanged" Margin="0,2,0,6">
-                                            <ComboBoxItem Content="PvE (Players cannot damage players or buildings)" Tag="PVE" IsSelected="True"/>
-                                            <ComboBoxItem Content="PvE-Conflict (Player PvP enabled, buildings indestructible)" Tag="PVEC"/>
-                                            <ComboBoxItem Content="PvP (Full PvP &amp; building raid damage enabled)" Tag="PVP"/>
-                                            <ComboBoxItem Content="Custom Combat Rules" Tag="CUSTOM"/>
-                                        </ComboBox>
+                                        <StackPanel ToolTip="Server Combat Mode Preset (CombatModeModifier in ServerSettings.ini)&#x0a;Summary: Quick-select preset that configures PvP and structure damage flags together.&#x0a;Options &amp; Hints:&#x0a;• PvE = Cooperative play; players cannot hurt other players or their bases&#x0a;• PvE-Conflict = Players can fight each other, but player-built bases are indestructible&#x0a;• PvP = Full open-world player combat and base raiding enabled&#x0a;• Custom Combat Rules = Mix and match individual checkboxes below">
+                                            <TextBlock Text="Server Combat Mode Preset" Style="{StaticResource FormLabel}" FontSize="11"/>
+                                            <ComboBox x:Name="CmbCombatModePreset" Style="{StaticResource FormCombo}" FontSize="11" Padding="5,3" SelectionChanged="CmbCombatModePreset_SelectionChanged" Margin="0,2,0,6">
+                                                <ComboBoxItem Content="PvE (Players cannot damage players or buildings)" Tag="PVE" IsSelected="True"/>
+                                                <ComboBoxItem Content="PvE-Conflict (Player PvP enabled, buildings indestructible)" Tag="PVEC"/>
+                                                <ComboBoxItem Content="PvP (Full PvP &amp; building raid damage enabled)" Tag="PVP"/>
+                                                <ComboBoxItem Content="Custom Combat Rules" Tag="CUSTOM"/>
+                                            </ComboBox>
+                                        </StackPanel>
 
                                         <StackPanel Margin="0,2,0,6">
-                                            <CheckBox x:Name="ChkGameplayPvpEnabled" Content="PVPEnabled (Player vs Player Combat)" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2"/>
-                                            <CheckBox x:Name="ChkGameplayCanDamageStructures" Content="CanDamagePlayerOwnedStructures (Building Raid Damage)" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2"/>
-                                            <CheckBox x:Name="ChkGameplayDynamicBuildingDamage" Content="DynamicBuildingDamage (Raid Window Protection)" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2"/>
-                                            <CheckBox x:Name="ChkGameplayEnableSandStorm" Content="EnableSandStorm (Periodic Desert Sandstorms)" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True"/>
+                                            <CheckBox x:Name="ChkGameplayPvpEnabled" Content="PVPEnabled (Player vs Player Combat)" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" ToolTip="PVPEnabled (ServerSettings.ini)&#x0a;Summary: Allows players outside the same clan to deal weapon, thrall, and status damage to each other.&#x0a;Options &amp; Hints:&#x0a;• Unchecked (False) = Pure PvE (players cannot harm each other)&#x0a;• Checked (True) = Players can fight each other (used in PvE-Conflict &amp; PvP)"/>
+                                            <CheckBox x:Name="ChkGameplayCanDamageStructures" Content="CanDamagePlayerOwnedStructures (Building Raid Damage)" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" ToolTip="CanDamagePlayerOwnedStructures (ServerSettings.ini)&#x0a;Summary: Allows players to damage and destroy bases/structures owned by other clans using explosives, trebuchets, or weapons.&#x0a;Options &amp; Hints:&#x0a;• Unchecked (False) = Player bases cannot be raided by other players (PvE / PvE-Conflict)&#x0a;• Checked (True) = Base raiding enabled (PvP)"/>
+                                            <CheckBox x:Name="ChkGameplayDynamicBuildingDamage" Content="DynamicBuildingDamage (Raid Window Protection)" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" ToolTip="DynamicBuildingDamage (ServerSettings.ini)&#x0a;Summary: Prevents offline raiding — player bases can ONLY be damaged while at least one member of the owning clan is online (plus a short cooldown after logout).&#x0a;Options &amp; Hints:&#x0a;• Unchecked (False) = Bases can be raided anytime raid damage is active&#x0a;• Checked (True) = Protects offline clans from having their bases wiped while away"/>
+                                            <CheckBox x:Name="ChkGameplayEnableSandStorm" Content="EnableSandStorm (Periodic Desert Sandstorms)" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True" ToolTip="EnableSandStorm (ServerSettings.ini)&#x0a;Summary: Enables the periodic deadly sandstorm that sweeps across the southern/central Exiled Lands desert.&#x0a;Vanilla Default: Checked (True)&#x0a;Hint: Uncheck only if you want peaceful weather without needing a Sandstorm Mask or shelter."/>
                                         </StackPanel>
 
                                         <Grid Margin="0,4,0,0">
@@ -1087,7 +1142,7 @@
                                                 <ColumnDefinition Width="8"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
+                                            <StackPanel Grid.Column="0" ToolTip="MaxNudity (ServerSettings.ini)&#x0a;Summary: Sets the maximum nudity level permitted on the server (caps each player's client setting).&#x0a;Vanilla Default: 2 - Full&#x0a;Options:&#x0a;• 0 - None = Loincloths and chest wraps always worn&#x0a;• 1 - Partial = Topless allowed, lower body covered&#x0a;• 2 - Full = Unrestricted full nudity allowed">
                                                 <TextBlock Text="Max Nudity" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <ComboBox x:Name="CmbGameplayMaxNudity" Style="{StaticResource FormCombo}" FontSize="11" Padding="4,3">
                                                     <ComboBoxItem Content="0 - None"/>
@@ -1095,11 +1150,11 @@
                                                     <ComboBoxItem Content="2 - Full" IsSelected="True"/>
                                                 </ComboBox>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2">
+                                            <StackPanel Grid.Column="2" ToolTip="clanMaxSize (ServerSettings.ini)&#x0a;Summary: Maximum number of players that can belong to a single Clan.&#x0a;Vanilla Default: 10&#x0a;Options &amp; Hints:&#x0a;• 5 = Small squad PvP balance&#x0a;• 10 = Official server standard&#x0a;• 20–30 = Large community / PVE guild server">
                                                 <TextBlock Text="Max Clan Size" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayClanMaxSize" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="10"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="4">
+                                            <StackPanel Grid.Column="4" ToolTip="MaxAllowedPing (ServerSettings.ini)&#x0a;Summary: Automatically kicks or blocks players whose network latency (ping in ms) exceeds this limit.&#x0a;Vanilla Default: 0 (Disabled)&#x0a;Options &amp; Hints:&#x0a;• 0 = No ping limit (Recommended for friends playing across regions)&#x0a;• 200–300 = Kick high-latency connections on competitive PvP servers">
                                                 <TextBlock Text="Max Ping (0=Off)" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayMaxAllowedPing" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="0"/>
                                             </StackPanel>
@@ -1110,13 +1165,13 @@
                                 <Border Style="{StaticResource GlassPanel}" Padding="10" Margin="2,6,2,2">
                                     <StackPanel>
                                         <TextBlock Text="💀 Death, Corpse &amp; Container Ownership" Style="{StaticResource SectionHeading}" FontSize="12" Margin="0,0,0,4"/>
-                                        <CheckBox x:Name="ChkGameplayDropEquipment" Content="Drop Equipment on Death" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True"/>
-                                        <CheckBox x:Name="ChkGameplayDropShortcutBar" Content="Drop Shortcut Bar on Death" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True"/>
-                                        <CheckBox x:Name="ChkGameplayDropBackpack" Content="Drop Backpack Inventory on Death" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True"/>
-                                        <CheckBox x:Name="ChkGameplayEverybodyLootCorpse" Content="Everybody Can Loot Corpse" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True"/>
-                                        <CheckBox x:Name="ChkGameplayLogoutCharsRemain" Content="Logged-Out Bodies Remain in World" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True"/>
-                                        <CheckBox x:Name="ChkGameplayContainersIgnoreOwnership" Content="Containers Ignore Ownership (Unlocked)" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True"/>
-                                        <CheckBox x:Name="ChkGameplayNoOwnership" Content="No Ownership (All Structures Shared)" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2"/>
+                                        <CheckBox x:Name="ChkGameplayDropEquipment" Content="Drop Equipment on Death" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True" ToolTip="DropEquipmentOnDeath (ServerSettings.ini)&#x0a;Summary: Controls whether worn armor and equipped weapons stay on your corpse when you die.&#x0a;Vanilla Default: Checked (True)&#x0a;Options &amp; Hints:&#x0a;• Checked (True) = Worn armor/weapons drop on your corpse&#x0a;• Unchecked (False) = You respawn still wearing your equipped armor &amp; weapons (Casual / QoL)"/>
+                                        <CheckBox x:Name="ChkGameplayDropShortcutBar" Content="Drop Shortcut Bar on Death" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True" ToolTip="DropShortcutBarOnDeath (ServerSettings.ini)&#x0a;Summary: Controls whether items on your 1–8 hotbar/shortcut wheel are dropped on your corpse upon death.&#x0a;Vanilla Default: Checked (True)&#x0a;Options &amp; Hints:&#x0a;• Checked (True) = Hotbar items remain on corpse&#x0a;• Unchecked (False) = You keep your hotbar weapons/tools/potions when respawning"/>
+                                        <CheckBox x:Name="ChkGameplayDropBackpack" Content="Drop Backpack Inventory on Death" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True" ToolTip="DropBackpackOnDeath (ServerSettings.ini)&#x0a;Summary: Controls whether main backpack inventory items are dropped on your corpse upon death.&#x0a;Vanilla Default: Checked (True)&#x0a;Options &amp; Hints:&#x0a;• Checked (True) = Backpack loot drops on your corpse and must be recovered&#x0a;• Unchecked (False) = Keep all backpack items when you die (uncheck all 3 'Drop' boxes for full Keep-Inventory)"/>
+                                        <CheckBox x:Name="ChkGameplayEverybodyLootCorpse" Content="Everybody Can Loot Corpse" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True" ToolTip="EverybodyCanLootCorpse (ServerSettings.ini)&#x0a;Summary: Determines whether other players can loot your dead body, or if only you can access your own corpse.&#x0a;Vanilla Default: Checked (True)&#x0a;Options &amp; Hints:&#x0a;• Checked (True) = Anyone can loot player corpses (standard for PvP, or allows friends to help recover your gear)&#x0a;• Unchecked (False) = Only the dead player can loot their own corpse (prevents corpse theft on public PvE)"/>
+                                        <CheckBox x:Name="ChkGameplayLogoutCharsRemain" Content="Logged-Out Bodies Remain in World" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True" ToolTip="LogoutCharactersRemainInTheWorld (ServerSettings.ini)&#x0a;Summary: Controls whether sleeping player bodies stay in the game world when a player disconnects.&#x0a;Vanilla Default: Checked (True)&#x0a;Options &amp; Hints:&#x0a;• Checked (True) = Unconscious body stays where the player logged out&#x0a;• Unchecked (False) = Character disappears from the world on logout (safer against temperature/starvation/raids)"/>
+                                        <CheckBox x:Name="ChkGameplayContainersIgnoreOwnership" Content="Containers Ignore Ownership (Unlocked)" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True" ToolTip="ContainersIgnoreOwnership (ServerSettings.ini)&#x0a;Summary: Controls whether chests, crafting stations, and vaults can be opened by players outside your clan.&#x0a;Vanilla Default: Checked (True)&#x0a;Options &amp; Hints:&#x0a;• Checked (True) = All chests and benches are accessible by everyone&#x0a;• Unchecked (False) = Containers are locked to the owning player/clan by default (Recommended for multi-clan public PvE)"/>
+                                        <CheckBox x:Name="ChkGameplayNoOwnership" Content="No Ownership (All Structures Shared)" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" ToolTip="NoOwnership (ServerSettings.ini)&#x0a;Summary: Disables individual/clan ownership rules completely so all doors, buildings, and stations belong to everyone.&#x0a;Vanilla Default: Unchecked (False)&#x0a;Hint: Leave Unchecked unless running a purely communal co-op server without clans."/>
                                     </StackPanel>
                                 </Border>
 
@@ -1124,10 +1179,10 @@
                                     <StackPanel>
                                         <TextBlock Text="🏰 Building Decay, Purge &amp; Avatars" Style="{StaticResource SectionHeading}" FontSize="12" Margin="0,0,0,4"/>
                                         <StackPanel Margin="0,1,0,6">
-                                            <CheckBox x:Name="ChkGameplayDisableAbandonment" Content="Disable Building Decay / Abandonment" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True"/>
-                                            <CheckBox x:Name="ChkGameplayBuildAnywhere" Content="Allow Building Anywhere (Overlap NPC Camps)" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2"/>
-                                            <CheckBox x:Name="ChkGameplayEnablePurge" Content="Enable The Purge" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True"/>
-                                            <CheckBox x:Name="ChkGameplayAvatarsDisabled" Content="Disable God Avatars" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2"/>
+                                            <CheckBox x:Name="ChkGameplayDisableAbandonment" Content="Disable Building Decay / Abandonment" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True" ToolTip="DisableBuildingAbandonment (ServerSettings.ini)&#x0a;Summary: Stops player-built bases and placeables from decaying and crumbling away when players don't log in for several days.&#x0a;Vanilla Default: Unchecked (False) | Manager Default: Checked (True)&#x0a;Options &amp; Hints:&#x0a;• Checked (True) = Buildings NEVER decay over time (Recommended for private/friends servers)&#x0a;• Unchecked (False) = Abandoned bases decay and despawn after inactivity"/>
+                                            <CheckBox x:Name="ChkGameplayBuildAnywhere" Content="Allow Building Anywhere (Overlap NPC Camps)" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" ToolTip=" EnableBuildingAnywhere (ServerSettings.ini)&#x0a;Summary: Removes no-build zone restrictions around obelisks, dungeons, and NPC camps.&#x0a;Vanilla Default: Unchecked (False)&#x0a;Options &amp; Hints:&#x0a;• Unchecked (False) = Standard no-build zones protect NPC spawns &amp; lore sites&#x0a;• Checked (True) = Players can build anywhere on the map (Warning: building directly over NPC spawn points can block those NPCs from spawning)"/>
+                                            <CheckBox x:Name="ChkGameplayEnablePurge" Content="Enable The Purge" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" IsChecked="True" ToolTip="EnablePurge (ServerSettings.ini)&#x0a;Summary: Enables the Purge / Coffer base-siege invasion system where waves of NPC attackers assault player bases.&#x0a;Vanilla Default: Checked (True)"/>
+                                            <CheckBox x:Name="ChkGameplayAvatarsDisabled" Content="Disable God Avatars" Style="{StaticResource FormCheck}" FontSize="11" Margin="0,2" ToolTip="AvatarsDisabled (ServerSettings.ini)&#x0a;Summary: Prevents players from summoning giant God Avatars (Mitra, Set, Yog, Ymir, Derketo, Jhebbal Sag, Zath) at Tier 3 altars.&#x0a;Vanilla Default: Unchecked (False)&#x0a;Hint: Check (True) on PvP servers if you want to prevent True Name Avatar base wipes."/>
                                         </StackPanel>
 
                                         <Grid Margin="0,2,0,0">
@@ -1138,15 +1193,15 @@
                                                 <ColumnDefinition Width="8"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
+                                            <StackPanel Grid.Column="0" ToolTip="BuildingDecayTimeMultiplier (ServerSettings.ini)&#x0a;Summary: Scales how long it takes for buildings to decay when Building Decay is enabled.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Higher = Slower decay (e.g. 2.0 = bases last twice as long before decaying)&#x0a;• Lower = Faster decay (e.g. 0.5 = bases decay in half the time)&#x0a;• Ignored if 'Disable Building Decay / Abandonment' is checked above.">
                                                 <TextBlock Text="Decay Time Mult" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayBuildingDecayMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2">
+                                            <StackPanel Grid.Column="2" ToolTip="LandClaimRadiusMultiplier (ServerSettings.ini)&#x0a;Summary: Controls the size of the land-claim radius around player foundations (which blocks other clans from building nearby and prevents trees/rocks from respawning too close).&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• 0.25–0.5 = Smaller claim radius (trees/iron respawn right outside your walls &amp; clans can build closer together)&#x0a;• 1.0 = Official default radius">
                                                 <TextBlock Text="Land Claim Radius" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayLandClaimMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="4">
+                                            <StackPanel Grid.Column="4" ToolTip="PurgeLevel (ServerSettings.ini)&#x0a;Summary: Sets the maximum difficulty tier of Purge NPC waves (0 to 6).&#x0a;Vanilla Default: 6&#x0a;Options &amp; Hints:&#x0a;• 0 = Turns off Purge attacks&#x0a;• 1–3 = Easier Purge waves (fewer skull bosses)&#x0a;• 6 = Maximum difficulty waves (Required for Tier 4 Purge-exclusive named thralls)">
                                                 <TextBlock Text="Purge Level (0-6)" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayPurgeLevel" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="6"/>
                                             </StackPanel>
@@ -1166,11 +1221,11 @@
                                                 <ColumnDefinition Width="8"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
+                                            <StackPanel Grid.Column="0" ToolTip="PlayerXPRateMultiplier (ServerSettings.ini)&#x0a;Summary: Master multiplier that scales ALL experience points earned by players and followers from every source.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Higher = Faster leveling (e.g. 2.0 = 2x XP, 5.0 = 5x XP)&#x0a;• Lower = Slower, grindier leveling (e.g. 0.5 = half XP)">
                                                 <TextBlock Text="Overall XP Rate Multiplier" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayXpRateMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2">
+                                            <StackPanel Grid.Column="2" ToolTip="PlayerXPTimeMultiplier (ServerSettings.ini)&#x0a;Summary: Scales passive experience gained simply by surviving over time.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• 0.0 = Disable passive survival XP (must earn XP actively)&#x0a;• 1.0 = Standard passive XP&#x0a;• 2.0+ = Faster passive XP trickle">
                                                 <TextBlock Text="XP Time (Passive) Multiplier" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayXpTimeMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
@@ -1184,15 +1239,15 @@
                                                 <ColumnDefinition Width="8"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
+                                            <StackPanel Grid.Column="0" ToolTip="PlayerXPKillMultiplier (ServerSettings.ini)&#x0a;Summary: Scales experience earned from killing monsters, animals, bosses, and NPCs (also affects follower/thrall combat leveling).&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Higher = More XP per kill (e.g. 2.0 = 2x combat XP, 3.0 = 3x combat XP)">
                                                 <TextBlock Text="XP Kill Mult" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayXpKillMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2">
+                                            <StackPanel Grid.Column="2" ToolTip="PlayerXPHarvestMultiplier (ServerSettings.ini)&#x0a;Summary: Scales experience earned when mining stone/iron, chopping wood, or gathering plants.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Higher = More XP per resource node harvested (e.g. 2.0 = 2x harvesting XP)">
                                                 <TextBlock Text="XP Harvest Mult" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayXpHarvestMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="4">
+                                            <StackPanel Grid.Column="4" ToolTip="PlayerXPCraftMultiplier (ServerSettings.ini)&#x0a;Summary: Scales experience earned when crafting items, armor, weapons, and building pieces.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Higher = More XP per crafted item (e.g. 2.0 = 2x crafting XP)">
                                                 <TextBlock Text="XP Craft Mult" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayXpCraftMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
@@ -1211,15 +1266,15 @@
                                                 <ColumnDefinition Width="8"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
+                                            <StackPanel Grid.Column="0" ToolTip="HarvestAmountMultiplier (ServerSettings.ini)&#x0a;Summary: Multiplies the amount of resources (stone, wood, iron, hides, meat) gathered per swing.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Higher = More resources per hit (e.g. 2.0 = 2x yield, 3.0 = 3x yield, 5.0 = 5x yield)">
                                                 <TextBlock Text="Harvest Amount Mult" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayHarvestMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2">
+                                            <StackPanel Grid.Column="2" ToolTip="ResourceRespawnSpeedMultiplier (ServerSettings.ini)&#x0a;Summary: Controls how fast harvested trees, rocks, and ore nodes respawn.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Higher = Faster resource respawn (e.g. 2.0 = nodes respawn twice as fast)&#x0a;• Lower = Slower resource respawn (e.g. 0.5 = takes twice as long)">
                                                 <TextBlock Text="Resource Respawn Mult" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayResourceRespawnMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="4">
+                                            <StackPanel Grid.Column="4" ToolTip="PlayerEncumbranceMultiplier (ServerSettings.ini)&#x0a;Summary: Scales how much weight each item adds to your character's carry load.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = Carry MORE weight! (e.g. 0.5 = items weigh half as much, 0.1 = 10x carry capacity, 0.0 = infinite carry weight)&#x0a;• Higher = Items feel heavier (e.g. 2.0 = half carry capacity)">
                                                 <TextBlock Text="Encumbrance Mult" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayEncumbranceMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
@@ -1233,17 +1288,17 @@
                                                 <ColumnDefinition Width="8"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
+                                            <StackPanel Grid.Column="0" ToolTip="ItemConvertionMultiplier (ServerSettings.ini)&#x0a;Summary: Scales the time required to craft items and smelt ore at workbenches and furnaces.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = FASTER crafting! (e.g. 0.5 = 2x faster, 0.25 = 4x faster, 0.1 = 10x faster / near-instant)&#x0a;• Higher = Slower crafting (e.g. 2.0 = takes twice as long)">
                                                 <TextBlock Text="Crafting Time Mult" Style="{StaticResource FormLabel}" FontSize="11"/>
-                                                <TextBox x:Name="TxtGameplayItemConvertMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0" ToolTip="Lower = faster crafting (e.g. 0.5 is 2x faster)"/>
+                                                <TextBox x:Name="TxtGameplayItemConvertMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2">
+                                            <StackPanel Grid.Column="2" ToolTip="ThrallConversionMultiplier (ServerSettings.ini)&#x0a;Summary: Scales how long it takes to break/tame captured human NPCs on the Wheel of Pain.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = FASTER thrall breaking! (e.g. 0.5 = 2x faster, 0.2 = 5x faster, 0.05 = very fast)&#x0a;• Higher = Slower thrall breaking">
                                                 <TextBlock Text="Thrall Taming Time Mult" Style="{StaticResource FormLabel}" FontSize="11"/>
-                                                <TextBox x:Name="TxtGameplayThrallConvertMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0" ToolTip="Lower = faster thrall breaking on Wheel of Pain (e.g. 0.5)"/>
+                                                <TextBox x:Name="TxtGameplayThrallConvertMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="4">
+                                            <StackPanel Grid.Column="4" ToolTip="AnimalPenCraftingTimeMultiplier (ServerSettings.ini)&#x0a;Summary: Scales how long it takes to raise baby animals and horses in Animal Pens and Stables.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = FASTER pet/mount raising! (e.g. 0.5 = 2x faster, 0.2 = 5x faster)&#x0a;• Higher = Slower pet taming">
                                                 <TextBlock Text="Pet Taming Time Mult" Style="{StaticResource FormLabel}" FontSize="11"/>
-                                                <TextBox x:Name="TxtGameplayAnimalPenMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0" ToolTip="Lower = faster pet taming in Animal Pens"/>
+                                                <TextBox x:Name="TxtGameplayAnimalPenMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
                                         </Grid>
 
@@ -1255,15 +1310,15 @@
                                                 <ColumnDefinition Width="8"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
+                                            <StackPanel Grid.Column="0" ToolTip="SpoilRateScale (ServerSettings.ini)&#x0a;Summary: Controls how fast raw meat, cooked food, and gruel spoil and rot.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = Food lasts LONGER! (e.g. 0.5 = spoils at half speed, 0.1 = lasts 10x longer, 0.0 = food never spoils)&#x0a;• Higher = Food rots faster">
                                                 <TextBlock Text="Food Spoil Rate Scale" Style="{StaticResource FormLabel}" FontSize="11"/>
-                                                <TextBox x:Name="TxtGameplaySpoilRateScale" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0" ToolTip="Lower = food spoils slower (0.5 = half speed)"/>
+                                                <TextBox x:Name="TxtGameplaySpoilRateScale" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2">
+                                            <StackPanel Grid.Column="2" ToolTip="FuelBurnTimeMultiplier (ServerSettings.ini)&#x0a;Summary: Scales how long wood, coal, oil, and gruel burn inside furnaces, campfires, and Wheels of Pain.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Higher = Fuel lasts LONGER! (e.g. 2.0 = 1 piece of coal burns twice as long, 5.0 = 5x fuel efficiency)&#x0a;• Lower = Fuel burns out faster">
                                                 <TextBlock Text="Fuel Burn Time Mult" Style="{StaticResource FormLabel}" FontSize="11"/>
-                                                <TextBox x:Name="TxtGameplayFuelBurnMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0" ToolTip="Higher = fuel lasts longer (2.0 = lasts twice as long)"/>
+                                                <TextBox x:Name="TxtGameplayFuelBurnMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="4">
+                                            <StackPanel Grid.Column="4" ToolTip="CraftingeCostMultiplier (ServerSettings.ini)&#x0a;Summary: Scales the material ingredient cost required to craft items and building pieces.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = Cheaper recipes (e.g. 0.5 = half material cost)&#x0a;• 1.0 = Standard official recipe costs (Recommended to avoid rounding issues on 1-ingredient items)">
                                                 <TextBlock Text="Crafting Cost Mult" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayCraftingCostMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
@@ -1284,19 +1339,19 @@
                                                 <ColumnDefinition Width="8"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
+                                            <StackPanel Grid.Column="0" ToolTip="DayCycleSpeedScale (ServerSettings.ini)&#x0a;Summary: Master speed multiplier for the entire 24-hour in-game day/night clock (~30 real minutes at 1.0).&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = Longer days &amp; nights (e.g. 0.5 = 60-minute full cycle)&#x0a;• Higher = Faster clock (e.g. 2.0 = 15-minute full cycle)">
                                                 <TextBlock Text="Overall Cycle" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayDayCycleScale" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2">
+                                            <StackPanel Grid.Column="2" ToolTip="DayTimeSpeedScale (ServerSettings.ini)&#x0a;Summary: Controls how fast time passes during bright daytime hours (07:00 to 16:59).&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = LONGER daytime! (e.g. 0.5 = daylight lasts twice as long)&#x0a;• Higher = Shorter daytime">
                                                 <TextBlock Text="Daytime Speed" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayDayTimeScale" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="4">
+                                            <StackPanel Grid.Column="4" ToolTip="NightTimeSpeedScale (ServerSettings.ini)&#x0a;Summary: Controls how fast time passes during dark nighttime hours (19:00 to 04:59).&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Higher = SHORTER nights! (e.g. 2.0 or 3.0 = dark nights pass 2x–3x faster)&#x0a;• Lower = Longer nights (e.g. 0.5 = nights last twice as long)">
                                                 <TextBlock Text="Night Speed" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayNightTimeScale" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="6">
+                                            <StackPanel Grid.Column="6" ToolTip="DawnDuskSpeedScale (ServerSettings.ini)&#x0a;Summary: Controls how fast time passes during sunrise (05:00–06:59) and sunset (17:00–18:59).&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = Longer golden-hour sunrises/sunsets (e.g. 0.5)&#x0a;• Higher = Faster transition between day and night">
                                                 <TextBlock Text="Dawn/Dusk" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayDawnDuskScale" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
@@ -1318,15 +1373,15 @@
                                                 <ColumnDefinition Width="8"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
+                                            <StackPanel Grid.Column="0" ToolTip="PlayerStaminaCostMultiplier (ServerSettings.ini)&#x0a;Summary: Scales how much stamina is consumed when attacking, dodging, climbing, and sprinting.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = Uses LESS stamina! (e.g. 0.5 = half stamina drain, 0.1 = 10x stamina endurance)&#x0a;• Higher = Uses more stamina per action">
                                                 <TextBlock Text="Stamina Cost Mult" Style="{StaticResource FormLabel}" FontSize="11"/>
-                                                <TextBox x:Name="TxtGameplayStaminaCostMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0" ToolTip="Lower = uses less stamina (e.g. 0.5)"/>
+                                                <TextBox x:Name="TxtGameplayStaminaCostMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2">
+                                            <StackPanel Grid.Column="2" ToolTip="DurabilityMultiplier (ServerSettings.ini)&#x0a;Summary: Scales how quickly weapons, armor, and harvesting tools lose durability when used.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = Gear lasts LONGER! (e.g. 0.5 = lasts twice as long, 0.0 = weapons/tools/armor never break)&#x0a;• Higher = Gear breaks faster">
                                                 <TextBlock Text="Item Durability Loss" Style="{StaticResource FormLabel}" FontSize="11"/>
-                                                <TextBox x:Name="TxtGameplayDurabilityMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0" ToolTip="Lower = weapons/tools last longer (0.0 = indestructible)"/>
+                                                <TextBox x:Name="TxtGameplayDurabilityMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="4">
+                                            <StackPanel Grid.Column="4" ToolTip="ShieldDurabilityMultiplier (ServerSettings.ini)&#x0a;Summary: Scales how much durability shields lose when blocking attacks.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = Shields last LONGER! (e.g. 0.5 = half durability loss, 0.0 = indestructible shields)&#x0a;• Higher = Shields break faster">
                                                 <TextBlock Text="Shield Durability Loss" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayShieldDurabilityMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
@@ -1342,19 +1397,19 @@
                                                 <ColumnDefinition Width="8"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
+                                            <StackPanel Grid.Column="0" ToolTip="PlayerActiveThirstMultiplier (ServerSettings.ini)&#x0a;Summary: Controls how fast players get thirsty while moving, fighting, or harvesting.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = Get thirsty SLOWER (e.g. 0.5 = drink half as often, 0.0 = no active thirst)&#x0a;• Higher = Get thirsty faster">
                                                 <TextBlock Text="Active Thirst" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayActiveThirstMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2">
+                                            <StackPanel Grid.Column="2" ToolTip="PlayerIdleThirstMultiplier (ServerSettings.ini)&#x0a;Summary: Controls how fast players get thirsty while standing still / AFK in base.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = Slower AFK thirst (e.g. 0.1 or 0.0 = prevents dying of thirst while AFK in base)">
                                                 <TextBlock Text="Idle Thirst" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayIdleThirstMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="4">
+                                            <StackPanel Grid.Column="4" ToolTip="PlayerActiveHungerMultiplier (ServerSettings.ini)&#x0a;Summary: Controls how fast players get hungry while moving, fighting, or harvesting.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = Get hungry SLOWER (e.g. 0.5 = eat half as often, 0.0 = no active hunger)&#x0a;• Higher = Get hungry faster">
                                                 <TextBlock Text="Active Hunger" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayActiveHungerMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="6">
+                                            <StackPanel Grid.Column="6" ToolTip="PlayerIdleHungerMultiplier (ServerSettings.ini)&#x0a;Summary: Controls how fast players get hungry while standing still / AFK in base.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = Slower AFK hunger (e.g. 0.1 or 0.0 = prevents starving while AFK in base)">
                                                 <TextBlock Text="Idle Hunger" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayIdleHungerMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
@@ -1371,11 +1426,11 @@
                                                 <ColumnDefinition Width="8"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
+                                            <StackPanel Grid.Column="0" ToolTip="PlayerDamageMultiplier (ServerSettings.ini)&#x0a;Summary: Multiplies outgoing attack damage dealt directly by player characters.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Higher = Players hit harder (e.g. 1.5 = +50% player damage, 2.0 = double damage)&#x0a;• Lower = Players deal less damage">
                                                 <TextBlock Text="Player Damage Dealt Mult" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayPlayerDmgMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2">
+                                            <StackPanel Grid.Column="2" ToolTip="PlayerDamageTakenMultiplier (ServerSettings.ini)&#x0a;Summary: Multiplies incoming damage received by player characters from all attacks.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = Players are tougher / take less damage (e.g. 0.5 = players take 50% less damage)&#x0a;• Higher = Deadlier combat for players (e.g. 1.5 = players take +50% damage)">
                                                 <TextBlock Text="Player Damage Taken Mult" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayPlayerDmgTakenMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
@@ -1387,11 +1442,11 @@
                                                 <ColumnDefinition Width="8"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
+                                            <StackPanel Grid.Column="0" ToolTip="NPCDamageMultiplier (ServerSettings.ini)&#x0a;Summary: Multiplies outgoing attack damage dealt by wild NPCs, monsters, and world bosses.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Lower = Easier enemies (e.g. 0.7 = monsters deal 30% less damage)&#x0a;• Higher = Harder enemies (e.g. 1.5 = monsters hit 50% harder)">
                                                 <TextBlock Text="NPC / Monster Damage Dealt" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayNpcDmgMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2">
+                                            <StackPanel Grid.Column="2" ToolTip="NPCDamageTakenMultiplier (ServerSettings.ini)&#x0a;Summary: Multiplies incoming damage received by wild NPCs, monsters, and world bosses.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• Higher = Bosses/NPCs die faster (e.g. 1.5 = enemies take +50% more damage; great for solo/duo play)&#x0a;• Lower = Tankier bosses (e.g. 0.7 = enemies take 30% less damage)">
                                                 <TextBlock Text="NPC / Monster Damage Taken" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayNpcDmgTakenMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
@@ -1403,11 +1458,11 @@
                                                 <ColumnDefinition Width="8"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
+                                            <StackPanel Grid.Column="0" ToolTip="ThrallDamageToPlayersMultiplier (ServerSettings.ini)&#x0a;Summary: Multiplies damage dealt by tamed Thrall &amp; Pet followers when attacking human players.&#x0a;Vanilla Default: 1.0&#x0a;Options &amp; Hints:&#x0a;• 1.0 = Standard thrall PvP damage&#x0a;• 0.5 = Reduces thrall dominance in player-vs-player fights">
                                                 <TextBlock Text="Thrall Damage to Players" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayThrallDmgPlayersMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="1.0"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2">
+                                            <StackPanel Grid.Column="2" ToolTip="ThrallDamageToNPCsMultiplier (ServerSettings.ini)&#x0a;Summary: Multiplies damage dealt by tamed Thrall &amp; Pet followers when fighting wild NPCs and bosses.&#x0a;Vanilla Default: 0.5 (Official Age of War balance)&#x0a;Options &amp; Hints:&#x0a;• 0.5 = Official Funcom default&#x0a;• 1.0 = Restores pre-nerf full 100% Thrall PvE damage against bosses">
                                                 <TextBlock Text="Thrall Damage to NPCs" Style="{StaticResource FormLabel}" FontSize="11"/>
                                                 <TextBox x:Name="TxtGameplayThrallDmgNpcsMult" Style="{StaticResource FormInput}" FontSize="11" Padding="5,3" Text="0.5"/>
                                             </StackPanel>

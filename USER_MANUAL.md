@@ -139,7 +139,12 @@ The upper configuration area is organized into **4 quick-access cards**:
 ---
 
 ### Top-Level Tab 2: **`⚙️ Gameplay & ServerSettings.ini`** (Full-Window Visual Configurator)
-You no longer need to log into the game as an admin to configure server multipliers or world rules! Click the top **`⚙️ Gameplay & ServerSettings.ini`** tab next to `🖥️ Main Server Dashboard` to open a full-window visual configurator for **45 Conan Exiles `ServerSettings.ini` parameters** across 8 categories:
+You no longer need to log into the game as an admin to configure server multipliers or world rules! Click the top **`⚙️ Gameplay & ServerSettings.ini`** tab next to `🖥️ Main Server Dashboard` to open a full-window visual configurator for **45 Conan Exiles `ServerSettings.ini` parameters** across 8 categories.
+
+> 💡 **Interactive Hover Tool-Hints**: Hover your mouse over **any** setting label, checkbox, dropdown, or input box in either tab to view an instant popup summary showing:
+> - What that specific `ServerSettings.ini` option does in-game
+> - The official **Vanilla Default** value
+> - **Value Hints & Examples** (for instance, whether `< 1.0` or `> 1.0` makes crafting, taming, decay, or night speed faster or slower)
 
 1. **⚔️ Combat Mode & General Rules**:
    - **Quick Combat Mode Preset**: One-click presets for **`PvE (Cooperative)`**, **`PvE-Conflict`**, **`PvP (Full Raiding)`**, or **`Custom`**.

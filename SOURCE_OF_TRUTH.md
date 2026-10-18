@@ -1899,4 +1899,32 @@ The following items were identified during the v1.3.2 feature audit and schedule
 - **Zero Remote Deployment Compliance**: All builds, packages, and APKs remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
 
 ---
+
+## 47. Interactive Hover Tool-Hints Across Gameplay & Server Configuration (v1.3.10 - Build 10310)
+
+### 1. Rich Glassmorphic Popup ToolTip System (`src/MainWindow.xaml`)
+- **Global WPF `ToolTip` ControlTemplate & Timing**:
+  - Added a custom `<Style TargetType="ToolTip">` in `Window.Resources` with a dark slate `#0F172A` surface, `#38BDF8` sky-blue border (`CornerRadius="6"`), `#F8FAFC` text, `MaxWidth="440"`, and automatic multi-line `TextWrapping="Wrap"` (`LineHeight="17"`).
+  - Configured `ToolTipService.InitialShowDelay="200"` (0.2s instant response) and `ToolTipService.ShowDuration="30000"` (30s read duration) across `StackPanel`, `FormLabel`, `FormInput`, `FormCombo`, and `FormCheck` styles so hovering over either a setting's text label or its input box immediately displays the hint card.
+- **Comprehensive Hover Hints for All 45 `ServerSettings.ini` Gameplay Options**:
+  - Every setting in the **`⚙️ Gameplay & ServerSettings.ini`** workspace tab now displays a structured multi-line popup hint containing:
+    1. **Exact INI Key Name & Summary**: Clear explanation of what the setting controls in Conan Exiles Enhanced.
+    2. **Vanilla Default Value**: Official Funcom baseline (`1.0`, `True`/`False`, etc.).
+    3. **Options & Direction Hints**: Explicit guidance on whether lower (`< 1.0`) or higher (`> 1.0`) numbers speed up or slow down the mechanic, along with practical example values (e.g., `0.5 = 2x faster crafting`, `0.0 = indestructible items`, `6 = max Purge difficulty for Tier 4 named thralls`).
+- **Main Server Dashboard Configuration ToolTips**:
+  - Added detailed hover hints across all 4 configuration columns on the **`🖥️ Main Server Dashboard`** tab (Connection Mode, Server Identity & Passwords, Max Players & Tick Rate, Region & Startup Map, Network Adapter & Multihome, UDP/TCP Port Matrix, RCON/BattlEye/VAC, Daily Restart Schedule, RCON Shutdown Warning Sequence, SteamCMD Auto-Update & Process Priority, and Discord/Backup Retention).
+
+### 2. Synchronized Dual-Platform Release (`v1.3.10` / `10310`)
+- Removed `ConanServerManager-v1.3.9.apk` from Git tracking (`git rm ConanServerManager-v1.3.9.apk`) so only `ConanServerManager-v1.3.10.apk` is stored in the repository root.
+- Synchronized all 7 core version locations to `1.3.10` (Version Code `10310`):
+  1. `version.txt` -> `1.3.10`
+  2. `src/ServerEngine.cs` -> fallback `GetAppVersion()` = `"1.3.10"`
+  3. `src/MainWindow.xaml` -> `TxtAppHeaderTitle` = `"Conan Enhanced Server Manager v1.3.10"`, `TxtAppHeaderVersionBadge` = `"🚀 v1.3.10"`
+  4. `android/app/build.gradle` -> `getAppVersionName() = "1.3.10"`, `getAppVersionCode() = 10310`
+  5. `android/app/src/main/assets/app.js` -> `APP_VERSION = "1.3.10"`
+  6. `android/app/src/main/assets/index.html` -> badge `#appInstalledVersion` = `v1.3.10`
+  7. `android/app/src/main/java/com/conan/servermanager/MainActivity.java` -> fallback `"1.3.10"`, `10310`
+- **Zero Remote Deployment Compliance**: All builds, packages, and APKs remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
+
+---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
