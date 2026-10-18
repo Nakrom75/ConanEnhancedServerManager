@@ -172,8 +172,9 @@ namespace ConanServerManager
         public bool IsLoaded { get; set; }
         public bool IsDisabled { get; set; }
         public bool HasUpdate { get; set; }
+        public bool IsRecentlyUpdated { get; set; }
         public long RemoteTimeUpdated { get; set; }
-        public string LoadStatus { get; set; } = "UNKNOWN"; // LOADED, PENDING_RESTART, DOWNLOADED, DOWNLOADING, MISSING, ERROR, DISABLED
+        public string LoadStatus { get; set; } = "UNKNOWN"; // LOADED, PENDING_RESTART, DOWNLOADED, DOWNLOADING, UPDATED, MISSING, ERROR, DISABLED
         public string StatusBadge { get; set; } = "";
         public string StatusText { get; set; } = "";
         public ModCategory Category { get; set; } = ModCategory.ItemsCosmetics;
@@ -288,7 +289,7 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.3.6";
+            return "1.3.7";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
@@ -412,6 +413,7 @@ namespace ConanServerManager
 
         public bool IsModPreDownloading { get; private set; } = false;
         public string? CurrentPreDownloadingModId { get; private set; } = null;
+        public string? CurrentUpdatingModId { get; private set; } = null;
         public event Action<string, bool, string>? OnModPreDownloadCompleted;
         public event Action<List<string>>? OnModsChanged;
 
@@ -434,6 +436,7 @@ namespace ConanServerManager
 
         // Mod Update Tracking & Inactive Mods
         public HashSet<string> ModsWithUpdates { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> RecentlyUpdatedMods { get; } = new System.Collections.Concurrent.ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         public event Action? OnModUpdatesChanged;
         public event Action<List<string>>? OnDisabledModsChanged;
         private System.Threading.Timer? _modUpdateCheckTimer;
@@ -662,6 +665,149 @@ namespace ConanServerManager
             }, null, TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(30));
         }
 
+        public bool IsModRecentlyUpdated(string modId)
+        {
+            if (string.IsNullOrWhiteSpace(modId)) return false;
+            string cleanId = modId.Trim();
+            if (RecentlyUpdatedMods.TryGetValue(cleanId, out var expiryUtc))
+            {
+                if (DateTime.UtcNow < expiryUtc) return true;
+                RecentlyUpdatedMods.TryRemove(cleanId, out _);
+            }
+            return false;
+        }
+
+        public void MarkModRecentlyUpdated(string modId, int durationSeconds = 12)
+        {
+            if (string.IsNullOrWhiteSpace(modId)) return;
+            string cleanId = modId.Trim();
+            DateTime expiry = DateTime.UtcNow.AddSeconds(durationSeconds);
+            RecentlyUpdatedMods[cleanId] = expiry;
+
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay((durationSeconds * 1000) + 400);
+                if (RecentlyUpdatedMods.TryGetValue(cleanId, out var currentExp) && DateTime.UtcNow >= currentExp)
+                {
+                    RecentlyUpdatedMods.TryRemove(cleanId, out _);
+                    OnModUpdatesChanged?.Invoke();
+                    TriggerModsChanged();
+                }
+            });
+        }
+
+        public Dictionary<string, long> ReadAcfInstalledTimestamps()
+        {
+            var result = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                string acfPath = Path.Combine(ServerRootDir, "steamapps", "workshop", $"appworkshop_{WorkshopAppId}.acf");
+                if (!File.Exists(acfPath)) return result;
+
+                var lines = File.ReadAllLines(acfPath);
+                bool inInstalledSection = false;
+                int braceDepth = 0;
+                string currentModId = "";
+
+                foreach (var raw in lines)
+                {
+                    string line = raw.Trim();
+                    if (line.Equals("\"WorkshopItemsInstalled\"", StringComparison.OrdinalIgnoreCase))
+                    {
+                        inInstalledSection = true;
+                        braceDepth = 0;
+                        continue;
+                    }
+
+                    if (!inInstalledSection) continue;
+
+                    if (line == "{")
+                    {
+                        braceDepth++;
+                        continue;
+                    }
+                    if (line == "}")
+                    {
+                        braceDepth--;
+                        if (braceDepth == 1) currentModId = "";
+                        else if (braceDepth <= 0) break;
+                        continue;
+                    }
+
+                    if (braceDepth == 1 && line.StartsWith("\"") && line.EndsWith("\""))
+                    {
+                        string candidate = line.Trim('"').Trim();
+                        if (candidate.All(char.IsDigit) && candidate.Length >= 5)
+                        {
+                            currentModId = candidate;
+                        }
+                    }
+                    else if (braceDepth == 2 && !string.IsNullOrEmpty(currentModId) && line.StartsWith("\"timeupdated\"", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var parts = line.Split(new[] { '"', '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length >= 2 && long.TryParse(parts[parts.Length - 1], out long ts) && ts > 0)
+                        {
+                            result[currentModId] = ts;
+                        }
+                    }
+                }
+            }
+            catch { }
+            return result;
+        }
+
+        private long GetModDiskPakTimestamp(string modId)
+        {
+            try
+            {
+                string workshopContentDir = Path.Combine(ServerRootDir, "steamapps", "workshop", "content", WorkshopAppId);
+                string modFolder = Path.Combine(workshopContentDir, modId.Trim());
+                if (Directory.Exists(modFolder))
+                {
+                    var paks = Directory.GetFiles(modFolder, "*.pak");
+                    if (paks.Length > 0)
+                    {
+                        var fi = new FileInfo(paks[0]);
+                        return new DateTimeOffset(fi.LastWriteTimeUtc).ToUnixTimeSeconds();
+                    }
+                }
+            }
+            catch { }
+            return 0;
+        }
+
+        public async Task ConfirmModCurrentAfterDownloadAsync(string modId, int badgeDurationSeconds = 12)
+        {
+            if (string.IsNullOrWhiteSpace(modId)) return;
+            string cleanId = modId.Trim();
+
+            try
+            {
+                var remoteMap = await SteamWorkshopHelper.QueryRemoteDetailsForceRefreshAsync(new[] { cleanId });
+                long remoteTs = remoteMap.TryGetValue(cleanId, out var remote) ? remote.TimeUpdated : 0;
+                string title = remote?.Title ?? SteamWorkshopHelper.GetCachedMod(cleanId)?.Title ?? $"Mod #{cleanId}";
+
+                var acfMap = ReadAcfInstalledTimestamps();
+                long acfTs = acfMap.TryGetValue(cleanId, out var aTs) ? aTs : 0;
+                long diskTs = GetModDiskPakTimestamp(cleanId);
+                long nowTs = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+                long confirmedTs = Math.Max(nowTs, Math.Max(remoteTs, Math.Max(acfTs, diskTs)));
+                Config.ModInstalledTimestamps[cleanId] = confirmedTs;
+                ModsWithUpdates.Remove(cleanId);
+                MarkModRecentlyUpdated(cleanId, badgeDurationSeconds);
+                SaveConfig();
+
+                Log($"[Mod Update Tracker] ✅ Confirmed '{title}' (ID: {cleanId}) is now current with Steam Workshop.");
+                OnModUpdatesChanged?.Invoke();
+                TriggerModsChanged();
+            }
+            catch (Exception ex)
+            {
+                Log($"[Mod Update Tracker] Note confirming mod #{cleanId}: {ex.Message}");
+            }
+        }
+
         public async Task<int> CheckAllModsForUpdatesAsync()
         {
             try
@@ -671,36 +817,33 @@ namespace ConanServerManager
 
                 Log($"[Mod Update Tracker] Checking Steam Workshop for updates across {allIds.Count} installed/configured mods...");
                 var remoteMap = await SteamWorkshopHelper.QueryRemoteDetailsForceRefreshAsync(allIds);
+                var acfMap = ReadAcfInstalledTimestamps();
                 bool changed = false;
-                string workshopContentDir = Path.Combine(ServerRootDir, "steamapps", "workshop", "content", WorkshopAppId);
 
                 foreach (var id in allIds)
                 {
                     if (remoteMap.TryGetValue(id, out var remote) && remote.TimeUpdated > 0)
                     {
-                        long localTimestamp = 0;
-                        if (Config.ModInstalledTimestamps.TryGetValue(id, out var storedTs) && storedTs > 0)
+                        long storedTs = Config.ModInstalledTimestamps.TryGetValue(id, out var st) ? st : 0;
+                        long acfTs = acfMap.TryGetValue(id, out var at) ? at : 0;
+                        long diskTs = GetModDiskPakTimestamp(id);
+
+                        // If SteamCMD's appworkshop_440900.acf timeupdated matches Workshop's TimeUpdated (within 3 minutes),
+                        // the installed build is confirmed current with Steam Workshop.
+                        if (acfTs > 0 && Math.Abs(remote.TimeUpdated - acfTs) <= 180)
                         {
-                            localTimestamp = storedTs;
-                        }
-                        else
-                        {
-                            // Check file on disk
-                            string modFolder = Path.Combine(workshopContentDir, id);
-                            if (Directory.Exists(modFolder))
-                            {
-                                var paks = Directory.GetFiles(modFolder, "*.pak");
-                                if (paks.Length > 0)
-                                {
-                                    var fi = new FileInfo(paks[0]);
-                                    localTimestamp = new DateTimeOffset(fi.LastWriteTimeUtc).ToUnixTimeSeconds();
-                                    Config.ModInstalledTimestamps[id] = localTimestamp;
-                                    changed = true;
-                                }
-                            }
+                            acfTs = Math.Max(acfTs, remote.TimeUpdated);
                         }
 
-                        if (localTimestamp > 0 && remote.TimeUpdated > localTimestamp)
+                        long localTimestamp = Math.Max(storedTs, Math.Max(acfTs, diskTs));
+                        if (localTimestamp > storedTs)
+                        {
+                            Config.ModInstalledTimestamps[id] = localTimestamp;
+                            changed = true;
+                        }
+
+                        // Allow a 60s buffer for Workshop web metadata propagation after depot upload
+                        if (localTimestamp > 0 && remote.TimeUpdated > localTimestamp + 60)
                         {
                             if (!ModsWithUpdates.Contains(id))
                             {
@@ -710,10 +853,15 @@ namespace ConanServerManager
                         }
                         else
                         {
-                            ModsWithUpdates.Remove(id);
-                            if (localTimestamp == 0)
+                            bool hadUpdateFlag = ModsWithUpdates.Remove(id);
+                            if (hadUpdateFlag)
                             {
-                                Config.ModInstalledTimestamps[id] = remote.TimeUpdated;
+                                MarkModRecentlyUpdated(id, 12);
+                                Log($"[Mod Update Tracker] ✅ Confirmed '{remote.Title}' (ID: {id}) is current on disk.");
+                            }
+                            if (localTimestamp == 0 || localTimestamp < remote.TimeUpdated)
+                            {
+                                Config.ModInstalledTimestamps[id] = Math.Max(localTimestamp, remote.TimeUpdated);
                                 changed = true;
                             }
                         }
@@ -813,15 +961,35 @@ namespace ConanServerManager
         {
             string cleanId = modId.Trim();
             bool isDownloaded = IsModDownloaded(cleanId);
-            bool isPreDownloading = IsModPreDownloading && CurrentPreDownloadingModId == cleanId;
+            bool isDownloading = (IsModPreDownloading && CurrentPreDownloadingModId == cleanId) ||
+                                 (ServerStatus == "UPDATING" && CurrentUpdatingModId == cleanId);
             bool isDisabled = Config.DisabledMods.Any(x => x.Equals(cleanId, StringComparison.OrdinalIgnoreCase));
             bool hasUpdate = ModsWithUpdates.Contains(cleanId);
+            bool isRecentlyUpdated = !hasUpdate && IsModRecentlyUpdated(cleanId);
             var cached = SteamWorkshopHelper.GetCachedMod(cleanId);
             string effTitle = !string.IsNullOrWhiteSpace(title) ? title : cached?.Title ?? "";
             string effDesc = !string.IsNullOrWhiteSpace(description) ? description : cached?.ShortDescription ?? "";
             var category = ModLoadOrderHelper.ClassifyMod(cleanId, effTitle, effDesc);
             string catName = ModLoadOrderHelper.GetCategoryDisplayName(category);
             long remoteTs = cached?.TimeUpdated ?? 0;
+
+            if (isDownloading)
+            {
+                return new ModRuntimeInfo
+                {
+                    Id = cleanId,
+                    IsLoaded = false,
+                    IsDisabled = isDisabled,
+                    HasUpdate = hasUpdate,
+                    IsRecentlyUpdated = false,
+                    RemoteTimeUpdated = remoteTs,
+                    LoadStatus = "DOWNLOADING",
+                    StatusBadge = "⬇️ Downloading",
+                    StatusText = "SteamCMD downloading/updating mod...",
+                    Category = category,
+                    CategoryName = catName
+                };
+            }
 
             if (isDisabled)
             {
@@ -831,12 +999,13 @@ namespace ConanServerManager
                     IsLoaded = false,
                     IsDisabled = true,
                     HasUpdate = hasUpdate,
+                    IsRecentlyUpdated = isRecentlyUpdated,
                     RemoteTimeUpdated = remoteTs,
-                    LoadStatus = "DISABLED",
-                    StatusBadge = hasUpdate ? "🔄 Update Available" : "⏸️ Inactive",
+                    LoadStatus = isRecentlyUpdated ? "UPDATED" : "DISABLED",
+                    StatusBadge = hasUpdate ? "🔄 Update Available" : (isRecentlyUpdated ? "✅ Updated!" : "⏸️ Inactive"),
                     StatusText = hasUpdate 
                         ? $"New version published on Steam Workshop! ({DateTimeOffset.FromUnixTimeSeconds(remoteTs).ToLocalTime():yyyy-MM-dd})" 
-                        : (isDownloaded ? "Disabled; excluded from modlist.txt (files kept on disk)" : "Disabled; not downloaded"),
+                        : (isRecentlyUpdated ? "Confirmed current with Steam Workshop" : (isDownloaded ? "Disabled; excluded from modlist.txt (files kept on disk)" : "Disabled; not downloaded")),
                     Category = category,
                     CategoryName = catName
                 };
@@ -852,6 +1021,7 @@ namespace ConanServerManager
                         IsLoaded = false,
                         IsDisabled = false,
                         HasUpdate = hasUpdate,
+                        IsRecentlyUpdated = isRecentlyUpdated,
                         RemoteTimeUpdated = remoteTs,
                         LoadStatus = "ERROR",
                         StatusBadge = hasUpdate ? "🔄 Update Available" : "❌ Load Error",
@@ -869,10 +1039,11 @@ namespace ConanServerManager
                         IsLoaded = true,
                         IsDisabled = false,
                         HasUpdate = hasUpdate,
+                        IsRecentlyUpdated = isRecentlyUpdated,
                         RemoteTimeUpdated = remoteTs,
-                        LoadStatus = "LOADED",
-                        StatusBadge = hasUpdate ? "🔄 Update Available" : "🟢 Active & Loaded",
-                        StatusText = hasUpdate ? "Update available on Steam Workshop! Restart/update server to apply." : "Mod mounted and active in game server",
+                        LoadStatus = isRecentlyUpdated ? "UPDATED" : "LOADED",
+                        StatusBadge = hasUpdate ? "🔄 Update Available" : (isRecentlyUpdated ? "✅ Updated!" : "🟢 Active & Loaded"),
+                        StatusText = hasUpdate ? "Update available on Steam Workshop! Restart/update server to apply." : (isRecentlyUpdated ? "Confirmed current with Steam Workshop" : "Mod mounted and active in game server"),
                         Category = category,
                         CategoryName = catName
                     };
@@ -884,29 +1055,13 @@ namespace ConanServerManager
                     IsLoaded = false,
                     IsDisabled = false,
                     HasUpdate = hasUpdate,
+                    IsRecentlyUpdated = isRecentlyUpdated,
                     RemoteTimeUpdated = remoteTs,
-                    LoadStatus = "PENDING_RESTART",
-                    StatusBadge = hasUpdate ? "🔄 Update Available" : "⏳ Pending Restart",
+                    LoadStatus = isRecentlyUpdated ? "UPDATED" : "PENDING_RESTART",
+                    StatusBadge = hasUpdate ? "🔄 Update Available" : (isRecentlyUpdated ? "✅ Updated!" : "⏳ Pending Restart"),
                     StatusText = hasUpdate 
                         ? "New version available on Steam Workshop!" 
-                        : (isDownloaded ? "Ready on disk; restart server to load" : "Pending download and restart"),
-                    Category = category,
-                    CategoryName = catName
-                };
-            }
-
-            if (isPreDownloading)
-            {
-                return new ModRuntimeInfo
-                {
-                    Id = cleanId,
-                    IsLoaded = false,
-                    IsDisabled = false,
-                    HasUpdate = hasUpdate,
-                    RemoteTimeUpdated = remoteTs,
-                    LoadStatus = "DOWNLOADING",
-                    StatusBadge = "⬇️ Downloading",
-                    StatusText = "SteamCMD downloading mod...",
+                        : (isRecentlyUpdated ? "Confirmed current with Steam Workshop (Pending server mount)" : (isDownloaded ? "Ready on disk; restart server to load" : "Pending download and restart")),
                     Category = category,
                     CategoryName = catName
                 };
@@ -920,12 +1075,13 @@ namespace ConanServerManager
                     IsLoaded = false,
                     IsDisabled = false,
                     HasUpdate = hasUpdate,
+                    IsRecentlyUpdated = isRecentlyUpdated,
                     RemoteTimeUpdated = remoteTs,
-                    LoadStatus = "DOWNLOADED",
-                    StatusBadge = hasUpdate ? "🔄 Update Available" : "📁 Ready on Disk",
+                    LoadStatus = isRecentlyUpdated ? "UPDATED" : "DOWNLOADED",
+                    StatusBadge = hasUpdate ? "🔄 Update Available" : (isRecentlyUpdated ? "✅ Updated!" : "📁 Ready on Disk"),
                     StatusText = hasUpdate 
                         ? $"New version available on Steam Workshop! ({DateTimeOffset.FromUnixTimeSeconds(remoteTs).ToLocalTime():yyyy-MM-dd})" 
-                        : "Verified on disk",
+                        : (isRecentlyUpdated ? "Confirmed current with Steam Workshop" : "Verified on disk"),
                     Category = category,
                     CategoryName = catName
                 };
@@ -937,6 +1093,7 @@ namespace ConanServerManager
                 IsLoaded = false,
                 IsDisabled = false,
                 HasUpdate = hasUpdate,
+                IsRecentlyUpdated = false,
                 RemoteTimeUpdated = remoteTs,
                 LoadStatus = "MISSING",
                 StatusBadge = "⚠️ Needs Download",
@@ -2484,6 +2641,16 @@ namespace ConanServerManager
                         {
                             DownloadModResilient(Config.Mods[i], i);
                         }
+
+                        // Refresh the post-update confirmation badge window across all active mods once the batch completes
+                        foreach (var mId in Config.Mods)
+                        {
+                            if (IsModDownloaded(mId))
+                            {
+                                MarkModRecentlyUpdated(mId, 12);
+                            }
+                        }
+                        OnModUpdatesChanged?.Invoke();
                     }
 
                     GenerateModlistFile();
@@ -2491,6 +2658,7 @@ namespace ConanServerManager
             }
             finally
             {
+                CurrentUpdatingModId = null;
                 _steamCmdLock.Release();
             }
 
@@ -2652,30 +2820,43 @@ namespace ConanServerManager
 
         private void DownloadModResilient(string modId, int modIndex, int maxRetries = 5)
         {
-            _currentDownloadName = $"Workshop Mod {modId}";
+            string cleanId = modId.Trim();
+            CurrentUpdatingModId = cleanId;
+            _currentDownloadName = $"Workshop Mod {cleanId}";
             _currentDownloadIndex = modIndex + 2;
             _totalDownloadCount = Config.Mods.Count + 1;
             _lastProgressTime = DateTime.MinValue;
             _lastProgressBytes = 0;
+            OnModUpdatesChanged?.Invoke();
 
-            Log($"[{_currentDownloadIndex}/{_totalDownloadCount}] Downloading/Validating Workshop Mod {modId}...");
-            string args = $"+force_install_dir \"{ServerRootDir}\" +login anonymous +workshop_download_item {WorkshopAppId} {modId} validate +logoff +quit";
-
-            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            try
             {
-                Log($"Mod {modId} - Attempt {attempt}/{maxRetries}...");
-                bool success = RunSteamCmd(args);
-                if (success)
+                Log($"[{_currentDownloadIndex}/{_totalDownloadCount}] Downloading/Validating Workshop Mod {cleanId}...");
+                string args = $"+force_install_dir \"{ServerRootDir}\" +login anonymous +workshop_download_item {WorkshopAppId} {cleanId} validate +logoff +quit";
+
+                for (int attempt = 1; attempt <= maxRetries; attempt++)
                 {
-                    Log($"Mod {modId} download/verification completed successfully.");
-                    return;
+                    Log($"Mod {cleanId} - Attempt {attempt}/{maxRetries}...");
+                    bool success = RunSteamCmd(args);
+                    if (success)
+                    {
+                        Log($"Mod {cleanId} download/verification completed successfully.");
+                        CurrentUpdatingModId = null;
+                        ConfirmModCurrentAfterDownloadAsync(cleanId, 15).GetAwaiter().GetResult();
+                        return;
+                    }
+
+                    Log($"Mod {cleanId} attempt {attempt} encountered issue/timeout. Retrying in 5s (SteamCMD resumes partial chunks)...");
+                    Task.Delay(5000).Wait();
                 }
 
-                Log($"Mod {modId} attempt {attempt} encountered issue/timeout. Retrying in 5s (SteamCMD resumes partial chunks)...");
-                Task.Delay(5000).Wait();
+                Log($"WARNING: Mod {cleanId} failed to complete after {maxRetries} attempts.");
             }
-
-            Log($"WARNING: Mod {modId} failed to complete after {maxRetries} attempts.");
+            finally
+            {
+                CurrentUpdatingModId = null;
+                OnModUpdatesChanged?.Invoke();
+            }
         }
 
         public async Task<bool> PreDownloadModAsync(string modId, int maxRetries = 3)
@@ -2705,6 +2886,7 @@ namespace ConanServerManager
                 _totalDownloadCount = 1;
                 _lastProgressTime = DateTime.MinValue;
                 _lastProgressBytes = 0;
+                OnModUpdatesChanged?.Invoke();
 
                 Log($"[Pre-Download] Starting background download for Steam Workshop Mod #{trimmedId}...");
 
@@ -2728,22 +2910,30 @@ namespace ConanServerManager
                     }
                 }
 
+                IsModPreDownloading = false;
+                CurrentPreDownloadingModId = null;
+
                 if (success)
                 {
                     GenerateModlistFile();
+                    await ConfirmModCurrentAfterDownloadAsync(trimmedId, 12);
                     OnModPreDownloadCompleted?.Invoke(trimmedId, true, "Success");
                     return true;
                 }
                 else
                 {
                     Log($"[Pre-Download] Mod #{trimmedId} background download did not complete successfully. Will validate on next server update.");
+                    OnModUpdatesChanged?.Invoke();
                     OnModPreDownloadCompleted?.Invoke(trimmedId, false, "Download incomplete or failed");
                     return false;
                 }
             }
             catch (Exception ex)
             {
+                IsModPreDownloading = false;
+                CurrentPreDownloadingModId = null;
                 Log($"[Pre-Download] Error downloading Mod #{trimmedId}: {ex.Message}");
+                OnModUpdatesChanged?.Invoke();
                 OnModPreDownloadCompleted?.Invoke(trimmedId, false, ex.Message);
                 return false;
             }

@@ -585,6 +585,10 @@ namespace ConanServerManager
                         _hasSyncedRemoteConfig = true;
                         _ = FetchAndPopulateRemoteConfigAsync(baseUrl);
                     }
+                    else
+                    {
+                        _ = FetchRemoteModsListAsync(baseUrl);
+                    }
 
                     if (!string.IsNullOrWhiteSpace(baseUrl) &&
                         !baseUrl.Contains("127.0.0.1") &&
@@ -1066,6 +1070,7 @@ namespace ConanServerManager
             {
                 item.IsDownloaded = _engine.IsModDownloaded(item.Id);
                 item.HasUpdate = _engine.ModsWithUpdates.Contains(item.Id);
+                item.IsRecentlyUpdated = _engine.IsModRecentlyUpdated(item.Id);
                 var rt = _engine.GetModRuntimeInfo(item.Id, item.Title);
                 item.UpdateLoadStatus(rt.LoadStatus, rt.StatusBadge, rt.CategoryName);
             }
@@ -1075,6 +1080,7 @@ namespace ConanServerManager
                 {
                     item.IsDownloaded = _engine.IsModDownloaded(item.Id);
                     item.HasUpdate = _engine.ModsWithUpdates.Contains(item.Id);
+                    item.IsRecentlyUpdated = _engine.IsModRecentlyUpdated(item.Id);
                     var rt = _engine.GetModRuntimeInfo(item.Id, item.Title);
                     item.UpdateLoadStatus(rt.LoadStatus, rt.StatusBadge, rt.CategoryName);
                 }
@@ -1108,6 +1114,7 @@ namespace ConanServerManager
                     PreviewUrl = cached?.PreviewUrl ?? "",
                     IsDownloaded = _engine.IsModDownloaded(id),
                     HasUpdate = _engine.ModsWithUpdates.Contains(id),
+                    IsRecentlyUpdated = _engine.IsModRecentlyUpdated(id),
                     IsDisabled = false,
                     CategoryName = ModLoadOrderHelper.GetCategoryDisplayName(cat)
                 };
@@ -1174,6 +1181,7 @@ namespace ConanServerManager
                     Id = id,
                     IsDisabled = true,
                     HasUpdate = _engine.ModsWithUpdates.Contains(id),
+                    IsRecentlyUpdated = _engine.IsModRecentlyUpdated(id),
                     Title = cached != null && !string.IsNullOrWhiteSpace(cached.Title) && !cached.Title.StartsWith("Mod #")
                         ? cached.Title
                         : $"Mod #{id}",
@@ -1222,12 +1230,27 @@ namespace ConanServerManager
             if (IsRemoteMode) return;
 
             int count = _engine.ModsWithUpdates.Count;
+            bool anyRecentlyUpdated = _engine.RecentlyUpdatedMods.Any(kv => DateTime.UtcNow < kv.Value);
             if (count > 0)
             {
                 PnlModUpdatesBanner.Visibility = Visibility.Visible;
+                PnlModUpdatesBanner.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E1B4B"));
+                PnlModUpdatesBanner.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#818CF8"));
                 if (TxtModUpdatesBanner != null)
                 {
+                    TxtModUpdatesBanner.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#C7D2FE"));
                     TxtModUpdatesBanner.Text = $"Updates available on Steam Workshop for {count} mod(s)! Restart & Update to apply.";
+                }
+            }
+            else if (anyRecentlyUpdated)
+            {
+                PnlModUpdatesBanner.Visibility = Visibility.Visible;
+                PnlModUpdatesBanner.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#064E3B"));
+                PnlModUpdatesBanner.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#10B981"));
+                if (TxtModUpdatesBanner != null)
+                {
+                    TxtModUpdatesBanner.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A7F3D0"));
+                    TxtModUpdatesBanner.Text = "✅ Mod update(s) verified! All mods confirmed current with Steam Workshop.";
                 }
             }
             else
@@ -1803,6 +1826,7 @@ namespace ConanServerManager
                         string statusBadge = el.TryGetProperty("StatusBadge", out var sbProp) ? sbProp.GetString() ?? "" : "";
                         string catName = el.TryGetProperty("CategoryName", out var cnProp) ? cnProp.GetString() ?? "" : "";
                         bool hasUpdate = el.TryGetProperty("HasUpdate", out var huProp) && huProp.GetBoolean();
+                        bool isRecentlyUpdated = el.TryGetProperty("IsRecentlyUpdated", out var ruProp) && ruProp.GetBoolean();
 
                         var item = new ModDisplayItem
                         {
@@ -1812,6 +1836,7 @@ namespace ConanServerManager
                             IsDownloaded = isDownloaded,
                             CategoryName = catName,
                             HasUpdate = hasUpdate,
+                            IsRecentlyUpdated = isRecentlyUpdated,
                             IsDisabled = false
                         };
                         item.UpdateLoadStatus(loadStatus, statusBadge, catName);
@@ -1832,6 +1857,7 @@ namespace ConanServerManager
                             string statusBadge = el.TryGetProperty("StatusBadge", out var sbProp) ? sbProp.GetString() ?? "" : "";
                             string catName = el.TryGetProperty("CategoryName", out var cnProp) ? cnProp.GetString() ?? "" : "";
                             bool hasUpdate = el.TryGetProperty("HasUpdate", out var huProp) && huProp.GetBoolean();
+                            bool isRecentlyUpdated = el.TryGetProperty("IsRecentlyUpdated", out var ruProp) && ruProp.GetBoolean();
 
                             var item = new ModDisplayItem
                             {
@@ -1841,6 +1867,7 @@ namespace ConanServerManager
                                 IsDownloaded = isDownloaded,
                                 CategoryName = catName,
                                 HasUpdate = hasUpdate,
+                                IsRecentlyUpdated = isRecentlyUpdated,
                                 IsDisabled = true
                             };
                             item.UpdateLoadStatus(loadStatus, statusBadge, catName);
@@ -1849,22 +1876,88 @@ namespace ConanServerManager
                     }
 
                     int updatesCount = doc.RootElement.TryGetProperty("updatesAvailableCount", out var ucProp) ? ucProp.GetInt32() : 0;
+                    bool anyRecentlyUpdated = newItems.Any(m => m.IsRecentlyUpdated) || newDisabled.Any(m => m.IsRecentlyUpdated);
 
                     Dispatcher.Invoke(() =>
                     {
-                        LstMods.Items.Clear();
-                        foreach (var m in newItems)
+                        // Check if active mods list has identical ID sequence to update in-place without losing scroll/selection
+                        bool sameActiveSequence = LstMods.Items.Count == newItems.Count;
+                        if (sameActiveSequence)
                         {
-                            LstMods.Items.Add(m);
+                            for (int i = 0; i < newItems.Count; i++)
+                            {
+                                if (LstMods.Items[i] is not ModDisplayItem existing || existing.Id != newItems[i].Id)
+                                {
+                                    sameActiveSequence = false;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (sameActiveSequence)
+                        {
+                            for (int i = 0; i < newItems.Count; i++)
+                            {
+                                if (LstMods.Items[i] is ModDisplayItem existing)
+                                {
+                                    var updated = newItems[i];
+                                    existing.Title = updated.Title;
+                                    existing.PreviewUrl = updated.PreviewUrl;
+                                    existing.IsDownloaded = updated.IsDownloaded;
+                                    existing.HasUpdate = updated.HasUpdate;
+                                    existing.IsRecentlyUpdated = updated.IsRecentlyUpdated;
+                                    existing.UpdateLoadStatus(updated.LoadStatus, updated.StatusBadge, updated.CategoryName);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            LstMods.Items.Clear();
+                            foreach (var m in newItems)
+                            {
+                                LstMods.Items.Add(m);
+                            }
                         }
                         if (TxtActiveModsCount != null) TxtActiveModsCount.Text = $"({newItems.Count} mods)";
 
                         if (LstDisabledMods != null)
                         {
-                            LstDisabledMods.Items.Clear();
-                            foreach (var dm in newDisabled)
+                            bool sameDisabledSequence = LstDisabledMods.Items.Count == newDisabled.Count;
+                            if (sameDisabledSequence)
                             {
-                                LstDisabledMods.Items.Add(dm);
+                                for (int i = 0; i < newDisabled.Count; i++)
+                                {
+                                    if (LstDisabledMods.Items[i] is not ModDisplayItem existing || existing.Id != newDisabled[i].Id)
+                                    {
+                                        sameDisabledSequence = false;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (sameDisabledSequence)
+                            {
+                                for (int i = 0; i < newDisabled.Count; i++)
+                                {
+                                    if (LstDisabledMods.Items[i] is ModDisplayItem existing)
+                                    {
+                                        var updated = newDisabled[i];
+                                        existing.Title = updated.Title;
+                                        existing.PreviewUrl = updated.PreviewUrl;
+                                        existing.IsDownloaded = updated.IsDownloaded;
+                                        existing.HasUpdate = updated.HasUpdate;
+                                        existing.IsRecentlyUpdated = updated.IsRecentlyUpdated;
+                                        existing.UpdateLoadStatus(updated.LoadStatus, updated.StatusBadge, updated.CategoryName);
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                LstDisabledMods.Items.Clear();
+                                foreach (var dm in newDisabled)
+                                {
+                                    LstDisabledMods.Items.Add(dm);
+                                }
                             }
                         }
                         if (TxtDisabledModsCount != null) TxtDisabledModsCount.Text = newDisabled.Count.ToString();
@@ -1874,8 +1967,24 @@ namespace ConanServerManager
                             if (updatesCount > 0)
                             {
                                 PnlModUpdatesBanner.Visibility = Visibility.Visible;
+                                PnlModUpdatesBanner.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E1B4B"));
+                                PnlModUpdatesBanner.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#6366F1"));
                                 if (TxtModUpdatesBanner != null)
+                                {
+                                    TxtModUpdatesBanner.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#C7D2FE"));
                                     TxtModUpdatesBanner.Text = $"Updates available on remote server for {updatesCount} mod(s)!";
+                                }
+                            }
+                            else if (anyRecentlyUpdated)
+                            {
+                                PnlModUpdatesBanner.Visibility = Visibility.Visible;
+                                PnlModUpdatesBanner.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#064E3B"));
+                                PnlModUpdatesBanner.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#10B981"));
+                                if (TxtModUpdatesBanner != null)
+                                {
+                                    TxtModUpdatesBanner.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A7F3D0"));
+                                    TxtModUpdatesBanner.Text = "✅ Mod update(s) verified on remote server! Confirmed current with Steam Workshop.";
+                                }
                             }
                             else
                             {
@@ -2049,9 +2158,34 @@ namespace ConanServerManager
             TriggerModPreDownload(mod.Id);
         }
 
-        private void TriggerModPreDownload(string modId)
+        private async void TriggerModPreDownload(string modId)
         {
             string trimmed = modId.Trim();
+            if (IsRemoteMode)
+            {
+                try
+                {
+                    string baseUrl = GetRemoteBaseUrl();
+                    using var content = new StringContent(JsonSerializer.Serialize(new { modId = trimmed }), Encoding.UTF8, "application/json");
+                    var res = await _httpClient.PostAsync($"{baseUrl}/api/mods/predownload", content);
+                    if (res.IsSuccessStatusCode)
+                    {
+                        _engine.Log($"[Remote Client] Initiated background download/update for Mod #{trimmed} on remote server...");
+                        await FetchRemoteModsListAsync(baseUrl);
+                    }
+                    else
+                    {
+                        string errBody = await res.Content.ReadAsStringAsync();
+                        MessageBox.Show($"Remote server could not start pre-download: {errBody}", "Remote Pre-Download", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error communicating with remote server: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                return;
+            }
+
             if (_engine.IsModPreDownloading)
             {
                 MessageBox.Show($"SteamCMD is currently busy pre-downloading Mod #{_engine.CurrentPreDownloadingModId}.\nPlease wait for it to finish.", "Pre-Download Active", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -2064,8 +2198,9 @@ namespace ConanServerManager
                 return;
             }
 
+            bool hasPendingUpdate = _engine.ModsWithUpdates.Contains(trimmed);
             bool alreadyDownloaded = _engine.IsModDownloaded(trimmed);
-            if (alreadyDownloaded)
+            if (alreadyDownloaded && !hasPendingUpdate)
             {
                 var prompt = MessageBox.Show($"Workshop Mod #{trimmed} is already downloaded and present on disk.\nDo you want to run SteamCMD verification in the background to ensure it is up to date?", "Mod Already On Disk", MessageBoxButton.YesNo, MessageBoxImage.Question);
                 if (prompt != MessageBoxResult.Yes) return;
@@ -3185,6 +3320,7 @@ namespace ConanServerManager
         private Brush _badgeForeground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#94A3B8"));
 
         private bool _hasUpdate = false;
+        private bool _isRecentlyUpdated = false;
         private bool _isDisabled = false;
         private long _remoteTimeUpdated = 0;
 
@@ -3218,6 +3354,12 @@ namespace ConanServerManager
             set { _hasUpdate = value; OnPropertyChanged(nameof(HasUpdate)); OnPropertyChanged(nameof(Subtitle)); }
         }
 
+        public bool IsRecentlyUpdated
+        {
+            get => _isRecentlyUpdated;
+            set { _isRecentlyUpdated = value; OnPropertyChanged(nameof(IsRecentlyUpdated)); OnPropertyChanged(nameof(Subtitle)); }
+        }
+
         public bool IsDisabled
         {
             get => _isDisabled;
@@ -3239,7 +3381,7 @@ namespace ConanServerManager
         public string LoadStatus
         {
             get => _loadStatus;
-            set { _loadStatus = value; OnPropertyChanged(nameof(LoadStatus)); }
+            set { _loadStatus = value; OnPropertyChanged(nameof(LoadStatus)); OnPropertyChanged(nameof(Subtitle)); }
         }
 
         public string StatusBadge
@@ -3266,17 +3408,41 @@ namespace ConanServerManager
             set { _badgeForeground = value; OnPropertyChanged(nameof(BadgeForeground)); }
         }
 
-        public string Subtitle => HasUpdate 
-            ? $"ID: {Id} • 🔄 Update Available on Steam Workshop!" 
-            : (IsDisabled 
-                ? $"ID: {Id} • Inactive (Excluded from Server)" 
-                : $"ID: {Id} • {(IsDownloaded ? "Ready on Disk" : "Pending Download")}");
+        public string Subtitle => LoadStatus == "DOWNLOADING"
+            ? $"ID: {Id} • ⬇️ Downloading & Updating via SteamCMD..."
+            : ((IsRecentlyUpdated || LoadStatus == "UPDATED")
+                ? $"ID: {Id} • ✅ Updated & Confirmed Current!"
+                : (HasUpdate 
+                    ? $"ID: {Id} • 🔄 Update Available on Steam Workshop!" 
+                    : (IsDisabled 
+                        ? $"ID: {Id} • Inactive (Excluded from Server)" 
+                        : $"ID: {Id} • {(IsDownloaded ? "Ready on Disk" : "Pending Download")}")));
 
         public void UpdateLoadStatus(string status, string? badge = null, string? category = null)
         {
             LoadStatus = status;
             if (!string.IsNullOrEmpty(badge)) StatusBadge = badge;
             if (!string.IsNullOrEmpty(category)) CategoryName = category;
+
+            string upperStatus = status?.ToUpperInvariant() ?? "";
+
+            if (upperStatus == "DOWNLOADING")
+            {
+                StatusBadge = string.IsNullOrEmpty(badge) ? "⬇️ Downloading" : badge;
+                BadgeBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E3A8A"));
+                BadgeBorder = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#3B82F6"));
+                BadgeForeground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#60A5FA"));
+                return;
+            }
+
+            if (IsRecentlyUpdated || upperStatus == "UPDATED")
+            {
+                StatusBadge = string.IsNullOrEmpty(badge) ? "✅ Updated!" : badge;
+                BadgeBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#064E3B"));
+                BadgeBorder = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#10B981"));
+                BadgeForeground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#6EE7B7"));
+                return;
+            }
 
             if (HasUpdate)
             {
@@ -3296,7 +3462,7 @@ namespace ConanServerManager
                 return;
             }
 
-            switch (status?.ToUpperInvariant() ?? "")
+            switch (upperStatus)
             {
                 case "LOADED":
                     StatusBadge = string.IsNullOrEmpty(badge) ? "🟢 Loaded & Active" : badge;
@@ -3321,6 +3487,12 @@ namespace ConanServerManager
                     BadgeBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E3A8A"));
                     BadgeBorder = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#3B82F6"));
                     BadgeForeground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#60A5FA"));
+                    break;
+                case "UPDATED":
+                    StatusBadge = string.IsNullOrEmpty(badge) ? "✅ Updated!" : badge;
+                    BadgeBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#064E3B"));
+                    BadgeBorder = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#10B981"));
+                    BadgeForeground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#6EE7B7"));
                     break;
                 case "DOWNLOADED":
                     StatusBadge = string.IsNullOrEmpty(badge) ? "📁 Ready on Disk" : badge;

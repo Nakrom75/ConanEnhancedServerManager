@@ -1769,10 +1769,41 @@ The following items were identified during the v1.3.2 feature audit and schedule
 - **Zero Remote Deployment Compliance**: All binaries, APKs, and packages remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\` for manual administrator release and distribution.
 
 ---
+
+## 44. Post-Download Mod Update Verification, Transient "✅ Updated!" Status Badge & Repository APK Cleanup (v1.3.7 - Build 10307)
+
+### 1. Post-Download Mod Timestamp Reconciliation & SteamACF Parsing
+- **Root Cause**:
+  - Previously, `CheckAllModsForUpdatesAsync()` only checked `Config.ModInstalledTimestamps[id]` if it was `> 0`, ignoring newer `.pak` file timestamps on disk after SteamCMD updated a mod. Additionally, `DownloadModResilient()` and `PreDownloadModAsync()` did not update `Config.ModInstalledTimestamps[id]` upon completion.
+  - Furthermore, a mod `.pak` file's `LastWriteTimeUtc` inside a Steam depot reflects the time the modder compiled the `.pak` prior to uploading to Steam Workshop, which is typically 1–3 minutes *earlier* than Steam Workshop's `time_updated` metadata timestamp when the upload finishes.
+- **Triple-Source Timestamp Reconciliation (`ServerEngine.cs`)**:
+  - Added `ReadAcfInstalledTimestamps()` to parse SteamCMD's `steamapps/workshop/appworkshop_440900.acf` (`"WorkshopItemsInstalled" -> "<id>" -> "timeupdated"`), which stores the exact Workshop timestamp recorded by SteamCMD.
+  - Added `GetModDiskPakTimestamp(string modId)` to inspect the `.pak` file's `LastWriteTimeUtc` on disk.
+  - Updated `CheckAllModsForUpdatesAsync()` to compute `localTimestamp = Math.Max(storedTs, Math.Max(acfTs, diskTs))`, treat `acfTs` within 180 seconds of `remote.TimeUpdated` as current, and automatically persist the reconciled timestamp to `Config.ModInstalledTimestamps[id]`.
+- **Immediate Post-Download Confirmation (`ConfirmModCurrentAfterDownloadAsync`)**:
+  - Called automatically at the end of `DownloadModResilient()` (during full server update/start) and `PreDownloadModAsync()` (during background mod pre-download/validation).
+  - Queries `SteamWorkshopClient.GetPublishedFileDetailsAsync()` and `ReadAcfInstalledTimestamps()` to verify the newly downloaded `.pak` on disk, updates `Config.ModInstalledTimestamps[id]` to the confirmed current Workshop timestamp, removes `id` from `ModsWithUpdates`, and triggers the transient **"✅ Updated!"** confirmation state.
+
+### 2. Transient "✅ Updated!" & "⬇️ Downloading" Visual Status Lifecycle
+- **Live Status Progression**:
+  1. **While Downloading (`LoadStatus = "DOWNLOADING"`)**: Tracked via `CurrentUpdatingModId` and `CurrentPreDownloadingModId`. Displays blue badge **`⬇️ Downloading`** (`Subtitle: "ID: ... • ⬇️ Downloading & Updating via SteamCMD..."`).
+  2. **Post-Download Confirmation (`LoadStatus = "UPDATED"`, `IsRecentlyUpdated = true`)**: Tracked via `RecentlyUpdatedMods` (`ConcurrentDictionary<string, DateTime>`) via `MarkModRecentlyUpdated(modId, 12)`. Displays emerald badge **`✅ Updated!`** (`Subtitle: "ID: ... • ✅ Updated & Confirmed Current!"`) and an emerald confirmation banner (`"✅ Mod update(s) verified! All mods confirmed current with Steam Workshop."`) across Windows Desktop (Local & Remote Client), Web UI, and Android Companion App.
+  3. **Automatic Reversion to Normal Status**: After 12 seconds, an asynchronous timer in `MarkModRecentlyUpdated()` clears the transient entry and fires `OnModUpdatesChanged` and `TriggerModsChanged`, smoothly returning each mod item to its normal runtime status (`🟢 Loaded & Active`, `📁 Ready on Disk`, `⏳ Pending Restart`, or `⏸️ Inactive`) and collapsing the banner.
+- **In-Place Remote Polling & Pre-Download Support (`MainWindow.xaml.cs`)**:
+  - `PollRemoteServerAsync()` now refreshes remote mod statuses on poll ticks, and `FetchRemoteModsListAsync()` updates `LstMods` and `LstDisabledMods` items in-place when the mod ID sequence is unchanged so user selection and scroll position are preserved.
+  - `TriggerModPreDownload()` now supports Remote Client Mode via `POST /api/mods/predownload`.
+
+### 3. Repository APK Cleanup & Synchronized Release (`v1.3.7` / `10307`)
+- Removed legacy `ConanServerManager-v1.3.6.apk` from Git tracking (`git rm ConanServerManager-v1.3.6.apk`) so only the current release APK (`ConanServerManager-v1.3.7.apk`) is stored in the repository root.
+- Synchronized all 7 core version locations to `1.3.7` (Version Code `10307`):
+  1. `version.txt` -> `1.3.7`
+  2. `src/ServerEngine.cs` -> fallback `GetAppVersion()` = `"1.3.7"`
+  3. `src/MainWindow.xaml` -> `TxtAppHeaderTitle` = `"Conan Enhanced Server Manager v1.3.7"`, `TxtAppHeaderVersionBadge` = `"🚀 v1.3.7"`
+  4. `android/app/build.gradle` -> `getAppVersionName() = "1.3.7"`, `getAppVersionCode() = 10307`
+  5. `android/app/src/main/assets/app.js` -> `APP_VERSION = "1.3.7"`
+  6. `android/app/src/main/assets/index.html` -> badge `#appInstalledVersion` = `v1.3.7`
+  7. `android/app/src/main/java/com/conan/servermanager/MainActivity.java` -> fallback `"1.3.7"`, `10307`
+- **Zero Remote Deployment Compliance**: All builds, packages, and APKs remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
+
+---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
-
-
-
-
-
-

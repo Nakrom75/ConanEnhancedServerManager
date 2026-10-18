@@ -555,6 +555,7 @@ namespace ConanServerManager
                         IsInstalled = true,
                         IsDisabled = false,
                         HasUpdate = rt.HasUpdate,
+                        IsRecentlyUpdated = rt.IsRecentlyUpdated,
                         RemoteTimeUpdated = rt.RemoteTimeUpdated,
                         IsDownloaded = _engine.IsModDownloaded(modId),
                         IsLoaded = rt.IsLoaded,
@@ -584,6 +585,7 @@ namespace ConanServerManager
                         IsInstalled = false,
                         IsDisabled = true,
                         HasUpdate = rt.HasUpdate,
+                        IsRecentlyUpdated = rt.IsRecentlyUpdated,
                         RemoteTimeUpdated = rt.RemoteTimeUpdated,
                         IsDownloaded = _engine.IsModDownloaded(modId),
                         IsLoaded = false,
@@ -1373,14 +1375,26 @@ namespace ConanServerManager
                 const data = await res.json();
                 const container = document.getElementById('activeModsContainer');
                 const list = data.details || [];
+                const disList = data.disabledDetails || [];
                 document.getElementById('activeModsCountBadge').innerText = list.length;
+
+                const anyRecentlyUpdated = list.some(m => m.IsRecentlyUpdated || m.LoadStatus === 'UPDATED') || disList.some(m => m.IsRecentlyUpdated || m.LoadStatus === 'UPDATED');
 
                 // Mod updates banner
                 const banner = document.getElementById('modUpdatesBanner');
                 if (banner) {
                     if (data.updatesAvailableCount > 0) {
                         banner.style.display = 'block';
+                        banner.style.background = '#1e1b4b';
+                        banner.style.borderColor = '#6366f1';
+                        banner.style.color = '#c7d2fe';
                         banner.innerHTML = `🔄 <strong>${data.updatesAvailableCount} Mod Update(s) Available on Steam Workshop!</strong> Restart or update the server to apply latest versions.`;
+                    } else if (anyRecentlyUpdated) {
+                        banner.style.display = 'block';
+                        banner.style.background = '#064e3b';
+                        banner.style.borderColor = '#10b981';
+                        banner.style.color = '#a7f3d0';
+                        banner.innerHTML = `✅ <strong>Mod update(s) verified!</strong> All mods confirmed current with Steam Workshop.`;
                     } else {
                         banner.style.display = 'none';
                     }
@@ -1390,11 +1404,25 @@ namespace ConanServerManager
                     container.innerHTML = '<div style=""color:#64748b;font-size:0.8rem;text-align:center;padding:10px;"">No mods installed on server</div>';
                 } else {
                     container.innerHTML = list.map((m, idx) => {
-                        const isUpd = m.HasUpdate;
-                        const badgeBg = isUpd ? '#312e81' : (m.IsLoaded ? '#064e3b' : (m.LoadStatus === 'PENDING_RESTART' ? '#451a03' : '#1e293b'));
-                        const badgeFg = isUpd ? '#a5b4fc' : (m.IsLoaded ? '#34d399' : (m.LoadStatus === 'PENDING_RESTART' ? '#fbbf24' : '#94a3b8'));
-                        const badgeBorder = isUpd ? '#6366f1' : (m.IsLoaded ? '#10b981' : (m.LoadStatus === 'PENDING_RESTART' ? '#f59e0b' : '#475569'));
-                        const badgeText = isUpd ? '🔄 Update Available' : escapeHtml(m.StatusBadge || '📁 Ready on Disk');
+                        const isDownloading = m.LoadStatus === 'DOWNLOADING';
+                        const isRecUpd = m.IsRecentlyUpdated || m.LoadStatus === 'UPDATED';
+                        const isUpd = m.HasUpdate && !isRecUpd && !isDownloading;
+                        let badgeBg = '#1e293b', badgeFg = '#94a3b8', badgeBorder = '#475569';
+                        let badgeText = escapeHtml(m.StatusBadge || '📁 Ready on Disk');
+                        if (isDownloading) {
+                            badgeBg = '#1e3a8a'; badgeFg = '#60a5fa'; badgeBorder = '#3b82f6';
+                            badgeText = '⬇️ Downloading';
+                        } else if (isRecUpd) {
+                            badgeBg = '#064e3b'; badgeFg = '#6ee7b7'; badgeBorder = '#10b981';
+                            badgeText = '✅ Updated!';
+                        } else if (isUpd) {
+                            badgeBg = '#312e81'; badgeFg = '#a5b4fc'; badgeBorder = '#6366f1';
+                            badgeText = '🔄 Update Available';
+                        } else if (m.IsLoaded) {
+                            badgeBg = '#064e3b'; badgeFg = '#34d399'; badgeBorder = '#10b981';
+                        } else if (m.LoadStatus === 'PENDING_RESTART') {
+                            badgeBg = '#451a03'; badgeFg = '#fbbf24'; badgeBorder = '#f59e0b';
+                        }
 
                         return `
                         <div style=""display:flex;align-items:center;gap:8px;background:#0f172a;border:1px solid #334155;border-radius:6px;padding:6px 10px;margin-bottom:6px;"">
@@ -1418,17 +1446,22 @@ namespace ConanServerManager
                 // Inactive / Disabled Mods list
                 const disCard = document.getElementById('disabledModsCard');
                 const disContainer = document.getElementById('disabledModsContainer');
-                const disList = data.disabledDetails || [];
                 if (disCard && disContainer) {
                     if (disList.length > 0) {
                         disCard.style.display = 'block';
                         document.getElementById('disabledModsCountBadge').innerText = disList.length;
                         disContainer.innerHTML = disList.map((m, idx) => {
-                            const isUpd = m.HasUpdate;
-                            const badgeBg = isUpd ? '#312e81' : '#1e293b';
-                            const badgeFg = isUpd ? '#a5b4fc' : '#94a3b8';
-                            const badgeBorder = isUpd ? '#6366f1' : '#475569';
-                            const badgeText = isUpd ? '🔄 Update Available' : '⏸️ Inactive';
+                            const isDownloading = m.LoadStatus === 'DOWNLOADING';
+                            const isRecUpd = m.IsRecentlyUpdated || m.LoadStatus === 'UPDATED';
+                            const isUpd = m.HasUpdate && !isRecUpd && !isDownloading;
+                            let badgeBg = '#1e293b', badgeFg = '#94a3b8', badgeBorder = '#475569', badgeText = '⏸️ Inactive';
+                            if (isDownloading) {
+                                badgeBg = '#1e3a8a'; badgeFg = '#60a5fa'; badgeBorder = '#3b82f6'; badgeText = '⬇️ Downloading';
+                            } else if (isRecUpd) {
+                                badgeBg = '#064e3b'; badgeFg = '#6ee7b7'; badgeBorder = '#10b981'; badgeText = '✅ Updated!';
+                            } else if (isUpd) {
+                                badgeBg = '#312e81'; badgeFg = '#a5b4fc'; badgeBorder = '#6366f1'; badgeText = '🔄 Update Available';
+                            }
 
                             return `
                             <div style=""display:flex;align-items:center;gap:8px;background:#0f172a;border:1px dashed #475569;border-radius:6px;padding:6px 10px;margin-bottom:6px;opacity:0.9;"">

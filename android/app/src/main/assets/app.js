@@ -7,7 +7,7 @@ let savedServers = [];
 let latestApkUrl = "";
 let lastKnownConfig = null;
 let lastCrashCulpritModId = "";
-let APP_VERSION = "1.3.6";
+let APP_VERSION = "1.3.7";
 if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
 }
@@ -615,10 +615,24 @@ async function fetchInstalledMods() {
         const updBanner = document.getElementById("modUpdatesBanner");
         const updText = document.getElementById("modUpdatesBannerText");
         const updatesCount = data.updatesAvailableCount || 0;
+        const anyRecentlyUpdated = installedMods.some(m => m.IsRecentlyUpdated || m.LoadStatus === "UPDATED") || disabledModsList.some(m => m.IsRecentlyUpdated || m.LoadStatus === "UPDATED");
         if (updBanner) {
             if (updatesCount > 0) {
                 updBanner.style.display = "flex";
-                if (updText) updText.innerText = `${updatesCount} Mod Update(s) Available on Steam Workshop`;
+                updBanner.style.background = "#1e1b4b";
+                updBanner.style.borderColor = "#6366f1";
+                if (updText) {
+                    updText.style.color = "#c7d2fe";
+                    updText.innerText = `${updatesCount} Mod Update(s) Available on Steam Workshop`;
+                }
+            } else if (anyRecentlyUpdated) {
+                updBanner.style.display = "flex";
+                updBanner.style.background = "#064e3b";
+                updBanner.style.borderColor = "#10b981";
+                if (updText) {
+                    updText.style.color = "#a7f3d0";
+                    updText.innerText = "✅ Mod update(s) verified! Confirmed current with Steam Workshop.";
+                }
             } else {
                 updBanner.style.display = "none";
             }
@@ -632,12 +646,20 @@ async function fetchInstalledMods() {
         } else {
             container.innerHTML = installedMods.map((mod, idx) => {
                 const isLoaded = mod.IsLoaded;
-                const hasUpdate = mod.HasUpdate;
                 const loadStatus = mod.LoadStatus || (mod.IsDownloaded ? "DOWNLOADED" : "MISSING");
+                const isDownloading = loadStatus === "DOWNLOADING";
+                const isRecentlyUpdated = mod.IsRecentlyUpdated || loadStatus === "UPDATED";
+                const hasUpdate = mod.HasUpdate && !isRecentlyUpdated && !isDownloading;
                 let badgeStyle = "background:#1e293b;color:#94a3b8;border:1px solid #475569;";
                 let badgeText = mod.StatusBadge || (mod.IsDownloaded ? "📁 Ready on Disk" : "⏳ Pending Download");
 
-                if (hasUpdate) {
+                if (isDownloading) {
+                    badgeStyle = "background:#1e3a8a;color:#60a5fa;border:1px solid #3b82f6;";
+                    badgeText = "⬇️ Downloading";
+                } else if (isRecentlyUpdated) {
+                    badgeStyle = "background:#064e3b;color:#6ee7b7;border:1px solid #10b981;";
+                    badgeText = "✅ Updated!";
+                } else if (hasUpdate) {
                     badgeStyle = "background:#312e81;color:#a5b4fc;border:1px solid #6366f1;";
                     badgeText = "🔄 Update Available";
                 } else if (isLoaded) {
@@ -691,11 +713,22 @@ async function fetchInstalledMods() {
                 disCard.style.display = "block";
                 if (disCountBadge) disCountBadge.innerText = disabledModsList.length;
                 disContainer.innerHTML = disabledModsList.map((mod, idx) => {
-                    const hasUpdate = mod.HasUpdate;
-                    const badgeStyle = hasUpdate 
-                        ? "background:#312e81;color:#a5b4fc;border:1px solid #6366f1;" 
-                        : "background:#1e293b;color:#94a3b8;border:1px solid #475569;";
-                    const badgeText = hasUpdate ? "🔄 Update Available" : "⏸️ Inactive";
+                    const loadStatus = mod.LoadStatus || "DISABLED";
+                    const isDownloading = loadStatus === "DOWNLOADING";
+                    const isRecentlyUpdated = mod.IsRecentlyUpdated || loadStatus === "UPDATED";
+                    const hasUpdate = mod.HasUpdate && !isRecentlyUpdated && !isDownloading;
+                    let badgeStyle = "background:#1e293b;color:#94a3b8;border:1px solid #475569;";
+                    let badgeText = "⏸️ Inactive";
+                    if (isDownloading) {
+                        badgeStyle = "background:#1e3a8a;color:#60a5fa;border:1px solid #3b82f6;";
+                        badgeText = "⬇️ Downloading";
+                    } else if (isRecentlyUpdated) {
+                        badgeStyle = "background:#064e3b;color:#6ee7b7;border:1px solid #10b981;";
+                        badgeText = "✅ Updated!";
+                    } else if (hasUpdate) {
+                        badgeStyle = "background:#312e81;color:#a5b4fc;border:1px solid #6366f1;";
+                        badgeText = "🔄 Update Available";
+                    }
                     const catName = mod.CategoryName || "General";
 
                     return `
