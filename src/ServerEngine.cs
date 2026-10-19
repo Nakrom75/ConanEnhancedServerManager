@@ -361,7 +361,7 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.3.12";
+            return "1.4.0";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;

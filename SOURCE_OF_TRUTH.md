@@ -1988,5 +1988,22 @@ The following items were identified during the v1.3.2 feature audit and schedule
 - **Zero Remote Deployment Compliance**: All builds, packages, and APKs remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
 
 ---
+
+## 50. Major Feature Milestone Version Jump (`v1.4.0`) & Polyglot `UPDATE_FROM_GITHUB.bat` Fix (v1.4.0 - Build 10400)
+
+### 1. Polyglot Batch + Embedded PowerShell ScriptBlock Architecture (`UPDATE_FROM_GITHUB.bat`)
+- **Problem**:
+  - In `v1.3.12`, `UPDATE_FROM_GITHUB.bat` used `setlocal EnableDelayedExpansion` combined with multi-line `^` string concatenation inside `powershell -Command`. Windows `cmd.exe` consumed exclamation marks (`!`) and truncated/mangled quotes across line continuations, causing a PowerShell `MissingEndCurlyBrace` parser error.
+- **Architectural Fix**:
+  - Refactored `UPDATE_FROM_GITHUB.bat` into a clean polyglot `.bat` + native multi-line PowerShell script separated by `# === PS_START ===`.
+  - The batch header invokes `[ScriptBlock]::Create($raw.Substring($idx))` directly on the file itself (`%~f0`), completely eliminating `cmd.exe` line-continuation escaping, `EnableDelayedExpansion` exclamation-mark corruption, and 8191-character command-line length limits.
+  - Added smart version comparison: when run inside a Git + `.NET` development clone, it compares the latest GitHub Tag against the latest uploaded Release `.zip` so it never downgrades a development workspace to an older uploaded `.zip`.
+
+### 2. Major Feature Milestone Version Increment (`v1.4.0` / `10400`)
+- Bumped the minor version to **`1.4.0`** (Version Code `10400` via `1 * 10000 + 4 * 100 + 0`) across all 7 synchronization files to reflect the major feature addition of the **Live World Map (`:8089` Webpage + Native WPF Radar), SQLite `game.db` Base/Player Scanner, and Pippi Admin Suite (`ConanEnhancedAdmin`)**.
+- Removed `ConanServerManager-v1.3.12.apk` from Git tracking (`git rm ConanServerManager-v1.3.12.apk`) so only `ConanServerManager-v1.4.0.apk` is stored in the repository root.
+- **Zero Remote Deployment Compliance**: All builds, packages, and APKs remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
+
+---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
 
