@@ -3737,6 +3737,16 @@ namespace ConanServerManager
 
         private WorldMapSnapshot? _latestMapSnapshot;
 
+        private void RootWorkspaceTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_isInitialized) return;
+            if (!ReferenceEquals(e.Source, RootWorkspaceTabControl)) return;
+            if (RootWorkspaceTabControl?.SelectedIndex == 2)
+            {
+                Dispatcher.BeginInvoke(new Action(RefreshLiveMapTabUi), DispatcherPriority.Loaded);
+            }
+        }
+
         private void RefreshLiveMapTabUi()
         {
             if (!_isInitialized || _engine?.LiveMap == null || CnvLiveWorldMap == null) return;

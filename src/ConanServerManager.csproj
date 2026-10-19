@@ -19,6 +19,7 @@
   <ItemGroup>
     <Resource Include="app.ico" />
     <Resource Include="app.png" />
+    <Content Include="..\UPDATE_FROM_GITHUB.bat" Link="UPDATE_FROM_GITHUB.bat" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
   </ItemGroup>
 
   <ItemGroup>

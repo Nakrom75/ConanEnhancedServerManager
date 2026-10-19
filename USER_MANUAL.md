@@ -284,29 +284,19 @@ Need to tweak an advanced or mod-specific setting not shown on the main dashboar
 - **Broadcast Message**: Send a popup server announcement to all online players.
 - **Kick Player**: Select a player and click **Kick** to remove them from the server via RCON.
 
-### Live World Map, Clan Base Radar & Pippi Admin (`🗺️ Live World Map & Pippi Admin` Top Tab + Port `8089`)
-- **Non-Locking `game.db` World Scanner**: Automatically reads `ConanSandbox/Saved/game.db` (or `game_0.db`) in safe read-only mode to display:
-  - **🟢 Online Players & ⚪ Offline Bodies**: Exact Unreal `X, Y, Z` coordinates, `A1`–`P16` grid sector, character level, and clan tag.
-  - **🏰 Clan Bases & Building Piece Heatmaps**: Clusters nearby structures belonging to each clan/player within 150m, showing total building piece count and structure health `%` to quickly spot lag/bloat bases.
-  - **👑 Pippi Admin Ranks & Currency Wallets**: Assign player ranks (`Admin`, `Moderator`, `VIP`, `Member`), edit Gold Coin wallet balances, and manage public `!warp` landmarks.
-  - **📋 One-Click `TeleportPlayer X Y Z`**: Click any player, clan base, or location on the map to copy its exact `TeleportPlayer` command to your clipboard.
-- **Dedicated Live World Map Webpage (`Port 8089`)**:
-  - Open **`http://<Your-Server-IP>:8089`** in any desktop, tablet, or mobile browser for a full-screen interactive HTML5 Canvas Pan-and-Zoom World Map!
-
 ---
 
 ## 11. Remote Administration (PC Client, Web UI & Android App)
 
-Whenever `ConanServerManager.exe` is running in **Local Server Host** mode, its embedded Web & Remote API server listens on **Port `8088`** (`http://0.0.0.0:8088`) and its dedicated **Live World Map server** listens on **Port `8089`** (`http://0.0.0.0:8089`).
+Whenever `ConanServerManager.exe` is running in **Local Server Host** mode, its embedded Web & Remote API server listens on **Port `8088`** (`http://0.0.0.0:8088`).
 
-### Method A: Built-in Web Console (`:8088`) & Live World Map Webpage (`:8089`)
+### Method A: Built-in Web Console (Any Browser)
 1. On any computer, phone, or tablet connected to your network, open a web browser.
 2. Navigate to:
    ```text
-   http://<Your-Server-IP>:8088   (Full Server Management Web Console)
-   http://<Your-Server-IP>:8089   (Interactive Pan & Zoom Live World Map)
+   http://<Your-Server-IP>:8088
    ```
-   *(Example: `http://192.168.1.100:8088` and `http://192.168.1.100:8089`)*
+   *(Example: `http://192.168.1.100:8088`)*
 3. From the Web Console, you can start/stop/restart the server, monitor CPU/RAM/Players, add/disable/sort mods, change gameplay settings, run hot backups, and send RCON commands.
 
 ### Method B: Windows App in "Remote Client Mode"
@@ -350,5 +340,6 @@ Want the full Windows desktop application experience on your gaming PC while you
 - **If you want to pre-download a single mod**: Right-click the mod in the Mods list (or long-press it on Android) and select **`📥 Pre-Download / Validate Mod Now`**. Once the download completes, the mod badge will briefly turn **`✅ Updated!`** to confirm it matches the latest Steam Workshop version.
 
 ### Q4: How do I update Conan Enhanced Server Manager itself when a new version comes out?
-- **Windows**: When a new release is published on GitHub, an **Update Banner** appears at the top of the app. Click **Update Now** for an automatic in-place self-update, or download the latest `.zip` from GitHub and extract it over your existing folder (your `manager_config.json`, `ConanExilesServer\`, and `Backups\` are preserved).
+- **Windows (In-App)**: When a new release is published on GitHub, an **Update Banner** appears at the top of the app. Click **Update Now** for an automatic in-place self-update.
+- **Windows (Standalone `UPDATE_FROM_GITHUB.bat` Recovery Script)**: If the manager ever fails to open or you want to pull the latest release without launching the GUI, simply double-click **`UPDATE_FROM_GITHUB.bat`** in your `ConanServerManager` folder. It will automatically download the latest `.zip` release from GitHub, preserve your `manager_config.json` and `ceadmin_store.json` settings (without stopping your running Conan server), and relaunch the manager!
 - **Android**: Open the **✨ Updates** tab in the Android app and tap **`🔄 Check for App Updates`**, then tap **`📥 Download & Install APK Update`**.

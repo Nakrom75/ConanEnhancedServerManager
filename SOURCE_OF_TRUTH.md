@@ -1959,5 +1959,34 @@ The following items were identified during the v1.3.2 feature audit and schedule
 - **Zero Remote Deployment Compliance**: All builds, packages, and APKs remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
 
 ---
+
+## 49. Startup XAML Resource Fix & Standalone `UPDATE_FROM_GITHUB.bat` Recovery Tool (v1.3.12 - Build 10312)
+
+### 1. Startup `XamlParseException` Fix (`src/MainWindow.xaml`)
+- **Root Cause**:
+  - In `v1.3.11`, Top-Level Tab 3 (`🗺️ Live World Map & Pippi Admin`) and its 3 right-hand inspector sub-tabs referenced `Style="{StaticResource TopWorkspaceTabItem}"` and `Style="{StaticResource SubTabItem}"`, which were not defined in `Window.Resources`.
+  - When `InitializeComponent()` parsed `MainWindow.xaml`, WPF threw `System.Windows.Markup.XamlParseException: Cannot find resource named 'TopWorkspaceTabItem'`.
+- **Resolution**:
+  - Replaced the non-existent `StaticResource` references on those `TabItem` elements with the standard inline `Padding="14,5" FontSize="12" FontWeight="Bold"` (matching Tabs 1 & 2) and `Padding="8,4" FontSize="11" FontWeight="SemiBold"` for sub-tabs.
+  - Verified programmatically that 100% of `StaticResource` keys in `src/MainWindow.xaml` exist in `Window.Resources`.
+  - Wired `SelectionChanged="RootWorkspaceTabControl_SelectionChanged"` so switching to Tab 3 immediately refreshes and draws the WPF map canvas.
+
+### 2. Standalone Emergency GitHub Updater (`UPDATE_FROM_GITHUB.bat`)
+- **Motivation**:
+  - If an application build ever fails to start or crashes on launch, the user cannot click the in-app update banner to pull a fixed release.
+- **Implementation**:
+  - Created `UPDATE_FROM_GITHUB.bat` in the repository root and configured `src/ConanServerManager.csproj` (`CopyToPublishDirectory="Always"`) so `UPDATE_FROM_GITHUB.bat` is automatically bundled inside `ServerManager\` and all `.zip` release archives.
+  - When double-clicked:
+    1. Safely stops any running `ConanServerManager.exe` process while leaving `ConanSandboxServer-Win64-Shipping.exe` running undisturbed.
+    2. Queries `https://api.github.com/repos/Nakrom75/ConanEnhancedServerManager/releases` for the latest release containing a `.zip` package (with automatic fallback to `git pull origin main` + `dotnet publish` if run inside a development Git clone before a release `.zip` is uploaded).
+    3. Downloads and extracts the update while preserving `manager_config.json` and `ceadmin_store.json`.
+    4. Relaunches `ConanServerManager.exe`.
+
+### 3. Synchronized Dual-Platform Release (`v1.3.12` / `10312`)
+- Removed `ConanServerManager-v1.3.11.apk` from Git tracking (`git rm ConanServerManager-v1.3.11.apk`) so only `ConanServerManager-v1.3.12.apk` is stored in the repository root.
+- Synchronized all 7 core version locations to `1.3.12` (Version Code `10312`).
+- **Zero Remote Deployment Compliance**: All builds, packages, and APKs remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
+
+---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
 
