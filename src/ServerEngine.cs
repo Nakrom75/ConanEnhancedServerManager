@@ -34,6 +34,7 @@ namespace ConanServerManager
         public int QueryPort { get; set; } = 27015;
         public int RconPort { get; set; } = 25575;
         public int WebPagePort { get; set; } = 8088;
+        public int LiveMapPort { get; set; } = 8089;
         public int MaxPlayers { get; set; } = 40;
         public int MaxTickRate { get; set; } = 30;
         public string Region { get; set; } = "0 - Europe";
@@ -233,6 +234,7 @@ namespace ConanServerManager
         public bool QueryPortBound { get; set; }
         public bool RconPortBound { get; set; }
         public bool WebPortBound { get; set; }
+        public bool LiveMapPortBound { get; set; }
     }
 
     public class ModRuntimeInfo
@@ -308,6 +310,7 @@ namespace ConanServerManager
         public Process? CurrentSteamCmdProcess { get; private set; }
         public string ServerStatus { get; private set; } = "STOPPED";
         public WebServer WebApi { get; private set; }
+        public LiveMapAndAdminService LiveMap { get; private set; }
         public DownloadProgressInfo? CurrentDownloadProgress { get; private set; }
 
         public event Action<string>? OnLog;
@@ -358,7 +361,7 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.3.10";
+            return "1.3.11";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
@@ -536,7 +539,10 @@ namespace ConanServerManager
             DetectAndAdoptRunningServerProcess();
 
             WebApi = new WebServer(this);
+            LiveMap = new LiveMapAndAdminService(this);
+            if (Config.LiveMapPort <= 0) Config.LiveMapPort = 8089;
             SafeFireAndForget(async () => await WebApi.StartAsync(Config.WebPagePort), "Start WebApi");
+            SafeFireAndForget(async () => await LiveMap.StartLiveMapServerAsync(Config.LiveMapPort), "Start LiveMap Server");
             SafeFireAndForget(async () => await DetectExternalIpAsync(), "Detect External IP");
             StartWatchdogTimer();
             StartAppUpdateTimer();
@@ -1006,6 +1012,7 @@ namespace ConanServerManager
 
                     while ((line = reader.ReadLine()) != null)
                     {
+                        LiveMap?.ProcessServerLogLine(line);
                         if (line.Contains("LogModManager: Mounting mod pak file:", StringComparison.OrdinalIgnoreCase) ||
                             line.Contains("MountMod:", StringComparison.OrdinalIgnoreCase))
                         {
@@ -1848,17 +1855,20 @@ namespace ConanServerManager
                 report.QueryPortBound = IsUdpPortListening(Config.QueryPort) || TestTcpPortDirect(Config.QueryPort);
                 report.RconPortBound = IsTcpPortListening(Config.RconPort) || TestTcpPortDirect(Config.RconPort);
                 report.WebPortBound = IsTcpPortListening(Config.WebPagePort) || TestTcpPortDirect(Config.WebPagePort);
+                int mapPort = Config.LiveMapPort > 0 ? Config.LiveMapPort : 8089;
+                report.LiveMapPortBound = IsTcpPortListening(mapPort) || TestTcpPortDirect(mapPort);
             });
             return report;
         }
 
         public async Task<string> TestPortAccessibilityAsync()
         {
-            Log($"Testing port accessibility for Game ({Config.GamePort}), Raw ({Config.RawUdpPort}), Query ({Config.QueryPort}), RCON ({Config.RconPort}), and Web ({Config.WebPagePort})...");
+            Log($"Testing port accessibility for Game ({Config.GamePort}), Raw ({Config.RawUdpPort}), Query ({Config.QueryPort}), RCON ({Config.RconPort}), Web ({Config.WebPagePort}), and Live Map ({Config.LiveMapPort})...");
             var report = await CheckAllPortsAsync();
             StringBuilder sb = new StringBuilder();
 
             sb.AppendLine($"Web API Port {Config.WebPagePort} (TCP): {(report.WebPortBound ? "✓ ACCESSIBLE" : "✗ CLOSED / TIMED OUT")}");
+            sb.AppendLine($"Live Map Port {Config.LiveMapPort} (TCP): {(report.LiveMapPortBound ? "✓ ACCESSIBLE" : "✗ CLOSED / TIMED OUT")}");
             sb.AppendLine($"RCON Port {Config.RconPort} (TCP): {(report.RconPortBound ? "✓ ACCESSIBLE" : "✗ CLOSED / NOT LISTENING")}");
             sb.AppendLine($"Game Port {Config.GamePort} (UDP/TCP): {(report.GamePortBound ? "✓ BOUND & ACCESSIBLE" : "ℹ NOT BOUND (Server Stopped)")}");
             sb.AppendLine($"Raw UDP Port {Config.RawUdpPort}: {(report.RawPortBound ? "✓ BOUND & ACCESSIBLE" : "ℹ NOT BOUND (Server Stopped)")}");
@@ -2466,6 +2476,10 @@ namespace ConanServerManager
             }
 
             SaveConfig();
+            if (Config.LiveMapPort > 0 && LiveMap != null && LiveMap.BoundPort != Config.LiveMapPort)
+            {
+                SafeFireAndForget(async () => await LiveMap.StartLiveMapServerAsync(Config.LiveMapPort), "Restart LiveMap Server");
+            }
             OnDisabledModsChanged?.Invoke(Config.DisabledMods);
         }
 
@@ -3773,6 +3787,7 @@ namespace ConanServerManager
                 int queryPort = Config.QueryPort;
                 int rconPort = Config.RconPort;
                 int webPort = Config.WebPagePort;
+                int liveMapPort = Config.LiveMapPort > 0 ? Config.LiveMapPort : 8089;
 
                 string[] commands = new[]
                 {
@@ -3781,11 +3796,13 @@ namespace ConanServerManager
                     $"netsh advfirewall firewall delete rule name=\"Conan Server Manager - Query UDP\"",
                     $"netsh advfirewall firewall delete rule name=\"Conan Server Manager - RCON TCP\"",
                     $"netsh advfirewall firewall delete rule name=\"Conan Server Manager - Web API TCP\"",
+                    $"netsh advfirewall firewall delete rule name=\"Conan Server Manager - Live Map TCP\"",
                     $"netsh advfirewall firewall add rule name=\"Conan Server Manager - Game UDP\" dir=in action=allow protocol=UDP localport={gamePort}",
                     $"netsh advfirewall firewall add rule name=\"Conan Server Manager - Raw UDP\" dir=in action=allow protocol=UDP localport={rawUdpPort}",
                     $"netsh advfirewall firewall add rule name=\"Conan Server Manager - Query UDP\" dir=in action=allow protocol=UDP localport={queryPort}",
                     $"netsh advfirewall firewall add rule name=\"Conan Server Manager - RCON TCP\" dir=in action=allow protocol=TCP localport={rconPort}",
-                    $"netsh advfirewall firewall add rule name=\"Conan Server Manager - Web API TCP\" dir=in action=allow protocol=TCP localport={webPort}"
+                    $"netsh advfirewall firewall add rule name=\"Conan Server Manager - Web API TCP\" dir=in action=allow protocol=TCP localport={webPort}",
+                    $"netsh advfirewall firewall add rule name=\"Conan Server Manager - Live Map TCP\" dir=in action=allow protocol=TCP localport={liveMapPort}"
                 };
 
                 string fullCmd = string.Join(" && ", commands);
@@ -3801,7 +3818,7 @@ namespace ConanServerManager
                 using var proc = Process.Start(psi);
                 proc?.WaitForExit(15000);
 
-                string summary = $"Windows Firewall rules configured for UDP ({gamePort}, {rawUdpPort}, {queryPort}) and TCP ({rconPort}, {webPort}).";
+                string summary = $"Windows Firewall rules configured for UDP ({gamePort}, {rawUdpPort}, {queryPort}) and TCP ({rconPort}, {webPort}, {liveMapPort}).";
                 Log($"[Firewall] {summary}");
                 return (true, summary);
             }

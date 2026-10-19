@@ -1927,4 +1927,37 @@ The following items were identified during the v1.3.2 feature audit and schedule
 - **Zero Remote Deployment Compliance**: All builds, packages, and APKs remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
 
 ---
+
+## 48. Live World Map, SQLite `game.db` Base Scanner & Pippi Admin Suite (v1.3.11 - Build 10311)
+
+### 1. Non-Locking SQLite World Database Scanner (`src/LiveMapAndAdminService.cs`)
+- **Live `game.db` / `game_0.db` Inspection**:
+  - Connects to the active Conan Exiles SQLite database (`ConanSandbox/Saved/game_0.db` or `game.db`) every 20 seconds using `SqliteOpenMode.ReadOnly` with `Cache=Shared`, ensuring zero write-locks or interference while `ConanSandboxServer-Win64-Shipping.exe` runs in WAL mode.
+  - Queries `guilds`, `characters`, `actor_position`, `buildings`, and `buildable_health` to extract:
+    1. **All Player Characters (`WorldPlayerMarker`)**: Character ID, Name, Level, Guild/Clan Name, exact Unreal `X, Y, Z` coordinates, `A1`–`P16` Map Grid Sector (`WorldToGridSector`), Last Login timestamp, Online/Offline status (cross-referenced with live Steam/RCON online players), Pippi Rank, Currency Wallet balance, and ready-to-paste `TeleportPlayer X Y Z` command.
+    2. **Clustered Clan & Player Bases (`WorldBaseMarker`)**: Aggregates individual building instances (`buildings` + `buildable_health`) and clusters nearby structures owned by the same clan/player within a 150-meter (`15,000` Unreal units) radius into unified base markers with total piece counts, average structure health percentage, grid sector, and `TeleportPlayer X Y Z` command.
+    3. **Clan Building Bloat Leaderboard (`ClanBloatSummary`)**: Ranks clans/owners by total building pieces across the map to help admins identify lag-inducing megabases.
+
+### 2. Dedicated Live World Map HTTP Server on Port `8089` (`StartLiveMapServerAsync`)
+- **Standalone Port (`LiveMapPort = 8089`)**:
+  - Configurable in the **Port Matrix** card (`TxtLiveMapPort` + `LedLiveMapPort` status LED) and automatically included in `ConfigureWindowsFirewall()`.
+  - Serves a self-contained, interactive dark-glassmorphic **HTML5 Canvas Pan-and-Zoom Live World Map webpage** at `http://<Server-IP>:8089/` (and also accessible at `/map` on port `8088`).
+  - Features 16x16 (`A1`–`P16`) Conan grid lines, biome watermarks, layer toggles (`Online Players`, `Offline Bodies`, `Clan Bases & Heatmaps`, `Public Warps`), search filter, click-to-copy `TeleportPlayer X Y Z` modal, and REST endpoints (`/api/map/data`, `/api/map/warp/add`, `/api/map/warp/delete`, `/api/map/player/update`).
+
+### 3. Top-Level Tab 3 (`🗺️ Live World Map & Pippi Admin`) & `ConanEnhancedAdmin` DevKit Blueprint
+- **Windows Desktop Native Radar & Admin Suite (`src/MainWindow.xaml`, `src/MainWindow.xaml.cs`)**:
+  - Added a 3rd top-level workspace tab (`🗺️ Live World Map & Pippi Admin`) featuring an interactive WPF World Map Radar Canvas (`CnvLiveWorldMap`) alongside 3 right-hand inspector sub-tabs:
+    1. **`🏰 Clan Bases & Pieces`**: Clustered base list + Top Clan Building Piece Leaderboard.
+    2. **`👥 Players, Ranks & Wallets`**: Online/offline character locator + Pippi Rank (`Admin`, `Moderator`, `VIP`, `Member`) & Gold Coin Wallet editor persisted to `ceadmin_store.json`.
+    3. **`📍 Public Warps`**: Create and delete public `!warp` landmarks synced with the live map.
+- **Pre-Built Conan Exiles DevKit Mod Package (`ModDevKit/ConanEnhancedAdmin/`)**:
+  - Created step-by-step Unreal Engine 4.15 DevKit implementation guide (`DEVKIT_STEP_BY_STEP_GUIDE.md`) and ready-to-import DataTable JSON files (`DT_CEAdmin_DefaultRanks.json`, `DT_CEAdmin_SampleWarps.json`, `DT_CEAdmin_SampleKits.json`).
+
+### 4. Synchronized Dual-Platform Release (`v1.3.11` / `10311`)
+- Removed `ConanServerManager-v1.3.10.apk` from Git tracking (`git rm ConanServerManager-v1.3.10.apk`) so only `ConanServerManager-v1.3.11.apk` is stored in the repository root.
+- Synchronized all 7 core version locations to `1.3.11` (Version Code `10311`).
+- **Zero Remote Deployment Compliance**: All builds, packages, and APKs remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
+
+---
 *End of Source of Truth Document. Keep this file in your project repository as a complete architectural reference.*
+

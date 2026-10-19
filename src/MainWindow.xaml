@@ -163,9 +163,9 @@
                     <StackPanel Orientation="Vertical">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Image Source="app.png" Width="22" Height="22" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.3.10" Style="{StaticResource HeaderTitle}"/>
+                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.3.11" Style="{StaticResource HeaderTitle}"/>
                             <Border CornerRadius="8" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" Margin="10,0,0,0" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="🚀 v1.3.10" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="🚀 v1.3.11" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="TxtServerPathInfo" Text="Mode: Local Server Host | Embedded Web Console: http://0.0.0.0:8088" Foreground="#94A3B8" FontSize="11"/>
@@ -434,6 +434,8 @@
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="4"/>
                                             <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="4"/>
+                                            <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" ToolTip="Steam Query Port (UDP)&#x0a;Summary: Used by the Steam Master Server and server browser to list your server, player count, and ping.&#x0a;Default: 27015 (UDP)&#x0a;Hint: Must be port-forwarded (UDP) for your server to appear in the public list.">
                                             <StackPanel Orientation="Horizontal">
@@ -455,6 +457,13 @@
                                                 <TextBlock Text="Web API" Style="{StaticResource FormLabel}"/>
                                             </StackPanel>
                                             <TextBox x:Name="TxtWebPort" Style="{StaticResource FormInput}" Text="8088"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="6" ToolTip="Live World Map Webpage Port (TCP)&#x0a;Summary: Dedicated HTTP server port hosting the interactive Live World Map &amp; Pippi Admin webpage showing player locations, clan bases, and warps.&#x0a;Default: 8089 (TCP)&#x0a;Hint: Open http://localhost:8089 or forward TCP 8089 on your router to share the live map in any browser.">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse x:Name="LedLiveMapPort" Width="8" Height="8" Fill="#EF4444" Margin="0,0,4,0" VerticalAlignment="Center" ToolTip="Live Map Port Status (Green = Bound/Accessible, Red = Not Bound)"/>
+                                                <TextBlock Text="Map Web" Style="{StaticResource FormLabel}"/>
+                                            </StackPanel>
+                                            <TextBox x:Name="TxtLiveMapPort" Style="{StaticResource FormInput}" Text="8089"/>
                                         </StackPanel>
                                     </Grid>
 
@@ -1472,6 +1481,233 @@
                             </StackPanel>
                         </Grid>
                     </ScrollViewer>
+                </Grid>
+            </TabItem>
+
+            <!-- ========================================================================= -->
+            <!-- TOP-LEVEL TAB 3: LIVE WORLD MAP & PIPPI ADMIN (PORT 8089 + NATIVE CANVAS) -->
+            <!-- ========================================================================= -->
+            <TabItem Header="🗺️ Live World Map &amp; Pippi Admin" Style="{StaticResource TopWorkspaceTabItem}">
+                <Grid Margin="4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Top Action & Summary Bar -->
+                    <Border Grid.Row="0" Style="{StaticResource GlassPanel}" Margin="0,0,0,6" Padding="10,8">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="🗺️ Live World Radar &amp; Pippi Admin Suite" FontSize="14" FontWeight="Bold" Foreground="#38BDF8" Margin="0,0,12,0"/>
+                                    <Border Background="#064E3B" BorderBrush="#10B981" BorderThickness="1" CornerRadius="6" Padding="8,2" Margin="0,0,8,0"
+                                            ToolTip="Standalone Live World Map HTTP Server URL — Accessible from any browser on your PC, tablet, or phone!">
+                                        <TextBlock x:Name="TxtLiveMapWebUrlBadge" Text="🌐 Webpage: http://localhost:8089" Foreground="#34D399" FontSize="11" FontWeight="Bold"/>
+                                    </Border>
+                                    <TextBlock x:Name="TxtLiveMapStatsSummary" Text="Online: 0 | Total Characters: 0 | Clan Bases: 0 | Building Pieces: 0" Foreground="#CBD5E1" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock x:Name="TxtLiveMapDbStatus" Text="Scans ConanSandbox/Saved/game.db (non-locking read-only mode) for player positions, clan bases, and building piece heatmaps." Foreground="#94A3B8" FontSize="11" Margin="0,3,0,0"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button x:Name="BtnRefreshLiveMap" Content="🔄 Scan game.db &amp; Refresh Map" Style="{StaticResource BtnPrimary}" Padding="12,6" FontSize="11.5" FontWeight="Bold" Margin="0,0,6,0" Click="BtnRefreshLiveMap_Click"
+                                        ToolTip="Immediately scan game.db for all player coordinates, clan bases, and building counts and redraw the map"/>
+                                <Button x:Name="BtnOpenLiveMapWeb" Content="🌐 Open Live Map Webpage (:8089)" Style="{StaticResource BtnSuccess}" Padding="12,6" FontSize="11.5" FontWeight="Bold" Click="BtnOpenLiveMapWeb_Click"
+                                        ToolTip="Open the interactive HTML5 Pan-and-Zoom Live World Map webpage on Port 8089 in your default web browser"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Main Split View: Left = Interactive World Map Canvas, Right = Bases / Players / Warps Tabs -->
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1.25*"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="1*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Left Column: Interactive WPF World Map Radar Canvas -->
+                        <Border Grid.Column="0" Style="{StaticResource GlassPanel}" Padding="8">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <Grid Grid.Row="0" Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <WrapPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <CheckBox x:Name="ChkMapShowOnline" Content="🟢 Online Players" IsChecked="True" Style="{StaticResource FormCheck}" Margin="0,0,10,0" Checked="ChkMapFilter_Changed" Unchecked="ChkMapFilter_Changed"
+                                                  ToolTip="Show or hide currently online players on the radar canvas"/>
+                                        <CheckBox x:Name="ChkMapShowOffline" Content="⚪ Offline Bodies" IsChecked="True" Style="{StaticResource FormCheck}" Margin="0,0,10,0" Checked="ChkMapFilter_Changed" Unchecked="ChkMapFilter_Changed"
+                                                  ToolTip="Show or hide offline / sleeping characters stored in game.db"/>
+                                        <CheckBox x:Name="ChkMapShowBases" Content="🏰 Clan Bases" IsChecked="True" Style="{StaticResource FormCheck}" Margin="0,0,10,0" Checked="ChkMapFilter_Changed" Unchecked="ChkMapFilter_Changed"
+                                                  ToolTip="Show or hide clan base clusters and building heatmaps on the radar canvas"/>
+                                        <CheckBox x:Name="ChkMapShowWarps" Content="🔷 Public Warps" IsChecked="True" Style="{StaticResource FormCheck}" Checked="ChkMapFilter_Changed" Unchecked="ChkMapFilter_Changed"
+                                                  ToolTip="Show or hide public server warps &amp; landmarks on the radar canvas"/>
+                                    </WrapPanel>
+                                    <TextBlock Grid.Column="1" x:Name="TxtMapHoverCoords" Text="Sector: -- | X: 0, Y: 0" Foreground="#38BDF8" FontSize="11" FontWeight="Bold" VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <!-- Map Radar Viewport -->
+                                <Border Grid.Row="1" Background="#070D19" BorderBrush="#334155" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+                                    <Canvas x:Name="CnvLiveWorldMap" Background="#070D19" ClipToBounds="True"
+                                            SizeChanged="CnvLiveWorldMap_SizeChanged"
+                                            MouseMove="CnvLiveWorldMap_MouseMove"
+                                            MouseLeftButtonDown="CnvLiveWorldMap_MouseLeftButtonDown"
+                                            ToolTip="Click any marker or map location to copy its Unreal TeleportPlayer X Y Z command to your clipboard!"/>
+                                </Border>
+
+                                <!-- Bottom Selected Target / Teleport Command Bar -->
+                                <Grid Grid.Row="2" Margin="0,6,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Grid.Column="0" x:Name="TxtSelectedMapTeleportCmd" Style="{StaticResource FormInput}" IsReadOnly="True" FontSize="11" Text="TeleportPlayer 0 0 0" Margin="0,0,6,0"
+                                             ToolTip="Unreal Engine Admin Teleport command for the selected Player, Clan Base, or Map click location"/>
+                                    <Button Grid.Column="1" Content="📋 Copy TeleportPlayer" Style="{StaticResource BtnSecondary}" Padding="10,4" FontSize="11" Click="BtnCopySelectedTeleport_Click"
+                                            ToolTip="Copy the TeleportPlayer X Y Z command to clipboard so you can paste it in the Conan ~ console"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
+
+                        <!-- Right Column: Pippi Admin & World Inspector Tabs -->
+                        <Border Grid.Column="2" Style="{StaticResource GlassPanel}" Padding="6">
+                            <TabControl Background="Transparent" BorderThickness="0">
+                                <!-- Sub-Tab 1: Clan Bases & Building Heatmap Leaderboard -->
+                                <TabItem Header="🏰 Clan Bases &amp; Pieces" Style="{StaticResource SubTabItem}">
+                                    <Grid Margin="0,6,0,0">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="*"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Grid.Row="0" Text="Clustered Clan &amp; Player Bases (Click a row to highlight &amp; generate TeleportPlayer command):" Style="{StaticResource FormLabel}" Margin="0,0,0,4"/>
+                                        <ListBox Grid.Row="1" x:Name="LstWorldBases" Background="#0F172A" Foreground="#F8FAFC" BorderBrush="#334155" BorderThickness="1"
+                                                 SelectionChanged="LstWorldBases_SelectionChanged" FontFamily="Consolas" FontSize="11.5"/>
+                                        <Border Grid.Row="2" Background="#0F172A" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,6,0,0">
+                                            <StackPanel>
+                                                <TextBlock Text="📊 Top Clan Building Piece Leaderboard (Lag / Bloat Audit)" Foreground="#F59E0B" FontSize="11" FontWeight="Bold" Margin="0,0,0,3"/>
+                                                <TextBlock x:Name="TxtClanLeaderboardSummary" Text="No database scan run yet." Foreground="#CBD5E1" FontSize="11" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                </TabItem>
+
+                                <!-- Sub-Tab 2: Players, Ranks & Economy Wallets (Pippi Admin) -->
+                                <TabItem Header="👥 Players, Ranks &amp; Wallets" Style="{StaticResource SubTabItem}">
+                                    <Grid Margin="0,6,0,0">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="*"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <ListBox Grid.Row="0" x:Name="LstWorldPlayers" Background="#0F172A" Foreground="#F8FAFC" BorderBrush="#334155" BorderThickness="1"
+                                                 SelectionChanged="LstWorldPlayers_SelectionChanged" FontFamily="Consolas" FontSize="11.5"/>
+
+                                        <!-- Pippi Rank & Wallet Editor -->
+                                        <Border Grid.Row="1" Background="#0F172A" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,6,0,0">
+                                            <StackPanel>
+                                                <TextBlock Text="👑 Pippi Admin — Player Rank &amp; Currency Wallet Editor" Foreground="#38BDF8" FontSize="11.5" FontWeight="Bold" Margin="0,0,0,6"/>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="1.2*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="1*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="0.9*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="Character Name" Style="{StaticResource FormLabel}" FontSize="10.5"/>
+                                                        <TextBox x:Name="TxtAdminEditPlayerName" Style="{StaticResource FormInput}" FontSize="11" Padding="4,3" IsReadOnly="True"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2" ToolTip="Assign a Pippi-style permission rank (Admin, Moderator, VIP, Member)">
+                                                        <TextBlock Text="Assigned Rank" Style="{StaticResource FormLabel}" FontSize="10.5"/>
+                                                        <ComboBox x:Name="CmbAdminEditPlayerRank" Height="26" FontSize="11" SelectedIndex="3">
+                                                            <ComboBoxItem Content="Admin"/>
+                                                            <ComboBoxItem Content="Moderator"/>
+                                                            <ComboBoxItem Content="VIP"/>
+                                                            <ComboBoxItem Content="Member"/>
+                                                        </ComboBox>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="4" ToolTip="Player's server currency wallet balance (Gold Coins)">
+                                                        <TextBlock Text="Gold Wallet" Style="{StaticResource FormLabel}" FontSize="10.5"/>
+                                                        <TextBox x:Name="TxtAdminEditPlayerWallet" Style="{StaticResource FormInput}" FontSize="11" Padding="4,3" Text="100"/>
+                                                    </StackPanel>
+                                                    <Button Grid.Column="6" Content="💾 Save" Style="{StaticResource BtnSuccess}" VerticalAlignment="Bottom" Padding="10,4" FontSize="11" Click="BtnSavePlayerProfile_Click"
+                                                            ToolTip="Save player's Rank and Gold Wallet balance to ceadmin_store.json"/>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                </TabItem>
+
+                                <!-- Sub-Tab 3: Public Warps & Teleport Landmarks -->
+                                <TabItem Header="📍 Public Warps" Style="{StaticResource SubTabItem}">
+                                    <Grid Margin="0,6,0,0">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="*"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <ListBox Grid.Row="0" x:Name="LstWorldWarps" Background="#0F172A" Foreground="#F8FAFC" BorderBrush="#334155" BorderThickness="1"
+                                                 SelectionChanged="LstWorldWarps_SelectionChanged" FontFamily="Consolas" FontSize="11.5"/>
+
+                                        <Border Grid.Row="1" Background="#0F172A" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,6,0,0">
+                                            <StackPanel>
+                                                <TextBlock Text="➕ Create / Manage Public Server Warps (Synced with Port 8089 Map &amp; Mod DataTables)" Foreground="#34D399" FontSize="11.5" FontWeight="Bold" Margin="0,0,0,6"/>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="1.2*"/>
+                                                        <ColumnDefinition Width="4"/>
+                                                        <ColumnDefinition Width="0.8*"/>
+                                                        <ColumnDefinition Width="4"/>
+                                                        <ColumnDefinition Width="0.8*"/>
+                                                        <ColumnDefinition Width="4"/>
+                                                        <ColumnDefinition Width="0.8*"/>
+                                                        <ColumnDefinition Width="6"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="4"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="Warp Name" Style="{StaticResource FormLabel}" FontSize="10.5"/>
+                                                        <TextBox x:Name="TxtNewWarpName" Style="{StaticResource FormInput}" FontSize="11" Padding="4,3" Text="arena"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="Unreal X" Style="{StaticResource FormLabel}" FontSize="10.5"/>
+                                                        <TextBox x:Name="TxtNewWarpX" Style="{StaticResource FormInput}" FontSize="11" Padding="4,3" Text="-27850"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="4">
+                                                        <TextBlock Text="Unreal Y" Style="{StaticResource FormLabel}" FontSize="10.5"/>
+                                                        <TextBox x:Name="TxtNewWarpY" Style="{StaticResource FormInput}" FontSize="11" Padding="4,3" Text="261200"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="6">
+                                                        <TextBlock Text="Unreal Z" Style="{StaticResource FormLabel}" FontSize="10.5"/>
+                                                        <TextBox x:Name="TxtNewWarpZ" Style="{StaticResource FormInput}" FontSize="11" Padding="4,3" Text="0"/>
+                                                    </StackPanel>
+                                                    <Button Grid.Column="8" Content="➕ Add" Style="{StaticResource BtnSuccess}" VerticalAlignment="Bottom" Padding="8,4" FontSize="11" Click="BtnAddWarp_Click"/>
+                                                    <Button Grid.Column="10" Content="🗑️" Style="{StaticResource BtnDanger}" VerticalAlignment="Bottom" Padding="8,4" FontSize="11" Click="BtnDeleteWarp_Click" ToolTip="Delete selected warp"/>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                </TabItem>
+                            </TabControl>
+                        </Border>
+                    </Grid>
                 </Grid>
             </TabItem>
         </TabControl>

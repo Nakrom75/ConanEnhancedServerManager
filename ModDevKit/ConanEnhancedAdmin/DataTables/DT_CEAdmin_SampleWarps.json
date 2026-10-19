@@ -1,0 +1,44 @@
+[
+  {
+    "Name": "Hub",
+    "WarpId": "hub",
+    "DisplayName": "Welcome Center & Market Hub",
+    "Category": "Public Hubs",
+    "RequiredRank": "Player",
+    "CostCopper": 0,
+    "CooldownSeconds": 120,
+    "LocationX": -25240.0,
+    "LocationY": 261150.0,
+    "LocationZ": -20180.0,
+    "RotationYaw": 90.0,
+    "Description": "Central safe zone, community market, and starter amenities."
+  },
+  {
+    "Name": "Sepermeru",
+    "WarpId": "sepermeru",
+    "DisplayName": "Sepermeru (City of the Relic Hunters)",
+    "Category": "Cities",
+    "RequiredRank": "Player",
+    "CostCopper": 50,
+    "CooldownSeconds": 300,
+    "LocationX": -249850.0,
+    "LocationY": 95820.0,
+    "LocationZ": -3950.0,
+    "RotationYaw": 0.0,
+    "Description": "Western oasis trading city in the Exiled Lands."
+  },
+  {
+    "Name": "Arena",
+    "WarpId": "arena",
+    "DisplayName": "Server Event & PvP Arena",
+    "Category": "Events",
+    "RequiredRank": "Player",
+    "CostCopper": 0,
+    "CooldownSeconds": 60,
+    "LocationX": 18240.0,
+    "LocationY": 162500.0,
+    "LocationZ": -16200.0,
+    "RotationYaw": 180.0,
+    "Description": "Community tournament and boss event arena."
+  }
+]

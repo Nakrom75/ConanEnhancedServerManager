@@ -192,7 +192,13 @@ namespace ConanServerManager
                 if (TxtServerPathInfo != null)
                 {
                     int webPort = _engine.Config.WebPagePort;
-                    TxtServerPathInfo.Text = $"Mode: Local Server Host | Web: http://0.0.0.0:{webPort} | Server: {srvUpStr} | App: {appUpStr} | Win: {sysUpStr}";
+                    int mapPort = _engine.Config.LiveMapPort > 0 ? _engine.Config.LiveMapPort : 8089;
+                    TxtServerPathInfo.Text = $"Mode: Local Host | Web: :{webPort} | Map: http://localhost:{mapPort} | Srv: {srvUpStr} | App: {appUpStr} | Win: {sysUpStr}";
+                }
+
+                if (_metricsTickCount % 15 == 0 && RootWorkspaceTabControl?.SelectedIndex == 2)
+                {
+                    RefreshLiveMapTabUi();
                 }
             }
         }
@@ -208,6 +214,7 @@ namespace ConanServerManager
                 SetLedColor(LedQueryPort, report.QueryPortBound);
                 SetLedColor(LedRconPort, report.RconPortBound);
                 SetLedColor(LedWebPort, report.WebPortBound);
+                SetLedColor(LedLiveMapPort, report.LiveMapPortBound);
             });
         }
 
@@ -703,6 +710,7 @@ namespace ConanServerManager
             TxtQueryPort.Text = cfg.QueryPort.ToString();
             TxtRconPort.Text = cfg.RconPort.ToString();
             TxtWebPort.Text = cfg.WebPagePort.ToString();
+            if (TxtLiveMapPort != null) TxtLiveMapPort.Text = (cfg.LiveMapPort > 0 ? cfg.LiveMapPort : 8089).ToString();
 
             TxtMaxPlayers.Text = cfg.MaxPlayers.ToString();
             TxtMaxTickRate.Text = cfg.MaxTickRate.ToString();
@@ -866,6 +874,7 @@ namespace ConanServerManager
             PopulateModListUi(cfg.Mods);
             PopulateDisabledModListUi(cfg.DisabledMods);
             UpdateModUpdatesBannerUi();
+            RefreshLiveMapTabUi();
         }
 
         private bool _suppressCombatPresetEvent = false;
@@ -979,6 +988,7 @@ namespace ConanServerManager
             if (int.TryParse(TxtQueryPort.Text, out int qp)) cfg.QueryPort = qp;
             if (int.TryParse(TxtRconPort.Text, out int rcp)) cfg.RconPort = rcp;
             if (int.TryParse(TxtWebPort.Text, out int wp)) cfg.WebPagePort = wp;
+            if (TxtLiveMapPort != null && int.TryParse(TxtLiveMapPort.Text, out int lmp) && lmp > 0) cfg.LiveMapPort = lmp;
 
             if (int.TryParse(TxtMaxPlayers.Text, out int mp)) cfg.MaxPlayers = mp;
             if (int.TryParse(TxtMaxTickRate.Text, out int mtr)) cfg.MaxTickRate = mtr;
@@ -3719,6 +3729,516 @@ namespace ConanServerManager
             {
                 MessageBox.Show($"Error executing kick: {ex.Message}", "Kick Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        // =========================================================================================
+        // TOP-LEVEL TAB 3: LIVE WORLD MAP & PIPPI ADMIN HANDLERS
+        // =========================================================================================
+
+        private WorldMapSnapshot? _latestMapSnapshot;
+
+        private void RefreshLiveMapTabUi()
+        {
+            if (!_isInitialized || _engine?.LiveMap == null || CnvLiveWorldMap == null) return;
+
+            try
+            {
+                int mapPort = _engine.Config.LiveMapPort > 0 ? _engine.Config.LiveMapPort : 8089;
+                if (TxtLiveMapWebUrlBadge != null)
+                {
+                    TxtLiveMapWebUrlBadge.Text = $"🌐 Webpage: http://localhost:{mapPort}";
+                }
+                if (BtnOpenLiveMapWeb != null)
+                {
+                    BtnOpenLiveMapWeb.Content = $"🌐 Open Live Map Webpage (:{mapPort})";
+                }
+
+                var snap = _engine.LiveMap.GetWorldMapSnapshot(false);
+                _latestMapSnapshot = snap;
+
+                if (TxtLiveMapStatsSummary != null)
+                {
+                    TxtLiveMapStatsSummary.Text = $"Online: {snap.OnlinePlayerCount} | Total Characters: {snap.TotalCharacterCount} | Clan Bases: {snap.Bases.Count} | Building Pieces: {snap.TotalBuildingPieces:N0}";
+                }
+                if (TxtLiveMapDbStatus != null)
+                {
+                    TxtLiveMapDbStatus.Text = !snap.DatabaseFound
+                        ? "game.db not found yet (start server to generate world database)."
+                        : $"Live SQLite Scan Active ({System.IO.Path.GetFileName(snap.DatabasePath)}) — Updated {snap.LastUpdated}";
+                }
+
+                if (LstWorldBases != null)
+                {
+                    int prevIdx = LstWorldBases.SelectedIndex;
+                    LstWorldBases.Items.Clear();
+                    foreach (var b in snap.Bases)
+                    {
+                        LstWorldBases.Items.Add($"[{b.GridSector}] {b.OwnerName,-20} | {b.PieceCount,5:N0} pcs | {b.Severity,-16} | ({b.X:F0}, {b.Y:F0}, {b.Z:F0})");
+                    }
+                    if (prevIdx >= 0 && prevIdx < LstWorldBases.Items.Count) LstWorldBases.SelectedIndex = prevIdx;
+                }
+
+                if (TxtClanLeaderboardSummary != null)
+                {
+                    if (snap.Clans.Count == 0)
+                    {
+                        TxtClanLeaderboardSummary.Text = "No structures detected in game.db yet.";
+                    }
+                    else
+                    {
+                        var top = snap.Clans.Take(6).Select((c, i) => $"#{i + 1} {c.ClanOrPlayerName}: {c.TotalPieceCount:N0} pcs ({c.BaseClusterCount} base{(c.BaseClusterCount == 1 ? "" : "s")})");
+                        TxtClanLeaderboardSummary.Text = string.Join("   •   ", top);
+                    }
+                }
+
+                if (LstWorldPlayers != null)
+                {
+                    int prevIdx = LstWorldPlayers.SelectedIndex;
+                    LstWorldPlayers.Items.Clear();
+                    foreach (var p in snap.Players)
+                    {
+                        string statusIcon = p.IsOnline ? "🟢 ON " : "⚪ OFF";
+                        string clanTag = string.IsNullOrWhiteSpace(p.ClanName) ? "" : $" [{p.ClanName}]";
+                        LstWorldPlayers.Items.Add($"{statusIcon} [{p.GridSector}] {p.CharacterName}{clanTag} (Lv.{p.Level}) | Rank: {p.Rank} | 💰 {p.WalletFormatted}");
+                    }
+                    if (prevIdx >= 0 && prevIdx < LstWorldPlayers.Items.Count) LstWorldPlayers.SelectedIndex = prevIdx;
+                }
+
+                if (LstWorldWarps != null)
+                {
+                    int prevIdx = LstWorldWarps.SelectedIndex;
+                    LstWorldWarps.Items.Clear();
+                    foreach (var w in snap.Warps)
+                    {
+                        string sec = LiveMapAndAdminService.WorldToGridSector(w.X, w.Y);
+                        LstWorldWarps.Items.Add($"🔷 !warp {w.Id,-12} ({w.Name}) [{sec}] | ({w.X:F0}, {w.Y:F0}, {w.Z:F0})");
+                    }
+                    if (prevIdx >= 0 && prevIdx < LstWorldWarps.Items.Count) LstWorldWarps.SelectedIndex = prevIdx;
+                }
+
+                DrawNativeWpfWorldMap();
+            }
+            catch (Exception ex)
+            {
+                _engine.Log($"[LiveMap UI] Refresh error: {ex.Message}");
+            }
+        }
+
+        private void DrawNativeWpfWorldMap()
+        {
+            if (CnvLiveWorldMap == null) return;
+            double w = CnvLiveWorldMap.ActualWidth;
+            double h = CnvLiveWorldMap.ActualHeight;
+            if (w < 40 || h < 40) return;
+
+            CnvLiveWorldMap.Children.Clear();
+
+            const double minX = -390000.0, maxX = 450000.0;
+            const double minY = -360000.0, maxY = 380000.0;
+
+            double side = Math.Min(w, h) - 16.0;
+            double ox = (w - side) * 0.5;
+            double oy = (h - side) * 0.5;
+
+            // Map Background Box
+            var bgRect = new System.Windows.Shapes.Rectangle
+            {
+                Width = side,
+                Height = side,
+                Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0F1D19")),
+                Stroke = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#334155")),
+                StrokeThickness = 1.5
+            };
+            Canvas.SetLeft(bgRect, ox);
+            Canvas.SetTop(bgRect, oy);
+            CnvLiveWorldMap.Children.Add(bgRect);
+
+            // Draw 16x16 Grid (A-P, 1-16)
+            string[] cols = { "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P" };
+            var gridStroke = new SolidColorBrush(Color.FromArgb(40, 148, 163, 184));
+            var labelBrush = new SolidColorBrush(Color.FromArgb(140, 148, 163, 184));
+
+            for (int i = 0; i <= 16; i++)
+            {
+                double gx = ox + (side * i / 16.0);
+                double gy = oy + (side * i / 16.0);
+
+                var vLine = new System.Windows.Shapes.Line { X1 = gx, Y1 = oy, X2 = gx, Y2 = oy + side, Stroke = gridStroke, StrokeThickness = 1 };
+                var hLine = new System.Windows.Shapes.Line { X1 = ox, Y1 = gy, X2 = ox + side, Y2 = gy, Stroke = gridStroke, StrokeThickness = 1 };
+                CnvLiveWorldMap.Children.Add(vLine);
+                CnvLiveWorldMap.Children.Add(hLine);
+
+                if (i < 16)
+                {
+                    var colTxt = new TextBlock { Text = cols[i], Foreground = labelBrush, FontSize = 9.5, FontWeight = FontWeights.Bold };
+                    Canvas.SetLeft(colTxt, gx + (side / 32.0) - 4);
+                    Canvas.SetTop(colTxt, oy + 2);
+                    CnvLiveWorldMap.Children.Add(colTxt);
+
+                    var rowTxt = new TextBlock { Text = (16 - i).ToString(), Foreground = labelBrush, FontSize = 9.5, FontWeight = FontWeights.Bold };
+                    Canvas.SetLeft(rowTxt, ox + 3);
+                    Canvas.SetTop(rowTxt, gy + (side / 32.0) - 6);
+                    CnvLiveWorldMap.Children.Add(rowTxt);
+                }
+            }
+
+            // Biome Watermarks
+            AddBiomeWatermark(ox, oy, side, minX, maxX, minY, maxY, -210000, -190000, "VOLCANO");
+            AddBiomeWatermark(ox, oy, side, minX, maxX, minY, maxY, -180000, -75000, "HIGHLANDS");
+            AddBiomeWatermark(ox, oy, side, minX, maxX, minY, maxY, -245000, 82000, "SEPERMERU");
+            AddBiomeWatermark(ox, oy, side, minX, maxX, minY, maxY, -27850, 261200, "NOOB RIVER");
+            AddBiomeWatermark(ox, oy, side, minX, maxX, minY, maxY, 245000, 95000, "SWUNGLE");
+            AddBiomeWatermark(ox, oy, side, minX, maxX, minY, maxY, 315000, 245000, "SIPTAH / SOUTH");
+
+            var snap = _latestMapSnapshot;
+            if (snap == null) return;
+
+            bool showBases = ChkMapShowBases?.IsChecked == true;
+            bool showWarps = ChkMapShowWarps?.IsChecked == true;
+            bool showOffline = ChkMapShowOffline?.IsChecked == true;
+            bool showOnline = ChkMapShowOnline?.IsChecked == true;
+
+            // 1. Clan Bases
+            if (showBases)
+            {
+                var baseFill = new SolidColorBrush(Color.FromArgb(65, 245, 158, 11));
+                var baseStroke = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B"));
+                foreach (var b in snap.Bases)
+                {
+                    double px = ox + ((b.X - minX) / (maxX - minX)) * side;
+                    double py = oy + ((b.Y - minY) / (maxY - minY)) * side;
+                    double r = Math.Clamp(5.0 + Math.Sqrt(b.PieceCount) * 0.35, 6.0, 24.0);
+
+                    var circle = new System.Windows.Shapes.Ellipse
+                    {
+                        Width = r * 2,
+                        Height = r * 2,
+                        Fill = baseFill,
+                        Stroke = baseStroke,
+                        StrokeThickness = 1.5,
+                        Cursor = Cursors.Hand,
+                        Tag = b.TeleportCommand,
+                        ToolTip = $"🏰 Base: {b.OwnerName}\nSector: {b.GridSector}\nPieces: {b.PieceCount:N0} ({b.Severity})\nClick to copy: {b.TeleportCommand}"
+                    };
+                    circle.MouseLeftButtonDown += (s, ev) =>
+                    {
+                        ev.Handled = true;
+                        SelectTeleportCommand(b.TeleportCommand);
+                    };
+                    Canvas.SetLeft(circle, px - r);
+                    Canvas.SetTop(circle, py - r);
+                    CnvLiveWorldMap.Children.Add(circle);
+                }
+            }
+
+            // 2. Public Warps
+            if (showWarps)
+            {
+                var warpBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#38BDF8"));
+                foreach (var wItem in snap.Warps)
+                {
+                    double px = ox + ((wItem.X - minX) / (maxX - minX)) * side;
+                    double py = oy + ((wItem.Y - minY) / (maxY - minY)) * side;
+                    string tpCmd = string.Format(System.Globalization.CultureInfo.InvariantCulture, "TeleportPlayer {0:F0} {1:F0} {2:F0}", wItem.X, wItem.Y, wItem.Z);
+
+                    var diamond = new System.Windows.Shapes.Rectangle
+                    {
+                        Width = 8,
+                        Height = 8,
+                        Fill = warpBrush,
+                        Stroke = Brushes.White,
+                        StrokeThickness = 1,
+                        RenderTransformOrigin = new Point(0.5, 0.5),
+                        RenderTransform = new RotateTransform(45),
+                        Cursor = Cursors.Hand,
+                        ToolTip = $"🔷 Public Warp: !warp {wItem.Id} ({wItem.Name})\nCategory: {wItem.Category}\nClick to copy: {tpCmd}"
+                    };
+                    diamond.MouseLeftButtonDown += (s, ev) =>
+                    {
+                        ev.Handled = true;
+                        SelectTeleportCommand(tpCmd);
+                    };
+                    Canvas.SetLeft(diamond, px - 4);
+                    Canvas.SetTop(diamond, py - 4);
+                    CnvLiveWorldMap.Children.Add(diamond);
+                }
+            }
+
+            // 3. Players (Offline first, then Online on top)
+            var offlineFill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#94A3B8"));
+            var onlineFill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#10B981"));
+            var labelBg = new SolidColorBrush(Color.FromArgb(190, 15, 23, 42));
+
+            foreach (var p in snap.Players.OrderBy(x => x.IsOnline))
+            {
+                if (p.IsOnline && !showOnline) continue;
+                if (!p.IsOnline && !showOffline) continue;
+
+                double px = ox + ((p.X - minX) / (maxX - minX)) * side;
+                double py = oy + ((p.Y - minY) / (maxY - minY)) * side;
+                double r = p.IsOnline ? 6.0 : 4.2;
+
+                var pin = new System.Windows.Shapes.Ellipse
+                {
+                    Width = r * 2,
+                    Height = r * 2,
+                    Fill = p.IsOnline ? onlineFill : offlineFill,
+                    Stroke = Brushes.Black,
+                    StrokeThickness = 1.2,
+                    Cursor = Cursors.Hand,
+                    ToolTip = $"{(p.IsOnline ? "🟢 ONLINE" : "⚪ OFFLINE")}: {p.CharacterName} (Lv.{p.Level})\nClan: {(string.IsNullOrEmpty(p.ClanName) ? "No Clan" : p.ClanName)}\nSector: {p.GridSector} | Rank: {p.Rank} | Wallet: {p.WalletFormatted}\nClick to copy: {p.TeleportCommand}"
+                };
+                pin.MouseLeftButtonDown += (s, ev) =>
+                {
+                    ev.Handled = true;
+                    SelectTeleportCommand(p.TeleportCommand);
+                };
+                Canvas.SetLeft(pin, px - r);
+                Canvas.SetTop(pin, py - r);
+                CnvLiveWorldMap.Children.Add(pin);
+
+                var lbl = new TextBlock
+                {
+                    Text = p.CharacterName,
+                    Foreground = p.IsOnline ? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#6EE7B7")) : new SolidColorBrush((Color)ColorConverter.ConvertFromString("#CBD5E1")),
+                    Background = labelBg,
+                    Padding = new Thickness(3, 0, 3, 0),
+                    FontSize = p.IsOnline ? 10 : 9,
+                    FontWeight = p.IsOnline ? FontWeights.Bold : FontWeights.Normal,
+                    IsHitTestVisible = false
+                };
+                Canvas.SetLeft(lbl, px + r + 2);
+                Canvas.SetTop(lbl, py - 6);
+                CnvLiveWorldMap.Children.Add(lbl);
+            }
+        }
+
+        private void AddBiomeWatermark(double ox, double oy, double side, double minX, double maxX, double minY, double maxY, double wx, double wy, string text)
+        {
+            double px = ox + ((wx - minX) / (maxX - minX)) * side;
+            double py = oy + ((wy - minY) / (maxY - minY)) * side;
+            var tb = new TextBlock
+            {
+                Text = text,
+                Foreground = new SolidColorBrush(Color.FromArgb(45, 226, 232, 240)),
+                FontSize = 10,
+                FontWeight = FontWeights.Bold,
+                IsHitTestVisible = false
+            };
+            Canvas.SetLeft(tb, px - 28);
+            Canvas.SetTop(tb, py - 6);
+            CnvLiveWorldMap.Children.Add(tb);
+        }
+
+        private void SelectTeleportCommand(string tpCmd)
+        {
+            if (TxtSelectedMapTeleportCmd != null)
+            {
+                TxtSelectedMapTeleportCmd.Text = tpCmd;
+            }
+            try
+            {
+                Clipboard.SetText(tpCmd);
+            }
+            catch { }
+        }
+
+        private void BtnRefreshLiveMap_Click(object sender, RoutedEventArgs e)
+        {
+            _engine.LiveMap?.GetWorldMapSnapshot(true);
+            RefreshLiveMapTabUi();
+        }
+
+        private void BtnOpenLiveMapWeb_Click(object sender, RoutedEventArgs e)
+        {
+            int port = _engine.Config.LiveMapPort > 0 ? _engine.Config.LiveMapPort : 8089;
+            string url = $"http://localhost:{port}";
+            try
+            {
+                Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not open browser for {url}: {ex.Message}", "Browser Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void ChkMapFilter_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!_isInitialized) return;
+            DrawNativeWpfWorldMap();
+        }
+
+        private void CnvLiveWorldMap_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (!_isInitialized) return;
+            DrawNativeWpfWorldMap();
+        }
+
+        private void CnvLiveWorldMap_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (CnvLiveWorldMap == null || TxtMapHoverCoords == null) return;
+            double w = CnvLiveWorldMap.ActualWidth;
+            double h = CnvLiveWorldMap.ActualHeight;
+            double side = Math.Min(w, h) - 16.0;
+            if (side <= 10) return;
+
+            double ox = (w - side) * 0.5;
+            double oy = (h - side) * 0.5;
+            var pt = e.GetPosition(CnvLiveWorldMap);
+
+            const double minX = -390000.0, maxX = 450000.0;
+            const double minY = -360000.0, maxY = 380000.0;
+
+            double nx = Math.Clamp((pt.X - ox) / side, 0.0, 1.0);
+            double ny = Math.Clamp((pt.Y - oy) / side, 0.0, 1.0);
+            double wx = minX + nx * (maxX - minX);
+            double wy = minY + ny * (maxY - minY);
+            string sec = LiveMapAndAdminService.WorldToGridSector(wx, wy);
+
+            TxtMapHoverCoords.Text = $"Sector: {sec} | X: {wx:F0}, Y: {wy:F0}";
+        }
+
+        private void CnvLiveWorldMap_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (CnvLiveWorldMap == null) return;
+            double w = CnvLiveWorldMap.ActualWidth;
+            double h = CnvLiveWorldMap.ActualHeight;
+            double side = Math.Min(w, h) - 16.0;
+            if (side <= 10) return;
+
+            double ox = (w - side) * 0.5;
+            double oy = (h - side) * 0.5;
+            var pt = e.GetPosition(CnvLiveWorldMap);
+
+            const double minX = -390000.0, maxX = 450000.0;
+            const double minY = -360000.0, maxY = 380000.0;
+
+            double nx = Math.Clamp((pt.X - ox) / side, 0.0, 1.0);
+            double ny = Math.Clamp((pt.Y - oy) / side, 0.0, 1.0);
+            double wx = minX + nx * (maxX - minX);
+            double wy = minY + ny * (maxY - minY);
+
+            string tp = string.Format(System.Globalization.CultureInfo.InvariantCulture, "TeleportPlayer {0:F0} {1:F0} 2000", wx, wy);
+            SelectTeleportCommand(tp);
+            if (TxtNewWarpX != null) TxtNewWarpX.Text = wx.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+            if (TxtNewWarpY != null) TxtNewWarpY.Text = wy.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        private void BtnCopySelectedTeleport_Click(object sender, RoutedEventArgs e)
+        {
+            string cmd = TxtSelectedMapTeleportCmd?.Text ?? "";
+            if (!string.IsNullOrWhiteSpace(cmd))
+            {
+                try
+                {
+                    Clipboard.SetText(cmd);
+                    MessageBox.Show($"Copied to clipboard:\n{cmd}\n\nPaste this in your in-game Conan (~) console as Admin!", "Teleport Copied", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch { }
+            }
+        }
+
+        private void LstWorldBases_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_latestMapSnapshot == null || LstWorldBases == null) return;
+            int idx = LstWorldBases.SelectedIndex;
+            if (idx >= 0 && idx < _latestMapSnapshot.Bases.Count)
+            {
+                var b = _latestMapSnapshot.Bases[idx];
+                SelectTeleportCommand(b.TeleportCommand);
+            }
+        }
+
+        private void LstWorldPlayers_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_latestMapSnapshot == null || LstWorldPlayers == null) return;
+            int idx = LstWorldPlayers.SelectedIndex;
+            if (idx >= 0 && idx < _latestMapSnapshot.Players.Count)
+            {
+                var p = _latestMapSnapshot.Players[idx];
+                SelectTeleportCommand(p.TeleportCommand);
+                if (TxtAdminEditPlayerName != null) TxtAdminEditPlayerName.Text = p.CharacterName;
+                if (TxtAdminEditPlayerWallet != null) TxtAdminEditPlayerWallet.Text = p.WalletCopper.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                if (CmbAdminEditPlayerRank != null)
+                {
+                    for (int i = 0; i < CmbAdminEditPlayerRank.Items.Count; i++)
+                    {
+                        if (CmbAdminEditPlayerRank.Items[i] is ComboBoxItem item &&
+                            string.Equals(item.Content?.ToString(), p.Rank, StringComparison.OrdinalIgnoreCase))
+                        {
+                            CmbAdminEditPlayerRank.SelectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        private void LstWorldWarps_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_latestMapSnapshot == null || LstWorldWarps == null) return;
+            int idx = LstWorldWarps.SelectedIndex;
+            if (idx >= 0 && idx < _latestMapSnapshot.Warps.Count)
+            {
+                var w = _latestMapSnapshot.Warps[idx];
+                string tp = string.Format(System.Globalization.CultureInfo.InvariantCulture, "TeleportPlayer {0:F0} {1:F0} {2:F0}", w.X, w.Y, w.Z);
+                SelectTeleportCommand(tp);
+                if (TxtNewWarpName != null) TxtNewWarpName.Text = w.Name;
+                if (TxtNewWarpX != null) TxtNewWarpX.Text = w.X.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+                if (TxtNewWarpY != null) TxtNewWarpY.Text = w.Y.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+                if (TxtNewWarpZ != null) TxtNewWarpZ.Text = w.Z.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+
+        private void BtnSavePlayerProfile_Click(object sender, RoutedEventArgs e)
+        {
+            string charName = TxtAdminEditPlayerName?.Text?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(charName))
+            {
+                MessageBox.Show("Select a player from the list first.", "Pippi Admin", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            string rank = (CmbAdminEditPlayerRank?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Member";
+            long.TryParse(TxtAdminEditPlayerWallet?.Text?.Trim(), out long wallet);
+
+            _engine.LiveMap?.UpdatePlayerProfile(charName, rank, wallet);
+            RefreshLiveMapTabUi();
+            MessageBox.Show($"Saved Pippi Profile for '{charName}':\nRank: {rank}\nWallet: {LiveMapAndAdminService.FormatCurrency(wallet)}", "Profile Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void BtnAddWarp_Click(object sender, RoutedEventArgs e)
+        {
+            string name = TxtNewWarpName?.Text?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                MessageBox.Show("Enter a Warp Name first.", "Public Warps", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            double x = ParseDoubleUi(TxtNewWarpX, 0);
+            double y = ParseDoubleUi(TxtNewWarpY, 0);
+            double z = ParseDoubleUi(TxtNewWarpZ, 0);
+
+            _engine.LiveMap?.AddOrUpdateWarp(new CeAdminWarp
+            {
+                Name = name,
+                Category = $"Sector {LiveMapAndAdminService.WorldToGridSector(x, y)}",
+                X = x,
+                Y = y,
+                Z = z
+            });
+
+            RefreshLiveMapTabUi();
+        }
+
+        private void BtnDeleteWarp_Click(object sender, RoutedEventArgs e)
+        {
+            string name = TxtNewWarpName?.Text?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(name)) return;
+            _engine.LiveMap?.DeleteWarp(name);
+            RefreshLiveMapTabUi();
         }
     }
 

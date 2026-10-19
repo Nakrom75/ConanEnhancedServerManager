@@ -1,0 +1,35 @@
+[
+  {
+    "Name": "StarterKit",
+    "KitId": "starter",
+    "DisplayName": "Exile Starter Survival Kit",
+    "RequiredRank": "Player",
+    "OneTimeOnly": true,
+    "CooldownSeconds": 0,
+    "CostCopper": 0,
+    "ItemsJson": "[{\"TemplateId\":51011,\"Name\":\"Iron Pick\",\"Amount\":1},{\"TemplateId\":51021,\"Name\":\"Iron Hatchet\",\"Amount\":1},{\"TemplateId\":51952,\"Name\":\"Iron Broadsword\",\"Amount\":1},{\"TemplateId\":41031,\"Name\":\"Sealed Waterskin\",\"Amount\":1},{\"TemplateId\":13001,\"Name\":\"Cooked Haunch\",\"Amount\":20},{\"TemplateId\":18005,\"Name\":\"Rough Wraps\",\"Amount\":10}]",
+    "Description": "One-time starter tools, weapon, water, food, and healing wraps for new arrivals."
+  },
+  {
+    "Name": "DailySupply",
+    "KitId": "daily",
+    "DisplayName": "Daily Exile Supply Crate",
+    "RequiredRank": "Player",
+    "OneTimeOnly": false,
+    "CooldownSeconds": 86400,
+    "CostCopper": 0,
+    "ItemsJson": "[{\"TemplateId\":13001,\"Name\":\"Cooked Haunch\",\"Amount\":10},{\"TemplateId\":18006,\"Name\":\"Aloe Extract\",\"Amount\":5},{\"TemplateId\":11001,\"Name\":\"Stone\",\"Amount\":250},{\"TemplateId\":11011,\"Name\":\"Wood\",\"Amount\":250}]",
+    "Description": "Claimable once every 24 hours for food, healing potions, and basic building materials."
+  },
+  {
+    "Name": "VipKit",
+    "KitId": "vip",
+    "DisplayName": "VIP Exile Care Package",
+    "RequiredRank": "VIP",
+    "OneTimeOnly": false,
+    "CooldownSeconds": 86400,
+    "CostCopper": 0,
+    "ItemsJson": "[{\"TemplateId\":18007,\"Name\":\"Pure Aloe Extract\",\"Amount\":10},{\"TemplateId\":11501,\"Name\":\"Iron Bar\",\"Amount\":100},{\"TemplateId\":11502,\"Name\":\"Steel Bar\",\"Amount\":50}]",
+    "Description": "Daily bonus supply kit for VIP rank members."
+  }
+]

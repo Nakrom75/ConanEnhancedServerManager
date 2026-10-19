@@ -192,6 +192,15 @@ namespace ConanServerManager
             {
                 await SendHttpResponseAsync(stream, 200, "text/html; charset=utf-8", GetEmbeddedHtmlDashboard());
             }
+            else if (path == "/map")
+            {
+                await SendHttpResponseAsync(stream, 200, "text/html; charset=utf-8", _engine.LiveMap.GetLiveMapHtmlPage());
+            }
+            else if (path.StartsWith("/api/map/"))
+            {
+                string mapJson = _engine.LiveMap.HandleMapApiRequest(method, path, body);
+                await SendHttpResponseAsync(stream, 200, "application/json; charset=utf-8", mapJson);
+            }
             else if (path == "/api/status" && method == "GET")
             {
                 TimeSpan srvUptime = _engine.ServerProcessUptime;
