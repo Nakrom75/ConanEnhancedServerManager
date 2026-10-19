@@ -26,8 +26,8 @@
 ### 2.1 Semantic Version String
 - Format: `MAJOR.MINOR.PATCH` (e.g. `1.2.1`)
   - **MAJOR**: Structural architectural redesigns or breaking protocol overhauls.
-  - **MINOR**: Significant new features, new integrations, or major interface expansions.
-  - **PATCH**: Incremental iterations, layout refinements, bug fixes, UI adjustments, and compile passes.
+  - **MINOR**: Brand new top-level architectural subsystems or new standalone modules created from scratch.
+  - **PATCH**: All feature improvements, enhancements to existing systems (e.g. adding zoom/pan, map assets, or world switchers to an existing live map feature), bug fixes, UI adjustments, calibrations, and build iterations. When in doubt, ALWAYS default to incrementing PATCH.
 
 ### 2.2 Android Version Code Formula
 Android package management requires a monotonically increasing integer `versionCode`.
