@@ -1,6 +1,6 @@
 # SOURCE OF TRUTH: Conan Exiles Dedicated Server & Manager Architecture
 
-> **Document Version:** 1.3.1  
+> **Document Version:** 1.5.0  
 > **Target Application:** Conan Exiles Dedicated Server (AppID `443030`)  
 > **Date:** October 2026  
 > **Purpose:** Complete reverse-engineered architectural blueprint, specifications, protocol details, and engineering roadmap to build a custom, modern, highly reliable Conan Exiles Dedicated Server Manager.
@@ -2002,6 +2002,48 @@ The following items were identified during the v1.3.2 feature audit and schedule
 ### 2. Major Feature Milestone Version Increment (`v1.4.0` / `10400`)
 - Bumped the minor version to **`1.4.0`** (Version Code `10400` via `1 * 10000 + 4 * 100 + 0`) across all 7 synchronization files to reflect the major feature addition of the **Live World Map (`:8089` Webpage + Native WPF Radar), SQLite `game.db` Base/Player Scanner, and Pippi Admin Suite (`ConanEnhancedAdmin`)**.
 - Removed `ConanServerManager-v1.3.12.apk` from Git tracking (`git rm ConanServerManager-v1.3.12.apk`) so only `ConanServerManager-v1.4.0.apk` is stored in the repository root.
+- **Zero Remote Deployment Compliance**: All builds, packages, and APKs remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
+
+---
+
+## 51. High-Resolution Map Backgrounds, Zoom & Pan, Dual-Map Switching & Remote Live Map Telemetry (v1.5.0 - Build 10500)
+
+### 1. High-Resolution In-Game Map Backgrounds & Coordinate Calibration
+- **Map Assets**:
+  - Downloaded, stitched, calibrated, and bundled official high-resolution maps inside `Assets/Maps/`:
+    - `Assets/Maps/exiled_lands.jpg`: Edge-to-edge 2016x2016 stitched official map of The Exiled Lands.
+      - Calibrated Bounds: `MinX = -343135.0, MaxX = 481720.0, MinY = -447822.0, MaxY = 375387.0`.
+      - Calibrated Sector Grid: Columns `A..P` (`-308,900` to `+435,900`), Rows `1..17` (`+372,200` south to `-412,500` north).
+    - `Assets/Maps/isle_of_siptah.jpg`: Clean official 2001x1976 complete map of Isle of Siptah including Southern Isles.
+      - Calibrated Bounds: `MinX = -500000.0, MaxX = 400000.0, MinY = -400000.0, MaxY = 500000.0`.
+      - Calibrated Sector Grid: Columns `A..P` (`-461,500` to `+355,000`), Rows `1..17` (`+500,000` south to `-357,000` north).
+  - Configured `src/ConanServerManager.csproj` to bundle both images via `<Content CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />`.
+  - Implemented `LiveMapAndAdminService.ResolveMapImageFile(mapId)` with multi-directory fallback resolution (`BaseDir`, `AppWorkingDir`, `Assets/Maps/`).
+
+### 2. Smooth Zoom & Pan Engine (WPF Desktop & Webpage)
+- **WPF Desktop Application**:
+  - Implemented cursor-centered mouse wheel zoom (1.0x to 8.0x) and toolbar controls (`➕`, `➖`, `100%`, `🎯 Reset`).
+  - Implemented smooth drag-to-pan with left or right mouse button while preserving click-to-copy `TeleportPlayer` functionality on click release.
+  - Rendered cached `BitmapImage` background with hardware-accelerated WPF canvas scaling, grid overlay, and marker clustering.
+- **Standalone Web Map (`:8089` and `/map`)**:
+  - Implemented HTML5 2D Canvas cursor-centered wheel zoom, toolbar zoom buttons, and mouse dragging pan.
+  - Dynamically loads high-res background images `/map_exiled_lands.jpg` and `/map_siptah.jpg` streamed directly from the manager web server.
+
+### 3. Interactive Map Switcher (The Exiled Lands vs. Isle of Siptah)
+- Added `CmbLiveMapWorldSelect` dropdown to the WPF Desktop application and `<select id="mapSelect">` to the Live Map Webpage.
+- Admins can instantly toggle between **The Exiled Lands** (`ConanSandbox` / `game.db`) and **Isle of Siptah** (`DLC_EXT` / `dlc_siptah.db`).
+- Telemetry dynamically binds to the active map's database, landmarks, and grid coordinates.
+- Added API endpoints `GET /api/map/data?map={mapId}` and `POST /api/map/set-map`.
+
+### 4. Remote Client Mode Live Map Support
+- **Problem**: When `ConanServerManager.exe` ran in Remote Mode on a client machine, it was unable to locate `game.db` on local disk, rendering the Live Map tab empty.
+- **Resolution**:
+  - Implemented `FetchRemoteLiveMapSnapshotAsync()`: in Remote Mode, the WPF application queries `${baseUrl}/api/map/data?map={mapId}` over the REST API from the server running in Server Mode.
+  - Remote Mode now retrieves and renders full live world coordinates, clan bases, pieces heatmaps, online/offline player statuses, and Pippi profiles directly from the live host.
+  - Remote actions (`BtnSavePlayerProfile`, `BtnAddWarp`, `BtnDeleteWarp`, map switcher) automatically forward to the server host via REST API.
+
+### 5. Synchronized Dual-Platform Release (`v1.5.0` / `10500`)
+- Synchronized all 7 core version locations to **`1.5.0`** (Version Code `10500` via `1 * 10000 + 5 * 100 + 0`).
 - **Zero Remote Deployment Compliance**: All builds, packages, and APKs remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
 
 ---

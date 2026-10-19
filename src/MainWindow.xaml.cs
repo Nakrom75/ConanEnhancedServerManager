@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
@@ -11,6 +12,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 
 namespace ConanServerManager
@@ -3736,6 +3738,16 @@ namespace ConanServerManager
         // =========================================================================================
 
         private WorldMapSnapshot? _latestMapSnapshot;
+        private double _wpfMapZoom = 1.0;
+        private double _wpfMapPanX = 0.0;
+        private double _wpfMapPanY = 0.0;
+        private bool _isPanningMap = false;
+        private Point _panStartMousePoint;
+        private double _panStartPanX = 0;
+        private double _panStartPanY = 0;
+        private bool _didPanDistance = false;
+        private string _selectedMapWorldId = "exiled_lands";
+        private readonly Dictionary<string, BitmapImage> _wpfMapImageCache = new(StringComparer.OrdinalIgnoreCase);
 
         private void RootWorkspaceTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -3747,13 +3759,112 @@ namespace ConanServerManager
             }
         }
 
+        private string GetSelectedLiveMapId()
+        {
+            if (CmbLiveMapWorldSelect?.SelectedItem is ComboBoxItem cbi && cbi.Tag is string tag && !string.IsNullOrWhiteSpace(tag))
+            {
+                return LiveMapAndAdminService.NormalizeMapId(tag);
+            }
+            return _selectedMapWorldId;
+        }
+
+        private async void CmbLiveMapWorldSelect_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_isInitialized) return;
+            _selectedMapWorldId = GetSelectedLiveMapId();
+            if (_engine?.LiveMap != null)
+            {
+                _engine.LiveMap.ActiveMapId = _selectedMapWorldId;
+            }
+            if (IsRemoteMode)
+            {
+                try
+                {
+                    string baseUrl = GetRemoteBaseUrl();
+                    using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+                    var content = new StringContent(JsonSerializer.Serialize(new { map = _selectedMapWorldId }), Encoding.UTF8, "application/json");
+                    await http.PostAsync($"{baseUrl}/api/map/set-map", content);
+                }
+                catch { }
+            }
+            RefreshLiveMapTabUi();
+        }
+
+        private void BtnMapZoomIn_Click(object sender, RoutedEventArgs e)
+        {
+            ApplyWpfMapZoom(1.25, (CnvLiveWorldMap?.ActualWidth ?? 0) / 2, (CnvLiveWorldMap?.ActualHeight ?? 0) / 2);
+        }
+
+        private void BtnMapZoomOut_Click(object sender, RoutedEventArgs e)
+        {
+            ApplyWpfMapZoom(1.0 / 1.25, (CnvLiveWorldMap?.ActualWidth ?? 0) / 2, (CnvLiveWorldMap?.ActualHeight ?? 0) / 2);
+        }
+
+        private void BtnMapZoomReset_Click(object sender, RoutedEventArgs e)
+        {
+            _wpfMapZoom = 1.0;
+            _wpfMapPanX = 0;
+            _wpfMapPanY = 0;
+            if (TxtMapZoomLevel != null) TxtMapZoomLevel.Text = "100%";
+            DrawNativeWpfWorldMap();
+        }
+
+        private void ApplyWpfMapZoom(double factor, double centerX, double centerY)
+        {
+            double oldZoom = _wpfMapZoom;
+            _wpfMapZoom = Math.Clamp(_wpfMapZoom * factor, 1.0, 8.0);
+            if (Math.Abs(_wpfMapZoom - 1.0) < 0.05 && factor < 1.0)
+            {
+                _wpfMapZoom = 1.0;
+            }
+
+            double ratio = _wpfMapZoom / oldZoom;
+            _wpfMapPanX = centerX - (centerX - _wpfMapPanX) * ratio;
+            _wpfMapPanY = centerY - (centerY - _wpfMapPanY) * ratio;
+
+            if (_wpfMapZoom <= 1.0)
+            {
+                _wpfMapPanX = 0;
+                _wpfMapPanY = 0;
+            }
+
+            if (TxtMapZoomLevel != null) TxtMapZoomLevel.Text = $"{Math.Round(_wpfMapZoom * 100)}%";
+            DrawNativeWpfWorldMap();
+        }
+
+        private void CnvLiveWorldMap_MouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (CnvLiveWorldMap == null) return;
+            var pt = e.GetPosition(CnvLiveWorldMap);
+            double factor = e.Delta > 0 ? 1.15 : (1.0 / 1.15);
+            ApplyWpfMapZoom(factor, pt.X, pt.Y);
+        }
+
         private void RefreshLiveMapTabUi()
         {
-            if (!_isInitialized || _engine?.LiveMap == null || CnvLiveWorldMap == null) return;
+            if (!_isInitialized || CnvLiveWorldMap == null) return;
 
             try
             {
                 int mapPort = _engine.Config.LiveMapPort > 0 ? _engine.Config.LiveMapPort : 8089;
+                if (IsRemoteMode)
+                {
+                    string remoteHost = "127.0.0.1";
+                    try
+                    {
+                        var uri = new Uri(GetRemoteBaseUrl());
+                        remoteHost = uri.Host;
+                    }
+                    catch { }
+                    if (TxtLiveMapWebUrlBadge != null)
+                        TxtLiveMapWebUrlBadge.Text = $"🌐 Remote Webpage: http://{remoteHost}:{mapPort}";
+                    if (BtnOpenLiveMapWeb != null)
+                        BtnOpenLiveMapWeb.Content = $"🌐 Open Live Map Webpage (:{mapPort})";
+
+                    _ = FetchRemoteLiveMapSnapshotAsync();
+                    return;
+                }
+
                 if (TxtLiveMapWebUrlBadge != null)
                 {
                     TxtLiveMapWebUrlBadge.Text = $"🌐 Webpage: http://localhost:{mapPort}";
@@ -3763,75 +3874,117 @@ namespace ConanServerManager
                     BtnOpenLiveMapWeb.Content = $"🌐 Open Live Map Webpage (:{mapPort})";
                 }
 
-                var snap = _engine.LiveMap.GetWorldMapSnapshot(false);
+                string mapId = GetSelectedLiveMapId();
+                var snap = _engine.LiveMap.GetWorldMapSnapshot(false, mapId);
                 _latestMapSnapshot = snap;
-
-                if (TxtLiveMapStatsSummary != null)
-                {
-                    TxtLiveMapStatsSummary.Text = $"Online: {snap.OnlinePlayerCount} | Total Characters: {snap.TotalCharacterCount} | Clan Bases: {snap.Bases.Count} | Building Pieces: {snap.TotalBuildingPieces:N0}";
-                }
-                if (TxtLiveMapDbStatus != null)
-                {
-                    TxtLiveMapDbStatus.Text = !snap.DatabaseFound
-                        ? "game.db not found yet (start server to generate world database)."
-                        : $"Live SQLite Scan Active ({System.IO.Path.GetFileName(snap.DatabasePath)}) — Updated {snap.LastUpdated}";
-                }
-
-                if (LstWorldBases != null)
-                {
-                    int prevIdx = LstWorldBases.SelectedIndex;
-                    LstWorldBases.Items.Clear();
-                    foreach (var b in snap.Bases)
-                    {
-                        LstWorldBases.Items.Add($"[{b.GridSector}] {b.OwnerName,-20} | {b.PieceCount,5:N0} pcs | {b.Severity,-16} | ({b.X:F0}, {b.Y:F0}, {b.Z:F0})");
-                    }
-                    if (prevIdx >= 0 && prevIdx < LstWorldBases.Items.Count) LstWorldBases.SelectedIndex = prevIdx;
-                }
-
-                if (TxtClanLeaderboardSummary != null)
-                {
-                    if (snap.Clans.Count == 0)
-                    {
-                        TxtClanLeaderboardSummary.Text = "No structures detected in game.db yet.";
-                    }
-                    else
-                    {
-                        var top = snap.Clans.Take(6).Select((c, i) => $"#{i + 1} {c.ClanOrPlayerName}: {c.TotalPieceCount:N0} pcs ({c.BaseClusterCount} base{(c.BaseClusterCount == 1 ? "" : "s")})");
-                        TxtClanLeaderboardSummary.Text = string.Join("   •   ", top);
-                    }
-                }
-
-                if (LstWorldPlayers != null)
-                {
-                    int prevIdx = LstWorldPlayers.SelectedIndex;
-                    LstWorldPlayers.Items.Clear();
-                    foreach (var p in snap.Players)
-                    {
-                        string statusIcon = p.IsOnline ? "🟢 ON " : "⚪ OFF";
-                        string clanTag = string.IsNullOrWhiteSpace(p.ClanName) ? "" : $" [{p.ClanName}]";
-                        LstWorldPlayers.Items.Add($"{statusIcon} [{p.GridSector}] {p.CharacterName}{clanTag} (Lv.{p.Level}) | Rank: {p.Rank} | 💰 {p.WalletFormatted}");
-                    }
-                    if (prevIdx >= 0 && prevIdx < LstWorldPlayers.Items.Count) LstWorldPlayers.SelectedIndex = prevIdx;
-                }
-
-                if (LstWorldWarps != null)
-                {
-                    int prevIdx = LstWorldWarps.SelectedIndex;
-                    LstWorldWarps.Items.Clear();
-                    foreach (var w in snap.Warps)
-                    {
-                        string sec = LiveMapAndAdminService.WorldToGridSector(w.X, w.Y);
-                        LstWorldWarps.Items.Add($"🔷 !warp {w.Id,-12} ({w.Name}) [{sec}] | ({w.X:F0}, {w.Y:F0}, {w.Z:F0})");
-                    }
-                    if (prevIdx >= 0 && prevIdx < LstWorldWarps.Items.Count) LstWorldWarps.SelectedIndex = prevIdx;
-                }
-
-                DrawNativeWpfWorldMap();
+                ApplyLiveMapSnapshotToUi(snap, isRemote: false);
             }
             catch (Exception ex)
             {
                 _engine.Log($"[LiveMap UI] Refresh error: {ex.Message}");
             }
+        }
+
+        private async Task FetchRemoteLiveMapSnapshotAsync()
+        {
+            try
+            {
+                string baseUrl = GetRemoteBaseUrl();
+                string mapId = GetSelectedLiveMapId();
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(6) };
+                string url = $"{baseUrl}/api/map/data?map={Uri.EscapeDataString(mapId)}";
+                var res = await http.GetAsync(url);
+                if (!res.IsSuccessStatusCode) return;
+
+                string json = await res.Content.ReadAsStringAsync();
+                var snap = JsonSerializer.Deserialize<WorldMapSnapshot>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (snap != null)
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        _latestMapSnapshot = snap;
+                        ApplyLiveMapSnapshotToUi(snap, isRemote: true);
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _engine.Log($"[LiveMap Remote Fetch] {ex.Message}");
+            }
+        }
+
+        private void ApplyLiveMapSnapshotToUi(WorldMapSnapshot snap, bool isRemote)
+        {
+            if (TxtLiveMapStatsSummary != null)
+            {
+                TxtLiveMapStatsSummary.Text = $"Online: {snap.OnlinePlayerCount} | Total Characters: {snap.TotalCharacterCount} | Clan Bases: {snap.Bases.Count} | Building Pieces: {snap.TotalBuildingPieces:N0}";
+            }
+            if (TxtLiveMapDbStatus != null)
+            {
+                if (isRemote)
+                {
+                    TxtLiveMapDbStatus.Text = !snap.DatabaseFound
+                        ? "Remote game.db not found yet."
+                        : $"Remote Server Telemetry Active ({System.IO.Path.GetFileName(snap.DatabasePath)}) — Map: {snap.ActiveMapDisplayName} — Updated {snap.LastUpdated}";
+                }
+                else
+                {
+                    TxtLiveMapDbStatus.Text = !snap.DatabaseFound
+                        ? "game.db not found yet (start server to generate world database)."
+                        : $"Live SQLite Scan Active ({System.IO.Path.GetFileName(snap.DatabasePath)}) — Map: {snap.ActiveMapDisplayName} — Updated {snap.LastUpdated}";
+                }
+            }
+
+            if (LstWorldBases != null)
+            {
+                int prevIdx = LstWorldBases.SelectedIndex;
+                LstWorldBases.Items.Clear();
+                foreach (var b in snap.Bases)
+                {
+                    LstWorldBases.Items.Add($"[{b.GridSector}] {b.OwnerName,-20} | {b.PieceCount,5:N0} pcs | {b.Severity,-16} | ({b.X:F0}, {b.Y:F0}, {b.Z:F0})");
+                }
+                if (prevIdx >= 0 && prevIdx < LstWorldBases.Items.Count) LstWorldBases.SelectedIndex = prevIdx;
+            }
+
+            if (TxtClanLeaderboardSummary != null)
+            {
+                if (snap.Clans.Count == 0)
+                {
+                    TxtClanLeaderboardSummary.Text = "No structures detected in database yet.";
+                }
+                else
+                {
+                    var top = snap.Clans.Take(6).Select((c, i) => $"#{i + 1} {c.ClanOrPlayerName}: {c.TotalPieceCount:N0} pcs ({c.BaseClusterCount} base{(c.BaseClusterCount == 1 ? "" : "s")})");
+                    TxtClanLeaderboardSummary.Text = string.Join("   •   ", top);
+                }
+            }
+
+            if (LstWorldPlayers != null)
+            {
+                int prevIdx = LstWorldPlayers.SelectedIndex;
+                LstWorldPlayers.Items.Clear();
+                foreach (var p in snap.Players)
+                {
+                    string statusIcon = p.IsOnline ? "🟢 ON " : "⚪ OFF";
+                    string clanTag = string.IsNullOrWhiteSpace(p.ClanName) ? "" : $" [{p.ClanName}]";
+                    LstWorldPlayers.Items.Add($"{statusIcon} [{p.GridSector}] {p.CharacterName}{clanTag} (Lv.{p.Level}) | Rank: {p.Rank} | 💰 {p.WalletFormatted}");
+                }
+                if (prevIdx >= 0 && prevIdx < LstWorldPlayers.Items.Count) LstWorldPlayers.SelectedIndex = prevIdx;
+            }
+
+            if (LstWorldWarps != null)
+            {
+                int prevIdx = LstWorldWarps.SelectedIndex;
+                LstWorldWarps.Items.Clear();
+                foreach (var w in snap.Warps)
+                {
+                    string sec = LiveMapAndAdminService.WorldToGridSector(w.X, w.Y, snap.ActiveMapId);
+                    LstWorldWarps.Items.Add($"🔷 !warp {w.Id,-12} ({w.Name}) [{sec}] | ({w.X:F0}, {w.Y:F0}, {w.Z:F0})");
+                }
+                if (prevIdx >= 0 && prevIdx < LstWorldWarps.Items.Count) LstWorldWarps.SelectedIndex = prevIdx;
+            }
+
+            DrawNativeWpfWorldMap();
         }
 
         private void DrawNativeWpfWorldMap()
@@ -3843,62 +3996,108 @@ namespace ConanServerManager
 
             CnvLiveWorldMap.Children.Clear();
 
-            const double minX = -390000.0, maxX = 450000.0;
-            const double minY = -360000.0, maxY = 380000.0;
+            string currentMap = _latestMapSnapshot?.ActiveMapId ?? _selectedMapWorldId;
+            var bounds = LiveMapAndAdminService.GetMapBounds(currentMap);
+            double minX = bounds.MinX, maxX = bounds.MaxX;
+            double minY = bounds.MinY, maxY = bounds.MaxY;
 
-            double side = Math.Min(w, h) - 16.0;
-            double ox = (w - side) * 0.5;
-            double oy = (h - side) * 0.5;
+            double baseSide = Math.Min(w, h) - 16.0;
+            double currentSize = baseSide * _wpfMapZoom;
+            double ox = (w - currentSize) * 0.5 + _wpfMapPanX;
+            double oy = (h - currentSize) * 0.5 + _wpfMapPanY;
 
-            // Map Background Box
-            var bgRect = new System.Windows.Shapes.Rectangle
+            // 1. Draw Map Background Image if available, else solid rect
+            BitmapImage? bmp = null;
+            if (!_wpfMapImageCache.TryGetValue(currentMap, out bmp) || bmp == null)
             {
-                Width = side,
-                Height = side,
-                Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0F1D19")),
-                Stroke = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#334155")),
-                StrokeThickness = 1.5
+                string? imgPath = LiveMapAndAdminService.ResolveMapImageFile(currentMap);
+                if (!string.IsNullOrEmpty(imgPath) && File.Exists(imgPath))
+                {
+                    try
+                    {
+                        bmp = new BitmapImage();
+                        bmp.BeginInit();
+                        bmp.UriSource = new Uri(imgPath, UriKind.Absolute);
+                        bmp.CacheOption = BitmapCacheOption.OnLoad;
+                        bmp.EndInit();
+                        bmp.Freeze();
+                        _wpfMapImageCache[currentMap] = bmp;
+                    }
+                    catch { bmp = null; }
+                }
+            }
+
+            if (bmp != null)
+            {
+                var mapImg = new System.Windows.Controls.Image
+                {
+                    Source = bmp,
+                    Width = currentSize,
+                    Height = currentSize,
+                    Stretch = Stretch.Fill,
+                    IsHitTestVisible = false
+                };
+                Canvas.SetLeft(mapImg, ox);
+                Canvas.SetTop(mapImg, oy);
+                CnvLiveWorldMap.Children.Add(mapImg);
+            }
+            else
+            {
+                var bgRect = new System.Windows.Shapes.Rectangle
+                {
+                    Width = currentSize,
+                    Height = currentSize,
+                    Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0F1D19")),
+                    Stroke = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#334155")),
+                    StrokeThickness = 1.5,
+                    IsHitTestVisible = false
+                };
+                Canvas.SetLeft(bgRect, ox);
+                Canvas.SetTop(bgRect, oy);
+                CnvLiveWorldMap.Children.Add(bgRect);
+            }
+
+            // Draw Border
+            var borderRect = new System.Windows.Shapes.Rectangle
+            {
+                Width = currentSize,
+                Height = currentSize,
+                Stroke = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#38BDF8")),
+                StrokeThickness = 1.5,
+                IsHitTestVisible = false
             };
-            Canvas.SetLeft(bgRect, ox);
-            Canvas.SetTop(bgRect, oy);
-            CnvLiveWorldMap.Children.Add(bgRect);
+            Canvas.SetLeft(borderRect, ox);
+            Canvas.SetTop(borderRect, oy);
+            CnvLiveWorldMap.Children.Add(borderRect);
 
             // Draw 16x16 Grid (A-P, 1-16)
             string[] cols = { "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P" };
-            var gridStroke = new SolidColorBrush(Color.FromArgb(40, 148, 163, 184));
-            var labelBrush = new SolidColorBrush(Color.FromArgb(140, 148, 163, 184));
+            var gridStroke = new SolidColorBrush(Color.FromArgb(45, 148, 163, 184));
+            var labelBrush = new SolidColorBrush(Color.FromArgb(170, 226, 232, 240));
 
             for (int i = 0; i <= 16; i++)
             {
-                double gx = ox + (side * i / 16.0);
-                double gy = oy + (side * i / 16.0);
+                double gx = ox + (currentSize * i / 16.0);
+                double gy = oy + (currentSize * i / 16.0);
 
-                var vLine = new System.Windows.Shapes.Line { X1 = gx, Y1 = oy, X2 = gx, Y2 = oy + side, Stroke = gridStroke, StrokeThickness = 1 };
-                var hLine = new System.Windows.Shapes.Line { X1 = ox, Y1 = gy, X2 = ox + side, Y2 = gy, Stroke = gridStroke, StrokeThickness = 1 };
+                var vLine = new System.Windows.Shapes.Line { X1 = gx, Y1 = oy, X2 = gx, Y2 = oy + currentSize, Stroke = gridStroke, StrokeThickness = 1, IsHitTestVisible = false };
+                var hLine = new System.Windows.Shapes.Line { X1 = ox, Y1 = gy, X2 = ox + currentSize, Y2 = gy, Stroke = gridStroke, StrokeThickness = 1, IsHitTestVisible = false };
                 CnvLiveWorldMap.Children.Add(vLine);
                 CnvLiveWorldMap.Children.Add(hLine);
 
                 if (i < 16)
                 {
-                    var colTxt = new TextBlock { Text = cols[i], Foreground = labelBrush, FontSize = 9.5, FontWeight = FontWeights.Bold };
-                    Canvas.SetLeft(colTxt, gx + (side / 32.0) - 4);
+                    var colTxt = new TextBlock { Text = cols[i], Foreground = labelBrush, FontSize = Math.Max(8.5, 9.5 * Math.Min(1.5, _wpfMapZoom)), FontWeight = FontWeights.Bold, IsHitTestVisible = false };
+                    Canvas.SetLeft(colTxt, gx + (currentSize / 32.0) - 4);
                     Canvas.SetTop(colTxt, oy + 2);
                     CnvLiveWorldMap.Children.Add(colTxt);
 
-                    var rowTxt = new TextBlock { Text = (16 - i).ToString(), Foreground = labelBrush, FontSize = 9.5, FontWeight = FontWeights.Bold };
+                    var rowTxt = new TextBlock { Text = (16 - i).ToString(), Foreground = labelBrush, FontSize = Math.Max(8.5, 9.5 * Math.Min(1.5, _wpfMapZoom)), FontWeight = FontWeights.Bold, IsHitTestVisible = false };
                     Canvas.SetLeft(rowTxt, ox + 3);
-                    Canvas.SetTop(rowTxt, gy + (side / 32.0) - 6);
+                    Canvas.SetTop(rowTxt, gy + (currentSize / 32.0) - 6);
                     CnvLiveWorldMap.Children.Add(rowTxt);
                 }
             }
-
-            // Biome Watermarks
-            AddBiomeWatermark(ox, oy, side, minX, maxX, minY, maxY, -210000, -190000, "VOLCANO");
-            AddBiomeWatermark(ox, oy, side, minX, maxX, minY, maxY, -180000, -75000, "HIGHLANDS");
-            AddBiomeWatermark(ox, oy, side, minX, maxX, minY, maxY, -245000, 82000, "SEPERMERU");
-            AddBiomeWatermark(ox, oy, side, minX, maxX, minY, maxY, -27850, 261200, "NOOB RIVER");
-            AddBiomeWatermark(ox, oy, side, minX, maxX, minY, maxY, 245000, 95000, "SWUNGLE");
-            AddBiomeWatermark(ox, oy, side, minX, maxX, minY, maxY, 315000, 245000, "SIPTAH / SOUTH");
 
             var snap = _latestMapSnapshot;
             if (snap == null) return;
@@ -3911,13 +4110,13 @@ namespace ConanServerManager
             // 1. Clan Bases
             if (showBases)
             {
-                var baseFill = new SolidColorBrush(Color.FromArgb(65, 245, 158, 11));
+                var baseFill = new SolidColorBrush(Color.FromArgb(75, 245, 158, 11));
                 var baseStroke = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B"));
                 foreach (var b in snap.Bases)
                 {
-                    double px = ox + ((b.X - minX) / (maxX - minX)) * side;
-                    double py = oy + ((b.Y - minY) / (maxY - minY)) * side;
-                    double r = Math.Clamp(5.0 + Math.Sqrt(b.PieceCount) * 0.35, 6.0, 24.0);
+                    double px = ox + ((b.X - minX) / (maxX - minX)) * currentSize;
+                    double py = oy + ((b.Y - minY) / (maxY - minY)) * currentSize;
+                    double r = Math.Clamp((5.0 + Math.Sqrt(b.PieceCount) * 0.35) * Math.Min(1.5, Math.Sqrt(_wpfMapZoom)), 6.0, 32.0);
 
                     var circle = new System.Windows.Shapes.Ellipse
                     {
@@ -3947,14 +4146,14 @@ namespace ConanServerManager
                 var warpBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#38BDF8"));
                 foreach (var wItem in snap.Warps)
                 {
-                    double px = ox + ((wItem.X - minX) / (maxX - minX)) * side;
-                    double py = oy + ((wItem.Y - minY) / (maxY - minY)) * side;
+                    double px = ox + ((wItem.X - minX) / (maxX - minX)) * currentSize;
+                    double py = oy + ((wItem.Y - minY) / (maxY - minY)) * currentSize;
                     string tpCmd = string.Format(System.Globalization.CultureInfo.InvariantCulture, "TeleportPlayer {0:F0} {1:F0} {2:F0}", wItem.X, wItem.Y, wItem.Z);
 
                     var diamond = new System.Windows.Shapes.Rectangle
                     {
-                        Width = 8,
-                        Height = 8,
+                        Width = 9,
+                        Height = 9,
                         Fill = warpBrush,
                         Stroke = Brushes.White,
                         StrokeThickness = 1,
@@ -3968,8 +4167,8 @@ namespace ConanServerManager
                         ev.Handled = true;
                         SelectTeleportCommand(tpCmd);
                     };
-                    Canvas.SetLeft(diamond, px - 4);
-                    Canvas.SetTop(diamond, py - 4);
+                    Canvas.SetLeft(diamond, px - 4.5);
+                    Canvas.SetTop(diamond, py - 4.5);
                     CnvLiveWorldMap.Children.Add(diamond);
                 }
             }
@@ -3984,9 +4183,9 @@ namespace ConanServerManager
                 if (p.IsOnline && !showOnline) continue;
                 if (!p.IsOnline && !showOffline) continue;
 
-                double px = ox + ((p.X - minX) / (maxX - minX)) * side;
-                double py = oy + ((p.Y - minY) / (maxY - minY)) * side;
-                double r = p.IsOnline ? 6.0 : 4.2;
+                double px = ox + ((p.X - minX) / (maxX - minX)) * currentSize;
+                double py = oy + ((p.Y - minY) / (maxY - minY)) * currentSize;
+                double r = (p.IsOnline ? 6.0 : 4.2) * Math.Min(1.4, Math.Sqrt(_wpfMapZoom));
 
                 var pin = new System.Windows.Shapes.Ellipse
                 {
@@ -4055,14 +4254,29 @@ namespace ConanServerManager
 
         private void BtnRefreshLiveMap_Click(object sender, RoutedEventArgs e)
         {
-            _engine.LiveMap?.GetWorldMapSnapshot(true);
+            if (IsRemoteMode)
+            {
+                _ = FetchRemoteLiveMapSnapshotAsync();
+                return;
+            }
+            _engine.LiveMap?.GetWorldMapSnapshot(true, GetSelectedLiveMapId());
             RefreshLiveMapTabUi();
         }
 
         private void BtnOpenLiveMapWeb_Click(object sender, RoutedEventArgs e)
         {
             int port = _engine.Config.LiveMapPort > 0 ? _engine.Config.LiveMapPort : 8089;
-            string url = $"http://localhost:{port}";
+            string host = "localhost";
+            if (IsRemoteMode)
+            {
+                try
+                {
+                    var uri = new Uri(GetRemoteBaseUrl());
+                    host = uri.Host;
+                }
+                catch { }
+            }
+            string url = $"http://{host}:{port}";
             try
             {
                 Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
@@ -4090,49 +4304,118 @@ namespace ConanServerManager
             if (CnvLiveWorldMap == null || TxtMapHoverCoords == null) return;
             double w = CnvLiveWorldMap.ActualWidth;
             double h = CnvLiveWorldMap.ActualHeight;
-            double side = Math.Min(w, h) - 16.0;
-            if (side <= 10) return;
+            double baseSide = Math.Min(w, h) - 16.0;
+            if (baseSide <= 10) return;
 
-            double ox = (w - side) * 0.5;
-            double oy = (h - side) * 0.5;
             var pt = e.GetPosition(CnvLiveWorldMap);
 
-            const double minX = -390000.0, maxX = 450000.0;
-            const double minY = -360000.0, maxY = 380000.0;
+            if (_isPanningMap)
+            {
+                double dx = pt.X - _panStartMousePoint.X;
+                double dy = pt.Y - _panStartMousePoint.Y;
+                if (Math.Sqrt(dx * dx + dy * dy) > 3.0)
+                {
+                    _didPanDistance = true;
+                }
+                _wpfMapPanX = _panStartPanX + dx;
+                _wpfMapPanY = _panStartPanY + dy;
+                DrawNativeWpfWorldMap();
+                return;
+            }
 
-            double nx = Math.Clamp((pt.X - ox) / side, 0.0, 1.0);
-            double ny = Math.Clamp((pt.Y - oy) / side, 0.0, 1.0);
-            double wx = minX + nx * (maxX - minX);
-            double wy = minY + ny * (maxY - minY);
-            string sec = LiveMapAndAdminService.WorldToGridSector(wx, wy);
+            double currentSize = baseSide * _wpfMapZoom;
+            double ox = (w - currentSize) * 0.5 + _wpfMapPanX;
+            double oy = (h - currentSize) * 0.5 + _wpfMapPanY;
+
+            string mapId = _latestMapSnapshot?.ActiveMapId ?? _selectedMapWorldId;
+            var bounds = LiveMapAndAdminService.GetMapBounds(mapId);
+            double nx = Math.Clamp((pt.X - ox) / currentSize, 0.0, 1.0);
+            double ny = Math.Clamp((pt.Y - oy) / currentSize, 0.0, 1.0);
+            double wx = bounds.MinX + nx * (bounds.MaxX - bounds.MinX);
+            double wy = bounds.MinY + ny * (bounds.MaxY - bounds.MinY);
+            string sec = LiveMapAndAdminService.WorldToGridSector(wx, wy, mapId);
 
             TxtMapHoverCoords.Text = $"Sector: {sec} | X: {wx:F0}, Y: {wy:F0}";
         }
 
         private void CnvLiveWorldMap_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
+            StartMapPan(e);
+        }
+
+        private void CnvLiveWorldMap_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            StartMapPan(e);
+        }
+
+        private void StartMapPan(MouseButtonEventArgs e)
+        {
             if (CnvLiveWorldMap == null) return;
-            double w = CnvLiveWorldMap.ActualWidth;
-            double h = CnvLiveWorldMap.ActualHeight;
-            double side = Math.Min(w, h) - 16.0;
-            if (side <= 10) return;
+            _isPanningMap = true;
+            _didPanDistance = false;
+            _panStartMousePoint = e.GetPosition(CnvLiveWorldMap);
+            _panStartPanX = _wpfMapPanX;
+            _panStartPanY = _wpfMapPanY;
+            CnvLiveWorldMap.CaptureMouse();
+        }
 
-            double ox = (w - side) * 0.5;
-            double oy = (h - side) * 0.5;
-            var pt = e.GetPosition(CnvLiveWorldMap);
+        private void CnvLiveWorldMap_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            EndMapPanAndHandleClick(e);
+        }
 
-            const double minX = -390000.0, maxX = 450000.0;
-            const double minY = -360000.0, maxY = 380000.0;
+        private void CnvLiveWorldMap_MouseRightButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (_isPanningMap)
+            {
+                _isPanningMap = false;
+                CnvLiveWorldMap?.ReleaseMouseCapture();
+            }
+        }
 
-            double nx = Math.Clamp((pt.X - ox) / side, 0.0, 1.0);
-            double ny = Math.Clamp((pt.Y - oy) / side, 0.0, 1.0);
-            double wx = minX + nx * (maxX - minX);
-            double wy = minY + ny * (maxY - minY);
+        private void CnvLiveWorldMap_MouseLeave(object sender, MouseEventArgs e)
+        {
+            if (_isPanningMap)
+            {
+                _isPanningMap = false;
+                CnvLiveWorldMap?.ReleaseMouseCapture();
+            }
+        }
 
-            string tp = string.Format(System.Globalization.CultureInfo.InvariantCulture, "TeleportPlayer {0:F0} {1:F0} 2000", wx, wy);
-            SelectTeleportCommand(tp);
-            if (TxtNewWarpX != null) TxtNewWarpX.Text = wx.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
-            if (TxtNewWarpY != null) TxtNewWarpY.Text = wy.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+        private void EndMapPanAndHandleClick(MouseButtonEventArgs e)
+        {
+            if (CnvLiveWorldMap == null) return;
+            bool wasDragging = _didPanDistance;
+            if (_isPanningMap)
+            {
+                _isPanningMap = false;
+                CnvLiveWorldMap.ReleaseMouseCapture();
+            }
+
+            if (!wasDragging)
+            {
+                double w = CnvLiveWorldMap.ActualWidth;
+                double h = CnvLiveWorldMap.ActualHeight;
+                double baseSide = Math.Min(w, h) - 16.0;
+                if (baseSide <= 10) return;
+
+                double currentSize = baseSide * _wpfMapZoom;
+                double ox = (w - currentSize) * 0.5 + _wpfMapPanX;
+                double oy = (h - currentSize) * 0.5 + _wpfMapPanY;
+                var pt = e.GetPosition(CnvLiveWorldMap);
+
+                string mapId = _latestMapSnapshot?.ActiveMapId ?? _selectedMapWorldId;
+                var bounds = LiveMapAndAdminService.GetMapBounds(mapId);
+                double nx = Math.Clamp((pt.X - ox) / currentSize, 0.0, 1.0);
+                double ny = Math.Clamp((pt.Y - oy) / currentSize, 0.0, 1.0);
+                double wx = bounds.MinX + nx * (bounds.MaxX - bounds.MinX);
+                double wy = bounds.MinY + ny * (bounds.MaxY - bounds.MinY);
+
+                string tp = string.Format(System.Globalization.CultureInfo.InvariantCulture, "TeleportPlayer {0:F0} {1:F0} 2000", wx, wy);
+                SelectTeleportCommand(tp);
+                if (TxtNewWarpX != null) TxtNewWarpX.Text = wx.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+                if (TxtNewWarpY != null) TxtNewWarpY.Text = wy.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+            }
         }
 
         private void BtnCopySelectedTeleport_Click(object sender, RoutedEventArgs e)
@@ -4201,7 +4484,7 @@ namespace ConanServerManager
             }
         }
 
-        private void BtnSavePlayerProfile_Click(object sender, RoutedEventArgs e)
+        private async void BtnSavePlayerProfile_Click(object sender, RoutedEventArgs e)
         {
             string charName = TxtAdminEditPlayerName?.Text?.Trim() ?? "";
             if (string.IsNullOrWhiteSpace(charName))
@@ -4213,12 +4496,38 @@ namespace ConanServerManager
             string rank = (CmbAdminEditPlayerRank?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Member";
             long.TryParse(TxtAdminEditPlayerWallet?.Text?.Trim(), out long wallet);
 
+            if (IsRemoteMode)
+            {
+                try
+                {
+                    string baseUrl = GetRemoteBaseUrl();
+                    using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+                    var payload = new { characterName = charName, rank, walletCopper = wallet };
+                    var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+                    var res = await http.PostAsync($"{baseUrl}/api/map/player/update", content);
+                    if (res.IsSuccessStatusCode)
+                    {
+                        RefreshLiveMapTabUi();
+                        MessageBox.Show($"Saved Remote Profile for '{charName}':\nRank: {rank}\nWallet: {LiveMapAndAdminService.FormatCurrency(wallet)}", "Profile Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        MessageBox.Show($"Remote server returned {res.StatusCode}", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Failed to save remote profile: {ex.Message}", "Remote Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                return;
+            }
+
             _engine.LiveMap?.UpdatePlayerProfile(charName, rank, wallet);
             RefreshLiveMapTabUi();
             MessageBox.Show($"Saved Pippi Profile for '{charName}':\nRank: {rank}\nWallet: {LiveMapAndAdminService.FormatCurrency(wallet)}", "Profile Saved", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
-        private void BtnAddWarp_Click(object sender, RoutedEventArgs e)
+        private async void BtnAddWarp_Click(object sender, RoutedEventArgs e)
         {
             string name = TxtNewWarpName?.Text?.Trim() ?? "";
             if (string.IsNullOrWhiteSpace(name))
@@ -4230,23 +4539,65 @@ namespace ConanServerManager
             double x = ParseDoubleUi(TxtNewWarpX, 0);
             double y = ParseDoubleUi(TxtNewWarpY, 0);
             double z = ParseDoubleUi(TxtNewWarpZ, 0);
+            string mapId = GetSelectedLiveMapId();
 
-            _engine.LiveMap?.AddOrUpdateWarp(new CeAdminWarp
+            var warp = new CeAdminWarp
             {
                 Name = name,
-                Category = $"Sector {LiveMapAndAdminService.WorldToGridSector(x, y)}",
+                MapId = mapId,
+                Category = $"Sector {LiveMapAndAdminService.WorldToGridSector(x, y, mapId)}",
                 X = x,
                 Y = y,
                 Z = z
-            });
+            };
 
+            if (IsRemoteMode)
+            {
+                try
+                {
+                    string baseUrl = GetRemoteBaseUrl();
+                    using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+                    var content = new StringContent(JsonSerializer.Serialize(warp), Encoding.UTF8, "application/json");
+                    var res = await http.PostAsync($"{baseUrl}/api/map/warp/add", content);
+                    if (res.IsSuccessStatusCode)
+                    {
+                        RefreshLiveMapTabUi();
+                        MessageBox.Show($"Warp '{name}' saved to remote server.", "Warp Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Failed to save remote warp: {ex.Message}", "Remote Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                return;
+            }
+
+            _engine.LiveMap?.AddOrUpdateWarp(warp);
             RefreshLiveMapTabUi();
         }
 
-        private void BtnDeleteWarp_Click(object sender, RoutedEventArgs e)
+        private async void BtnDeleteWarp_Click(object sender, RoutedEventArgs e)
         {
             string name = TxtNewWarpName?.Text?.Trim() ?? "";
             if (string.IsNullOrWhiteSpace(name)) return;
+
+            if (IsRemoteMode)
+            {
+                try
+                {
+                    string baseUrl = GetRemoteBaseUrl();
+                    using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+                    var content = new StringContent(JsonSerializer.Serialize(new { id = name }), Encoding.UTF8, "application/json");
+                    await http.PostAsync($"{baseUrl}/api/map/warp/delete", content);
+                    RefreshLiveMapTabUi();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Failed to delete remote warp: {ex.Message}", "Remote Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                return;
+            }
+
             _engine.LiveMap?.DeleteWarp(name);
             RefreshLiveMapTabUi();
         }

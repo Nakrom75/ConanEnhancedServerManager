@@ -66,6 +66,7 @@ namespace ConanServerManager
     {
         public string Id { get; set; } = "";
         public string Name { get; set; } = "";
+        public string MapId { get; set; } = "exiled_lands";
         public string Category { get; set; } = "Public";
         public string RequiredRank { get; set; } = "Player";
         public int CostCopper { get; set; } = 0;
@@ -73,7 +74,7 @@ namespace ConanServerManager
         public double X { get; set; }
         public double Y { get; set; }
         public double Z { get; set; }
-        public string GridSector => LiveMapAndAdminService.WorldToGridSector(X, Y);
+        public string GridSector => LiveMapAndAdminService.WorldToGridSector(X, Y, MapId);
         public string TeleportCommand => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"TeleportPlayer {X:F0} {Y:F0} {Z:F0}");
     }
 
@@ -118,6 +119,12 @@ namespace ConanServerManager
         public string ServerName { get; set; } = "";
         public string ServerStatus { get; set; } = "STOPPED";
         public string StartupMap { get; set; } = "";
+        public string ActiveMapId { get; set; } = "exiled_lands";
+        public string ActiveMapDisplayName { get; set; } = "The Exiled Lands";
+        public double WorldMinX { get; set; } = LiveMapAndAdminService.ExiledMinX;
+        public double WorldMaxX { get; set; } = LiveMapAndAdminService.ExiledMaxX;
+        public double WorldMinY { get; set; } = LiveMapAndAdminService.ExiledMinY;
+        public double WorldMaxY { get; set; } = LiveMapAndAdminService.ExiledMaxY;
         public string DatabasePath { get; set; } = "";
         public bool DatabaseFound { get; set; }
         public string LastUpdated { get; set; } = "";
@@ -143,16 +150,43 @@ namespace ConanServerManager
         private CeAdminDataStore _store = new CeAdminDataStore();
         private WorldMapSnapshot? _cachedSnapshot;
         private DateTime _lastSnapshotTime = DateTime.MinValue;
+        private string _activeMapId = "exiled_lands";
 
         // Real-time player coordinate overrides fed by ModController log stream [CEAdmin_Pos]
         private readonly ConcurrentDictionary<string, (double X, double Y, double Z, DateTime Time)> _liveModPositions
             = new ConcurrentDictionary<string, (double X, double Y, double Z, DateTime Time)>(StringComparer.OrdinalIgnoreCase);
 
-        // Conan Exiles Exiled Lands / Merged Enhanced World Coordinate Bounds (Unreal units, cm)
-        public const double WorldMinX = -390000.0;
-        public const double WorldMaxX = 450000.0;
-        public const double WorldMinY = -360000.0;
-        public const double WorldMaxY = 380000.0;
+        // Calibrated Unreal Engine coordinate bounds matching Assets\Maps\exiled_lands.jpg (2016x2016)
+        public const double ExiledMinX = -343135.0;
+        public const double ExiledMaxX = 481720.0;
+        public const double ExiledMinY = -447822.0;
+        public const double ExiledMaxY = 375387.0;
+
+        // Calibrated Unreal Engine coordinate bounds matching Assets\Maps\isle_of_siptah.jpg (2001x1976)
+        public const double SiptahMinX = -500000.0;
+        public const double SiptahMaxX = 400000.0;
+        public const double SiptahMinY = -400000.0;
+        public const double SiptahMaxY = 500000.0;
+
+        // Legacy default constants
+        public const double WorldMinX = ExiledMinX;
+        public const double WorldMaxX = ExiledMaxX;
+        public const double WorldMinY = ExiledMinY;
+        public const double WorldMaxY = ExiledMaxY;
+
+        public string ActiveMapId
+        {
+            get => _activeMapId;
+            set
+            {
+                string norm = NormalizeMapId(value);
+                if (!string.Equals(_activeMapId, norm, StringComparison.OrdinalIgnoreCase))
+                {
+                    _activeMapId = norm;
+                    _lastSnapshotTime = DateTime.MinValue;
+                }
+            }
+        }
 
         public bool IsRunning => _isListening;
         public int BoundPort => _boundPort;
@@ -162,7 +196,54 @@ namespace ConanServerManager
         public LiveMapAndAdminService(ServerEngine engine)
         {
             _engine = engine;
+            if (!string.IsNullOrWhiteSpace(_engine.Config.StartupMap) &&
+                (_engine.Config.StartupMap.Contains("siptah", StringComparison.OrdinalIgnoreCase) ||
+                 _engine.Config.StartupMap.Contains("dlc_ext", StringComparison.OrdinalIgnoreCase)))
+            {
+                _activeMapId = "isle_of_siptah";
+            }
             LoadStore();
+        }
+
+        public static string NormalizeMapId(string? mapId)
+        {
+            if (!string.IsNullOrWhiteSpace(mapId) &&
+                (mapId.Contains("siptah", StringComparison.OrdinalIgnoreCase) ||
+                 mapId.Contains("dlc_ext", StringComparison.OrdinalIgnoreCase)))
+            {
+                return "isle_of_siptah";
+            }
+            return "exiled_lands";
+        }
+
+        public static (double MinX, double MaxX, double MinY, double MaxY) GetMapBounds(string? mapId)
+        {
+            if (NormalizeMapId(mapId) == "isle_of_siptah")
+            {
+                return (SiptahMinX, SiptahMaxX, SiptahMinY, SiptahMaxY);
+            }
+            return (ExiledMinX, ExiledMaxX, ExiledMinY, ExiledMaxY);
+        }
+
+        public static string? ResolveMapImageFile(string? mapId)
+        {
+            bool isSiptah = NormalizeMapId(mapId) == "isle_of_siptah";
+            string fileName = isSiptah ? "isle_of_siptah.jpg" : "exiled_lands.jpg";
+
+            string[] candidatePaths =
+            {
+                Path.Combine(ServerEngine.BaseDir, "Assets", "Maps", fileName),
+                Path.Combine(ServerEngine.AppWorkingDir, "Assets", "Maps", fileName),
+                Path.Combine(Directory.GetCurrentDirectory(), "Assets", "Maps", fileName),
+                Path.Combine(ServerEngine.AppWorkingDir, isSiptah ? "map_siptah.jpg" : "map_bg.jpg"),
+                Path.Combine(ServerEngine.AppWorkingDir, "map_bg.png")
+            };
+
+            foreach (var p in candidatePaths)
+            {
+                if (File.Exists(p)) return p;
+            }
+            return null;
         }
 
         public static string FormatCurrency(long totalCopper)
@@ -176,16 +257,27 @@ namespace ConanServerManager
             return $"{copper}c";
         }
 
-        public static string WorldToGridSector(double x, double y)
+        public static string WorldToGridSector(double x, double y, string? mapId = null)
         {
-            // Conan Exiles standard map grid: Columns A..P (16 cols across X), Rows 1..16 (16 rows from bottom Y_max to top Y_min)
-            double normX = Math.Clamp((x - WorldMinX) / (WorldMaxX - WorldMinX), 0.0, 0.999);
-            double normY = Math.Clamp((y - WorldMinY) / (WorldMaxY - WorldMinY), 0.0, 0.999);
+            if (NormalizeMapId(mapId) == "isle_of_siptah")
+            {
+                // Isle of Siptah calibrated grid A..P (-461,500 to +355,000) and 1..17 (+500,000 bottom to -357,000 top)
+                double normXS = Math.Clamp((x - (-461500.0)) / (355000.0 - (-461500.0)), 0.0, 0.999);
+                double normYS = Math.Clamp((y - (-357000.0)) / (500000.0 - (-357000.0)), 0.0, 0.999);
+                int colS = (int)(normXS * 16.0);
+                int rowS = 17 - (int)(normYS * 17.0);
+                char colCharS = (char)('A' + Math.Clamp(colS, 0, 15));
+                return $"{colCharS}{Math.Clamp(rowS, 1, 17)}";
+            }
+
+            // Exiled Lands calibrated grid A..P (-308,900 to +435,900) and 1..17 (+372,200 bottom to -412,500 top)
+            double normX = Math.Clamp((x - (-308900.0)) / (435900.0 - (-308900.0)), 0.0, 0.999);
+            double normY = Math.Clamp((y - (-412500.0)) / (372200.0 - (-412500.0)), 0.0, 0.999);
 
             int colIndex = (int)(normX * 16.0); // 0 = A .. 15 = P
-            int rowNumber = 16 - (int)(normY * 16.0); // Bottom is Row 1, Top (North) is Row 16
+            int rowNumber = 17 - (int)(normY * 17.0); // Bottom is Row 1, Top (North) is Row 17
             char colLetter = (char)('A' + Math.Clamp(colIndex, 0, 15));
-            return $"{colLetter}{Math.Clamp(rowNumber, 1, 16)}";
+            return $"{colLetter}{Math.Clamp(rowNumber, 1, 17)}";
         }
 
         public void LoadStore()
@@ -209,17 +301,38 @@ namespace ConanServerManager
                     _engine.Log($"[CEAdmin Store] Load warning: {ex.Message}");
                 }
 
-                if (_store.Warps == null || _store.Warps.Count == 0)
+                if (_store.Warps == null) _store.Warps = new List<CeAdminWarp>();
+
+                // Ensure existing warps have a valid MapId
+                foreach (var w in _store.Warps)
                 {
-                    _store.Warps = new List<CeAdminWarp>
+                    if (string.IsNullOrWhiteSpace(w.MapId)) w.MapId = "exiled_lands";
+                }
+
+                if (!_store.Warps.Any(w => NormalizeMapId(w.MapId) == "exiled_lands"))
+                {
+                    _store.Warps.AddRange(new[]
                     {
-                        new CeAdminWarp { Id = "hub", Name = "Welcome Hub (Sentinels)", Category = "Hubs", RequiredRank = "Player", CostCopper = 0, CooldownSeconds = 60, X = -25240, Y = 261150, Z = -20180 },
-                        new CeAdminWarp { Id = "sepermeru", Name = "Sepermeru Trading City", Category = "Cities", RequiredRank = "Player", CostCopper = 50, CooldownSeconds = 180, X = -249850, Y = 95820, Z = -3950 },
-                        new CeAdminWarp { Id = "sinkhole", Name = "The Sinkhole Obelisk", Category = "Obelisks", RequiredRank = "Player", CostCopper = 50, CooldownSeconds = 180, X = 18240, Y = 112500, Z = -12400 },
-                        new CeAdminWarp { Id = "mounds", Name = "Mounds of the Dead", Category = "Highlands", RequiredRank = "Player", CostCopper = 100, CooldownSeconds = 240, X = -221500, Y = -62400, Z = -1200 },
-                        new CeAdminWarp { Id = "jungle", Name = "Buccaneer Bay (Jungle)", Category = "Jungle", RequiredRank = "Player", CostCopper = 100, CooldownSeconds = 240, X = 328400, Y = 88500, Z = -17500 },
-                        new CeAdminWarp { Id = "volcano", Name = "Well of Skelos (Volcano)", Category = "North", RequiredRank = "VIP", CostCopper = 150, CooldownSeconds = 300, X = -42800, Y = -268500, Z = 36200 }
-                    };
+                        new CeAdminWarp { Id = "hub", Name = "Welcome Hub (Sentinels)", MapId = "exiled_lands", Category = "Hubs", RequiredRank = "Player", CostCopper = 0, CooldownSeconds = 60, X = -25240, Y = 261150, Z = -20180 },
+                        new CeAdminWarp { Id = "sepermeru", Name = "Sepermeru Trading City", MapId = "exiled_lands", Category = "Cities", RequiredRank = "Player", CostCopper = 50, CooldownSeconds = 180, X = -249850, Y = 95820, Z = -3950 },
+                        new CeAdminWarp { Id = "sinkhole", Name = "The Sinkhole Obelisk", MapId = "exiled_lands", Category = "Obelisks", RequiredRank = "Player", CostCopper = 50, CooldownSeconds = 180, X = 18240, Y = 112500, Z = -12400 },
+                        new CeAdminWarp { Id = "mounds", Name = "Mounds of the Dead", MapId = "exiled_lands", Category = "Highlands", RequiredRank = "Player", CostCopper = 100, CooldownSeconds = 240, X = -221500, Y = -62400, Z = -1200 },
+                        new CeAdminWarp { Id = "jungle", Name = "Buccaneer Bay (Jungle)", MapId = "exiled_lands", Category = "Jungle", RequiredRank = "Player", CostCopper = 100, CooldownSeconds = 240, X = 328400, Y = 88500, Z = -17500 },
+                        new CeAdminWarp { Id = "volcano", Name = "Well of Skelos (Volcano)", MapId = "exiled_lands", Category = "North", RequiredRank = "VIP", CostCopper = 150, CooldownSeconds = 300, X = -42800, Y = -268500, Z = 36200 }
+                    });
+                }
+
+                if (!_store.Warps.Any(w => NormalizeMapId(w.MapId) == "isle_of_siptah"))
+                {
+                    _store.Warps.AddRange(new[]
+                    {
+                        new CeAdminWarp { Id = "siptah_tower", Name = "Tower of Siptah (Center)", MapId = "isle_of_siptah", Category = "Center", RequiredRank = "Player", CostCopper = 0, CooldownSeconds = 60, X = -26500, Y = 18500, Z = -14200 },
+                        new CeAdminWarp { Id = "siptah_west", Name = "Castaway Camp (West Beach)", MapId = "isle_of_siptah", Category = "Camps", RequiredRank = "Player", CostCopper = 25, CooldownSeconds = 120, X = -318000, Y = 14500, Z = -19800 },
+                        new CeAdminWarp { Id = "siptah_east", Name = "New Luxur (East Redwoods)", MapId = "isle_of_siptah", Category = "Cities", RequiredRank = "Player", CostCopper = 50, CooldownSeconds = 180, X = 212000, Y = -42000, Z = -15400 },
+                        new CeAdminWarp { Id = "siptah_north", Name = "Fractured Citadel (North)", MapId = "isle_of_siptah", Category = "North", RequiredRank = "Player", CostCopper = 75, CooldownSeconds = 180, X = 185000, Y = -182000, Z = -18900 },
+                        new CeAdminWarp { Id = "siptah_dusk", Name = "Isle of Dusk (South-West)", MapId = "isle_of_siptah", Category = "Islands", RequiredRank = "Player", CostCopper = 100, CooldownSeconds = 240, X = -125000, Y = 242000, Z = -19200 },
+                        new CeAdminWarp { Id = "siptah_dawn", Name = "Isle of Dawn (First Men)", MapId = "isle_of_siptah", Category = "Islands", RequiredRank = "VIP", CostCopper = 125, CooldownSeconds = 240, X = 52000, Y = 268000, Z = -16500 }
+                    });
                 }
 
                 if (_store.Kits == null || _store.Kits.Count == 0)
@@ -281,10 +394,12 @@ namespace ConanServerManager
                 {
                     warp.Id = RegexSafeId(warp.Name);
                 }
+                warp.MapId = NormalizeMapId(string.IsNullOrWhiteSpace(warp.MapId) ? _activeMapId : warp.MapId);
                 var existing = _store.Warps.FirstOrDefault(w => w.Id.Equals(warp.Id, StringComparison.OrdinalIgnoreCase));
                 if (existing != null)
                 {
                     existing.Name = warp.Name;
+                    existing.MapId = warp.MapId;
                     existing.Category = warp.Category;
                     existing.RequiredRank = warp.RequiredRank;
                     existing.CostCopper = warp.CostCopper;
@@ -377,29 +492,47 @@ namespace ConanServerManager
             return string.IsNullOrEmpty(res) ? "warp_" + DateTime.Now.Ticks % 10000 : res;
         }
 
-        public WorldMapSnapshot GetWorldMapSnapshot(bool forceRefresh = false)
+        public WorldMapSnapshot GetWorldMapSnapshot(bool forceRefresh = false, string? requestedMapId = null)
         {
-            if (!forceRefresh && _cachedSnapshot != null && (DateTime.UtcNow - _lastSnapshotTime).TotalSeconds < 4.0)
+            if (!string.IsNullOrWhiteSpace(requestedMapId))
+            {
+                ActiveMapId = requestedMapId;
+            }
+
+            if (!forceRefresh && _cachedSnapshot != null &&
+                string.Equals(_cachedSnapshot.ActiveMapId, _activeMapId, StringComparison.OrdinalIgnoreCase) &&
+                (DateTime.UtcNow - _lastSnapshotTime).TotalSeconds < 4.0)
             {
                 return _cachedSnapshot;
             }
+
+            string mapId = _activeMapId;
+            var bounds = GetMapBounds(mapId);
 
             var snapshot = new WorldMapSnapshot
             {
                 ServerName = string.IsNullOrWhiteSpace(_engine.Config.ServerName) ? "Conan Exiles Enhanced Server" : _engine.Config.ServerName,
                 ServerStatus = _engine.ServerStatus,
                 StartupMap = _engine.Config.StartupMap,
+                ActiveMapId = mapId,
+                ActiveMapDisplayName = mapId == "isle_of_siptah" ? "Isle of Siptah" : "The Exiled Lands",
+                WorldMinX = bounds.MinX,
+                WorldMaxX = bounds.MaxX,
+                WorldMinY = bounds.MinY,
+                WorldMaxY = bounds.MaxY,
                 LastUpdated = DateTime.Now.ToString("HH:mm:ss")
             };
 
             lock (_storeLock)
             {
-                snapshot.Warps = _store.Warps.ToList();
+                snapshot.Warps = _store.Warps
+                    .Where(w => string.IsNullOrWhiteSpace(w.MapId) || NormalizeMapId(w.MapId) == mapId)
+                    .ToList();
                 snapshot.Homes = _store.Homes.ToList();
                 snapshot.Kits = _store.Kits.ToList();
             }
 
-            string dbPath = _engine.GetActiveGameDbPath();
+            string dbPath = _engine.GetActiveGameDbPath(mapId);
             snapshot.DatabasePath = dbPath;
             snapshot.DatabaseFound = File.Exists(dbPath);
 
@@ -417,7 +550,9 @@ namespace ConanServerManager
             {
                 if (!snapshot.Players.Any(p => p.CharacterName.Equals(onlinePlayer.Name, StringComparison.OrdinalIgnoreCase)))
                 {
-                    double px = -25240, py = 261150, pz = -20180;
+                    double px = mapId == "isle_of_siptah" ? -318000 : -25240;
+                    double py = mapId == "isle_of_siptah" ? 14500 : 261150;
+                    double pz = -20180;
                     if (_liveModPositions.TryGetValue(onlinePlayer.Name, out var livePos))
                     {
                         px = livePos.X;
@@ -435,7 +570,7 @@ namespace ConanServerManager
                         X = px,
                         Y = py,
                         Z = pz,
-                        GridSector = WorldToGridSector(px, py),
+                        GridSector = WorldToGridSector(px, py, mapId),
                         IsOnline = true,
                         LastOnlineText = "ONLINE NOW",
                         Rank = profile.Rank,
@@ -577,7 +712,7 @@ namespace ConanServerManager
                             X = x,
                             Y = y,
                             Z = z,
-                            GridSector = WorldToGridSector(x, y),
+                            GridSector = WorldToGridSector(x, y, snapshot.ActiveMapId),
                             IsOnline = isOnline,
                             LastOnlineText = lastSeenStr,
                             Rank = profile.Rank,
@@ -655,7 +790,7 @@ namespace ConanServerManager
                             X = st.X,
                             Y = st.Y,
                             Z = st.Z,
-                            GridSector = WorldToGridSector(st.X, st.Y)
+                            GridSector = WorldToGridSector(st.X, st.Y, snapshot.ActiveMapId)
                         });
                     }
                 }
@@ -807,32 +942,94 @@ namespace ConanServerManager
                         return;
                     }
 
-                    if (path == "/map_bg.png" || path == "/map_bg.jpg")
+                    if (path == "/map_exiled_lands.jpg" || path == "/map_siptah.jpg" || path == "/map_bg.png" || path == "/map_bg.jpg")
                     {
-                        string customImg = Path.Combine(ServerEngine.AppWorkingDir, path.TrimStart('/'));
-                        if (File.Exists(customImg))
+                        string? mapFile = null;
+                        if (path == "/map_exiled_lands.jpg")
+                            mapFile = ResolveMapImageFile("exiled_lands");
+                        else if (path == "/map_siptah.jpg")
+                            mapFile = ResolveMapImageFile("isle_of_siptah");
+                        else
                         {
-                            byte[] imgBytes = File.ReadAllBytes(customImg);
-                            string mime = path.EndsWith(".png") ? "image/png" : "image/jpeg";
+                            string customImg = Path.Combine(ServerEngine.AppWorkingDir, path.TrimStart('/'));
+                            if (File.Exists(customImg)) mapFile = customImg;
+                            else mapFile = ResolveMapImageFile(ActiveMapId);
+                        }
+
+                        if (mapFile != null && File.Exists(mapFile))
+                        {
+                            byte[] imgBytes = await File.ReadAllBytesAsync(mapFile);
+                            string mime = mapFile.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ? "image/png" : "image/jpeg";
                             await WriteBinaryHttpResponseAsync(stream, "200 OK", mime, imgBytes);
                             return;
                         }
                     }
 
-                    string jsonResp = HandleMapApiRequest(method, path, body);
+                    string jsonResp = HandleMapApiRequest(method, path, body, rawUrl);
                     await WriteHttpResponseAsync(stream, "200 OK", "application/json; charset=utf-8", jsonResp);
                 }
                 catch { }
             }
         }
 
-        public string HandleMapApiRequest(string method, string path, string body)
+        public string HandleMapApiRequest(string method, string path, string body, string? rawUrl = null)
         {
             if (path == "/api/map/data")
             {
                 bool force = method == "POST";
-                var snap = GetWorldMapSnapshot(force);
+                string? mapParam = null;
+
+                if (!string.IsNullOrEmpty(rawUrl) && rawUrl.Contains('?'))
+                {
+                    string qStr = rawUrl.Substring(rawUrl.IndexOf('?') + 1);
+                    var pairs = qStr.Split('&');
+                    foreach (var pair in pairs)
+                    {
+                        var kv = pair.Split('=');
+                        if (kv.Length >= 2)
+                        {
+                            if (kv[0].Equals("map", StringComparison.OrdinalIgnoreCase))
+                                mapParam = Uri.UnescapeDataString(kv[1]);
+                            else if (kv[0].Equals("force", StringComparison.OrdinalIgnoreCase) && bool.TryParse(kv[1], out bool fVal))
+                                force = fVal;
+                        }
+                    }
+                }
+
+                if (string.IsNullOrEmpty(mapParam) && !string.IsNullOrWhiteSpace(body) && body.TrimStart().StartsWith("{"))
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(body);
+                        if (doc.RootElement.TryGetProperty("map", out var mProp))
+                            mapParam = mProp.GetString();
+                        if (doc.RootElement.TryGetProperty("force", out var fProp))
+                            force = fProp.GetBoolean();
+                    }
+                    catch { }
+                }
+
+                var snap = GetWorldMapSnapshot(force, mapParam);
                 return JsonSerializer.Serialize(snap);
+            }
+
+            if (method == "POST" && path == "/api/map/set-map")
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    if (doc.RootElement.TryGetProperty("map", out var mProp))
+                    {
+                        string newMap = mProp.GetString() ?? "exiled_lands";
+                        ActiveMapId = NormalizeMapId(newMap);
+                        var snap = GetWorldMapSnapshot(true, ActiveMapId);
+                        return JsonSerializer.Serialize(new { success = true, activeMapId = snap.ActiveMapId, message = $"Active map switched to {snap.ActiveMapDisplayName}." });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    return JsonSerializer.Serialize(new { success = false, error = ex.Message });
+                }
             }
 
             if (method == "POST" && path == "/api/map/warp/add")
@@ -840,6 +1037,7 @@ namespace ConanServerManager
                 var warp = JsonSerializer.Deserialize<CeAdminWarp>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (warp != null && !string.IsNullOrWhiteSpace(warp.Name))
                 {
+                    if (string.IsNullOrWhiteSpace(warp.MapId)) warp.MapId = ActiveMapId;
                     AddOrUpdateWarp(warp);
                     return JsonSerializer.Serialize(new { success = true, message = $"Warp '{warp.Name}' saved." });
                 }
@@ -1093,12 +1291,19 @@ namespace ConanServerManager
     </div>
   </div>
   <div class=""stats-bar"">
+    <select id=""mapSelect"" class=""btn"" style=""background:#1e293b;color:#38bdf8;font-weight:700;"" onchange=""switchMap(this.value)"">
+      <option value=""exiled_lands"">🏜️ The Exiled Lands</option>
+      <option value=""isle_of_siptah"">🏝️ Isle of Siptah</option>
+    </select>
     <span class=""badge badge-online"" id=""badgeOnline"">🟢 0 Online</span>
     <span class=""badge"" id=""badgeChars"">👥 0 Exiles</span>
     <span class=""badge"" id=""badgeBases"">🏰 0 Bases</span>
     <span class=""badge"" id=""badgePieces"">🧱 0 Pieces</span>
-    <button class=""btn"" onclick=""resetView()"">🎯 Reset Zoom</button>
-    <button class=""btn btn-primary"" onclick=""fetchMapData(true)"">🔄 Refresh Now</button>
+    <button class=""btn"" onclick=""zoomIn()"" title=""Zoom In"">➕</button>
+    <span id=""lblZoom"" style=""font-size:0.8rem;font-weight:bold;color:var(--text);padding:0 4px;"">100%</span>
+    <button class=""btn"" onclick=""zoomOut()"" title=""Zoom Out"">➖</button>
+    <button class=""btn"" onclick=""resetView()"">🎯 Reset</button>
+    <button class=""btn btn-primary"" onclick=""fetchMapData(true)"">🔄 Refresh</button>
   </div>
 </header>
 
@@ -1129,17 +1334,26 @@ namespace ConanServerManager
 </div>
 
 <script>
-const WORLD_MIN_X = -390000, WORLD_MAX_X = 450000;
-const WORLD_MIN_Y = -360000, WORLD_MAX_Y = 380000;
+let currentMapId = 'exiled_lands';
+let worldMinX = -343135, worldMaxX = 481720;
+let worldMinY = -447822, worldMaxY = 375387;
 
 let mapData = { players: [], bases: [], clans: [], warps: [], homes: [], kits: [] };
 let camX = 0, camY = 0, zoom = 1.0;
-let isDragging = false, dragStartX = 0, dragStartY = 0;
+let isDragging = false, dragStartX = 0, dragStartY = 0, didDrag = false;
 let selectedMarker = null;
+
 let bgImage = new Image();
 let bgLoaded = false;
-bgImage.onload = () => { bgLoaded = true; drawMap(); };
-bgImage.src = '/map_bg.png';
+
+function loadMapImage(mapId) {
+  bgLoaded = false;
+  bgImage = new Image();
+  bgImage.onload = () => { bgLoaded = true; drawMap(); };
+  bgImage.onerror = () => { bgLoaded = false; drawMap(); };
+  bgImage.src = mapId === 'isle_of_siptah' ? '/map_siptah.jpg' : '/map_exiled_lands.jpg';
+}
+loadMapImage(currentMapId);
 
 const canvas = document.getElementById('mapCanvas');
 const ctx = canvas.getContext('2d');
@@ -1154,66 +1368,116 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 
 function worldToScreen(wx, wy) {
-  const size = Math.min(canvas.width, canvas.height) * 0.88 * zoom;
+  const size = Math.min(canvas.width, canvas.height) * 0.92 * zoom;
   const ox = (canvas.width - size) / 2 + camX;
   const oy = (canvas.height - size) / 2 + camY;
-  const nx = (wx - WORLD_MIN_X) / (WORLD_MAX_X - WORLD_MIN_X);
-  const ny = (wy - WORLD_MIN_Y) / (WORLD_MAX_Y - WORLD_MIN_Y);
+  const nx = (wx - worldMinX) / (worldMaxX - worldMinX);
+  const ny = (wy - worldMinY) / (worldMaxY - worldMinY);
   return { x: ox + nx * size, y: oy + ny * size, size };
 }
 
 function screenToWorld(sx, sy) {
-  const size = Math.min(canvas.width, canvas.height) * 0.88 * zoom;
+  const size = Math.min(canvas.width, canvas.height) * 0.92 * zoom;
   const ox = (canvas.width - size) / 2 + camX;
   const oy = (canvas.height - size) / 2 + camY;
   const nx = (sx - ox) / size;
   const ny = (sy - oy) / size;
   return {
-    x: WORLD_MIN_X + nx * (WORLD_MAX_X - WORLD_MIN_X),
-    y: WORLD_MIN_Y + ny * (WORLD_MAX_Y - WORLD_MIN_Y)
+    x: worldMinX + nx * (worldMaxX - worldMinX),
+    y: worldMinY + ny * (worldMaxY - worldMinY)
   };
 }
 
 function worldToGrid(wx, wy) {
-  const nx = Math.max(0, Math.min(0.999, (wx - WORLD_MIN_X) / (WORLD_MAX_X - WORLD_MIN_X)));
-  const ny = Math.max(0, Math.min(0.999, (wy - WORLD_MIN_Y) / (WORLD_MAX_Y - WORLD_MIN_Y)));
-  const col = String.fromCharCode(65 + Math.floor(nx * 16));
-  const row = 16 - Math.floor(ny * 16);
-  return col + row;
+  if (currentMapId === 'isle_of_siptah') {
+    const nx = Math.max(0, Math.min(0.999, (wx - (-461500)) / (355000 - (-461500))));
+    const ny = Math.max(0, Math.min(0.999, (wy - (-357000)) / (500000 - (-357000))));
+    const col = String.fromCharCode(65 + Math.floor(nx * 16));
+    const row = 17 - Math.floor(ny * 17);
+    return col + Math.max(1, Math.min(17, row));
+  } else {
+    const nx = Math.max(0, Math.min(0.999, (wx - (-308900)) / (435900 - (-308900))));
+    const ny = Math.max(0, Math.min(0.999, (wy - (-412500)) / (372200 - (-412500))));
+    const col = String.fromCharCode(65 + Math.floor(nx * 16));
+    const row = 17 - Math.floor(ny * 17);
+    return col + Math.max(1, Math.min(17, row));
+  }
+}
+
+function updateZoomLabel() {
+  const lbl = document.getElementById('lblZoom');
+  if (lbl) lbl.textContent = Math.round(zoom * 100) + '%';
+}
+
+function zoomIn() {
+  applyZoom(1.2, canvas.width / 2, canvas.height / 2);
+}
+
+function zoomOut() {
+  applyZoom(1 / 1.2, canvas.width / 2, canvas.height / 2);
+}
+
+function applyZoom(factor, centerX, centerY) {
+  const oldZoom = zoom;
+  zoom = Math.max(0.6, Math.min(8.0, zoom * factor));
+  if (Math.abs(zoom - 1.0) < 0.05 && factor < 1.0) {
+    zoom = 1.0;
+  }
+  const ratio = zoom / oldZoom;
+  camX = centerX - (centerX - camX) * ratio;
+  camY = centerY - (centerY - camY) * ratio;
+  if (zoom === 1.0) { camX = 0; camY = 0; }
+  updateZoomLabel();
+  drawMap();
 }
 
 function resetView() {
   camX = 0; camY = 0; zoom = 1.0;
+  updateZoomLabel();
   drawMap();
 }
 
 function focusWorldPos(wx, wy) {
   zoom = 2.4;
-  const size = Math.min(canvas.width, canvas.height) * 0.88 * zoom;
-  const nx = (wx - WORLD_MIN_X) / (WORLD_MAX_X - WORLD_MIN_X);
-  const ny = (wy - WORLD_MIN_Y) / (WORLD_MAX_Y - WORLD_MIN_Y);
+  updateZoomLabel();
+  const size = Math.min(canvas.width, canvas.height) * 0.92 * zoom;
+  const nx = (wx - worldMinX) / (worldMaxX - worldMinX);
+  const ny = (wy - worldMinY) / (worldMaxY - worldMinY);
   camX = (0.5 - nx) * size;
   camY = (0.5 - ny) * size;
   drawMap();
 }
 
 function drawTopographicalBiomes(ox, oy, size) {
-  // Base map background
   const grad = ctx.createLinearGradient(ox, oy, ox, oy + size);
-  grad.addColorStop(0.0, '#1e293b');   // Frozen North & Volcano
-  grad.addColorStop(0.32, '#14332a');  // Highlands
-  grad.addColorStop(0.55, '#3b2f1e');  // Central Desert / Savanna
-  grad.addColorStop(0.82, '#45301c');  // Noob River & Southern Desert
-  grad.addColorStop(1.0, '#0f1d2e');   // Southern/Eastern Sea
+  if (currentMapId === 'isle_of_siptah') {
+    grad.addColorStop(0.0, '#0f293a');
+    grad.addColorStop(0.4, '#1b3b2b');
+    grad.addColorStop(0.7, '#2f2d1e');
+    grad.addColorStop(1.0, '#102235');
+  } else {
+    grad.addColorStop(0.0, '#1e293b');
+    grad.addColorStop(0.32, '#14332a');
+    grad.addColorStop(0.55, '#3b2f1e');
+    grad.addColorStop(0.82, '#45301c');
+    grad.addColorStop(1.0, '#0f1d2e');
+  }
   ctx.fillStyle = grad;
   ctx.fillRect(ox, oy, size, size);
 
-  // Biome Labels
   ctx.save();
   ctx.fillStyle = 'rgba(226, 232, 240, 0.16)';
   ctx.font = `bold ${Math.max(10, 13 * zoom)}px Segoe UI`;
   ctx.textAlign = 'center';
-  const landmarks = [
+
+  const landmarks = currentMapId === 'isle_of_siptah' ? [
+    { name: 'TOWER OF SIPTAH (CENTER)', x: -26500, y: 18500 },
+    { name: 'FRACTURED CITADEL (NORTH)', x: 185000, y: -182000 },
+    { name: 'NEW LUXUR (EAST REDWOODS)', x: 212000, y: -42000 },
+    { name: 'CASTAWAY CAMP (WEST)', x: -318000, y: 14500 },
+    { name: 'ISLE OF DUSK (SOUTH-WEST)', x: -125000, y: 242000 },
+    { name: 'ISLE OF DAWN (SOUTH-EAST)', x: 52000, y: 268000 }
+  ] : [
     { name: 'VOLCANO & WELL OF SKELOS', x: -42800, y: -268500 },
     { name: 'FROZEN NORTH & TEMPLE OF FROST', x: -165000, y: -225000 },
     { name: 'HIGHLANDS & NEW ASAGARTH', x: -65000, y: -75000 },
@@ -1224,6 +1488,7 @@ function drawTopographicalBiomes(ox, oy, size) {
     { name: 'NOOB RIVER (SENTINELS)', x: -25240, y: 261150 },
     { name: 'JUNGLE & BUCCANEER BAY', x: 300000, y: 95000 }
   ];
+
   landmarks.forEach(lm => {
     const p = worldToScreen(lm.x, lm.y);
     ctx.fillText(lm.name, p.x, p.y);
@@ -1233,34 +1498,36 @@ function drawTopographicalBiomes(ox, oy, size) {
 
 function drawMap() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const topLeft = worldToScreen(WORLD_MIN_X, WORLD_MIN_Y);
+  const topLeft = worldToScreen(worldMinX, worldMinY);
   const ox = topLeft.x, oy = topLeft.y, size = topLeft.size;
 
-  if (bgLoaded) {
+  if (bgLoaded && bgImage.complete && bgImage.naturalWidth > 0) {
     ctx.drawImage(bgImage, ox, oy, size, size);
   } else {
     drawTopographicalBiomes(ox, oy, size);
   }
 
   // Border
-  ctx.strokeStyle = '#334155';
+  ctx.strokeStyle = '#38bdf8';
   ctx.lineWidth = 2;
   ctx.strokeRect(ox, oy, size, size);
 
   // A1 - P16 Grid
   if (document.getElementById('chkGrid').checked) {
     const cell = size / 16;
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.16)';
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)';
     ctx.lineWidth = 1;
-    ctx.fillStyle = 'rgba(148, 163, 184, 0.55)';
+    ctx.fillStyle = 'rgba(148, 163, 184, 0.65)';
     ctx.font = '10px Consolas, monospace';
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i <= 16; i++) {
       const gx = ox + i * cell;
       const gy = oy + i * cell;
       ctx.beginPath(); ctx.moveTo(gx, oy); ctx.lineTo(gx, oy + size); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(ox, gy); ctx.lineTo(ox + size, gy); ctx.stroke();
-      ctx.fillText(String.fromCharCode(65 + i), gx + cell / 2 - 4, oy + 12);
-      ctx.fillText(String(16 - i), ox + 4, gy + cell / 2 + 4);
+      if (i < 16) {
+        ctx.fillText(String.fromCharCode(65 + i), gx + cell / 2 - 4, oy + 12);
+        ctx.fillText(String(16 - i), ox + 4, gy + cell / 2 + 4);
+      }
     }
   }
 
@@ -1345,17 +1612,21 @@ function drawMap() {
 canvas.addEventListener('mousedown', e => {
   if (e.button === 0) {
     isDragging = true;
+    didDrag = false;
     dragStartX = e.clientX - camX;
     dragStartY = e.clientY - camY;
   }
 });
-window.addEventListener('mouseup', () => isDragging = false);
+window.addEventListener('mouseup', () => { isDragging = false; });
 canvas.addEventListener('mousemove', e => {
   const rect = canvas.getBoundingClientRect();
   const mx = e.clientX - rect.left;
   const my = e.clientY - rect.top;
 
   if (isDragging) {
+    if (Math.hypot(e.clientX - dragStartX - camX, e.clientY - dragStartY - camY) > 3) {
+      didDrag = true;
+    }
     camX = e.clientX - dragStartX;
     camY = e.clientY - dragStartY;
     drawMap();
@@ -1365,9 +1636,8 @@ canvas.addEventListener('mousemove', e => {
   const w = screenToWorld(mx, my);
   const grid = worldToGrid(w.x, w.y);
   document.getElementById('lblCursorCoords').textContent =
-    `Grid: ${grid} | X: ${Math.round(w.x)}, Y: ${Math.round(w.y)} | Right-click to Copy TeleportPlayer or Add Warp`;
+    `Grid: ${grid} | X: ${Math.round(w.x)}, Y: ${Math.round(w.y)} | Drag to Pan • Wheel to Zoom • Right-click to Add Warp`;
 
-  // Hit-test markers for hover tooltip
   let hit = null;
   if (mapData.players) {
     for (const pl of mapData.players) {
@@ -1412,6 +1682,7 @@ canvas.addEventListener('mousemove', e => {
 });
 
 canvas.addEventListener('click', () => {
+  if (didDrag) return;
   if (selectedMarker) {
     navigator.clipboard.writeText(selectedMarker);
     alert('Copied to clipboard:\n' + selectedMarker);
@@ -1428,7 +1699,7 @@ canvas.addEventListener('contextmenu', async e => {
     await fetch('/api/map/warp/add', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ Name: warpName.trim(), X: Math.round(w.x), Y: Math.round(w.y), Z: 0, Category: 'Custom', RequiredRank: 'Player' })
+      body: JSON.stringify({ Name: warpName.trim(), X: Math.round(w.x), Y: Math.round(w.y), Z: 0, Category: 'Custom', RequiredRank: 'Player', MapId: currentMapId })
     });
     fetchMapData(true);
   } else {
@@ -1438,9 +1709,11 @@ canvas.addEventListener('contextmenu', async e => {
 
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
   const factor = e.deltaY < 0 ? 1.15 : 0.87;
-  zoom = Math.max(0.6, Math.min(6.0, zoom * factor));
-  drawMap();
+  applyZoom(factor, mx, my);
 }, { passive: false });
 
 function switchSideTab(tab, el) {
@@ -1466,7 +1739,7 @@ function renderSidebars() {
   // Players
   const pEl = document.getElementById('panel-players');
   if (!mapData.players || mapData.players.length === 0) {
-    pEl.innerHTML = `<div style='color:var(--muted);padding:12px;font-size:0.82rem;'>No characters found in game.db yet. Start the server and create a character to see live player tracking!</div>`;
+    pEl.innerHTML = `<div style='color:var(--muted);padding:12px;font-size:0.82rem;'>No characters found in database yet. Start the server and create a character to see live player tracking!</div>`;
   } else {
     pEl.innerHTML = mapData.players.map(p => `
       <div class='item-card' onclick='focusWorldPos(${p.X}, ${p.Y})'>
@@ -1483,7 +1756,7 @@ function renderSidebars() {
   // Bases
   const bEl = document.getElementById('panel-bases');
   if (!mapData.bases || mapData.bases.length === 0) {
-    bEl.innerHTML = `<div style='color:var(--muted);padding:12px;font-size:0.82rem;'>No player bases found in game.db yet.</div>`;
+    bEl.innerHTML = `<div style='color:var(--muted);padding:12px;font-size:0.82rem;'>No player bases found in database yet.</div>`;
   } else {
     bEl.innerHTML = mapData.bases.map(b => `
       <div class='item-card' onclick='focusWorldPos(${b.X}, ${b.Y})'>
@@ -1510,11 +1783,37 @@ function renderSidebars() {
   `).join('');
 }
 
+async function switchMap(mapId) {
+  currentMapId = mapId;
+  loadMapImage(mapId);
+  try {
+    await fetch('/api/map/set-map', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ map: mapId })
+    });
+  } catch (e) { }
+  fetchMapData(true);
+}
+
 async function fetchMapData(force = false) {
   try {
-    const res = await fetch('/api/map/data', { method: force ? 'POST' : 'GET' });
+    let url = '/api/map/data?map=' + encodeURIComponent(currentMapId);
+    if (force) url += '&force=true';
+    const res = await fetch(url);
     const data = await res.json();
-    // Normalize casing
+    if (data.WorldMinX !== undefined) {
+      worldMinX = data.WorldMinX;
+      worldMaxX = data.WorldMaxX;
+      worldMinY = data.WorldMinY;
+      worldMaxY = data.WorldMaxY;
+    }
+    if (data.ActiveMapId && data.ActiveMapId !== currentMapId) {
+      currentMapId = data.ActiveMapId;
+      const sel = document.getElementById('mapSelect');
+      if (sel) sel.value = currentMapId;
+      loadMapImage(currentMapId);
+    }
     mapData = {
       ServerName: data.ServerName || 'Conan Exiles Enhanced',
       OnlinePlayerCount: data.OnlinePlayerCount || 0,

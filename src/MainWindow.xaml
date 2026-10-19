@@ -163,9 +163,9 @@
                     <StackPanel Orientation="Vertical">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Image Source="app.png" Width="22" Height="22" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.4.0" Style="{StaticResource HeaderTitle}"/>
+                            <TextBlock x:Name="TxtAppHeaderTitle" Text="Conan Enhanced Server Manager v1.5.0" Style="{StaticResource HeaderTitle}"/>
                             <Border CornerRadius="8" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" Margin="10,0,0,0" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="🚀 v1.4.0" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock x:Name="TxtAppHeaderVersionBadge" Text="🚀 v1.5.0" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="TxtServerPathInfo" Text="Mode: Local Server Host | Embedded Web Console: http://0.0.0.0:8088" Foreground="#94A3B8" FontSize="11"/>
@@ -1551,16 +1551,27 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <WrapPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <ComboBox x:Name="CmbLiveMapWorldSelect" Width="170" Margin="0,0,10,0" SelectionChanged="CmbLiveMapWorldSelect_SelectionChanged"
+                                                  ToolTip="Switch active map between The Exiled Lands and Isle of Siptah">
+                                            <ComboBoxItem Content="🏜️ The Exiled Lands" Tag="exiled_lands" IsSelected="True"/>
+                                            <ComboBoxItem Content="🏝️ Isle of Siptah" Tag="isle_of_siptah"/>
+                                        </ComboBox>
                                         <CheckBox x:Name="ChkMapShowOnline" Content="🟢 Online Players" IsChecked="True" Style="{StaticResource FormCheck}" Margin="0,0,10,0" Checked="ChkMapFilter_Changed" Unchecked="ChkMapFilter_Changed"
                                                   ToolTip="Show or hide currently online players on the radar canvas"/>
                                         <CheckBox x:Name="ChkMapShowOffline" Content="⚪ Offline Bodies" IsChecked="True" Style="{StaticResource FormCheck}" Margin="0,0,10,0" Checked="ChkMapFilter_Changed" Unchecked="ChkMapFilter_Changed"
                                                   ToolTip="Show or hide offline / sleeping characters stored in game.db"/>
                                         <CheckBox x:Name="ChkMapShowBases" Content="🏰 Clan Bases" IsChecked="True" Style="{StaticResource FormCheck}" Margin="0,0,10,0" Checked="ChkMapFilter_Changed" Unchecked="ChkMapFilter_Changed"
                                                   ToolTip="Show or hide clan base clusters and building heatmaps on the radar canvas"/>
-                                        <CheckBox x:Name="ChkMapShowWarps" Content="🔷 Public Warps" IsChecked="True" Style="{StaticResource FormCheck}" Checked="ChkMapFilter_Changed" Unchecked="ChkMapFilter_Changed"
+                                        <CheckBox x:Name="ChkMapShowWarps" Content="🔷 Public Warps" IsChecked="True" Style="{StaticResource FormCheck}" Margin="0,0,10,0" Checked="ChkMapFilter_Changed" Unchecked="ChkMapFilter_Changed"
                                                   ToolTip="Show or hide public server warps &amp; landmarks on the radar canvas"/>
                                     </WrapPanel>
-                                    <TextBlock Grid.Column="1" x:Name="TxtMapHoverCoords" Text="Sector: -- | X: 0, Y: 0" Foreground="#38BDF8" FontSize="11" FontWeight="Bold" VerticalAlignment="Center"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button x:Name="BtnMapZoomOut" Content="➖" Width="26" Height="24" Padding="0" Margin="0,0,4,0" Style="{StaticResource BtnSecondary}" Click="BtnMapZoomOut_Click" ToolTip="Zoom Out"/>
+                                        <TextBlock x:Name="TxtMapZoomLevel" Text="100%" Foreground="#E2E8F0" FontSize="11" FontWeight="Bold" Width="42" TextAlignment="Center" VerticalAlignment="Center"/>
+                                        <Button x:Name="BtnMapZoomIn" Content="➕" Width="26" Height="24" Padding="0" Margin="4,0,6,0" Style="{StaticResource BtnSecondary}" Click="BtnMapZoomIn_Click" ToolTip="Zoom In"/>
+                                        <Button x:Name="BtnMapZoomReset" Content="🎯 Reset" Padding="6,2" Height="24" FontSize="11" Margin="0,0,10,0" Style="{StaticResource BtnSecondary}" Click="BtnMapZoomReset_Click" ToolTip="Reset Zoom &amp; Pan to 100% Center"/>
+                                        <TextBlock x:Name="TxtMapHoverCoords" Text="Sector: -- | X: 0, Y: 0" Foreground="#38BDF8" FontSize="11" FontWeight="Bold" VerticalAlignment="Center"/>
+                                    </StackPanel>
                                 </Grid>
 
                                 <!-- Map Radar Viewport -->
@@ -1569,7 +1580,13 @@
                                             SizeChanged="CnvLiveWorldMap_SizeChanged"
                                             MouseMove="CnvLiveWorldMap_MouseMove"
                                             MouseLeftButtonDown="CnvLiveWorldMap_MouseLeftButtonDown"
-                                            ToolTip="Click any marker or map location to copy its Unreal TeleportPlayer X Y Z command to your clipboard!"/>
+                                            MouseLeftButtonUp="CnvLiveWorldMap_MouseLeftButtonUp"
+                                            MouseRightButtonDown="CnvLiveWorldMap_MouseRightButtonDown"
+                                            MouseRightButtonUp="CnvLiveWorldMap_MouseRightButtonUp"
+                                            MouseWheel="CnvLiveWorldMap_MouseWheel"
+                                            MouseLeave="CnvLiveWorldMap_MouseLeave"
+                                            Cursor="Hand"
+                                            ToolTip="Drag with mouse to pan. Use Mouse Wheel or buttons to zoom. Click any marker or location to copy TeleportPlayer coordinates!"/>
                                 </Border>
 
                                 <!-- Bottom Selected Target / Teleport Command Bar -->

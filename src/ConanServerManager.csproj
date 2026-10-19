@@ -20,6 +20,8 @@
     <Resource Include="app.ico" />
     <Resource Include="app.png" />
     <Content Include="..\UPDATE_FROM_GITHUB.bat" Link="UPDATE_FROM_GITHUB.bat" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
+    <Content Include="..\Assets\Maps\exiled_lands.jpg" Link="Assets\Maps\exiled_lands.jpg" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
+    <Content Include="..\Assets\Maps\isle_of_siptah.jpg" Link="Assets\Maps\isle_of_siptah.jpg" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
   </ItemGroup>
 
   <ItemGroup>

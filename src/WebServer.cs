@@ -196,9 +196,47 @@ namespace ConanServerManager
             {
                 await SendHttpResponseAsync(stream, 200, "text/html; charset=utf-8", _engine.LiveMap.GetLiveMapHtmlPage());
             }
+            else if (path == "/map_exiled_lands.jpg" || path == "/map_siptah.jpg" || path == "/map_bg.jpg" || path == "/map_bg.png")
+            {
+                string? mapFile = null;
+                if (path == "/map_exiled_lands.jpg")
+                    mapFile = LiveMapAndAdminService.ResolveMapImageFile("exiled_lands");
+                else if (path == "/map_siptah.jpg")
+                    mapFile = LiveMapAndAdminService.ResolveMapImageFile("isle_of_siptah");
+                else
+                {
+                    string customImg = Path.Combine(ServerEngine.AppWorkingDir, path.TrimStart('/'));
+                    if (File.Exists(customImg)) mapFile = customImg;
+                    else mapFile = LiveMapAndAdminService.ResolveMapImageFile(_engine.LiveMap.ActiveMapId);
+                }
+
+                if (mapFile != null && File.Exists(mapFile))
+                {
+                    byte[] imgBytes = await File.ReadAllBytesAsync(mapFile);
+                    string mime = mapFile.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ? "image/png" : "image/jpeg";
+                    StringBuilder sb = new StringBuilder();
+                    sb.AppendLine("HTTP/1.1 200 OK");
+                    sb.AppendLine($"Content-Type: {mime}");
+                    sb.AppendLine($"Content-Length: {imgBytes.Length}");
+                    sb.AppendLine("Access-Control-Allow-Origin: *");
+                    sb.AppendLine("Cache-Control: public, max-age=86400");
+                    sb.AppendLine("Connection: close");
+                    sb.AppendLine();
+                    byte[] hdr = Encoding.UTF8.GetBytes(sb.ToString());
+                    await stream.WriteAsync(hdr, 0, hdr.Length);
+                    await stream.WriteAsync(imgBytes, 0, imgBytes.Length);
+                    await stream.FlushAsync();
+                    return;
+                }
+                else
+                {
+                    await SendHttpResponseAsync(stream, 404, "text/plain", "Map image not found");
+                    return;
+                }
+            }
             else if (path.StartsWith("/api/map/"))
             {
-                string mapJson = _engine.LiveMap.HandleMapApiRequest(method, path, body);
+                string mapJson = _engine.LiveMap.HandleMapApiRequest(method, path, body, rawUrl);
                 await SendHttpResponseAsync(stream, 200, "application/json; charset=utf-8", mapJson);
             }
             else if (path == "/api/status" && method == "GET")

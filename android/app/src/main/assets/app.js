@@ -7,7 +7,7 @@ let savedServers = [];
 let latestApkUrl = "";
 let lastKnownConfig = null;
 let lastCrashCulpritModId = "";
-let APP_VERSION = "1.4.0";
+let APP_VERSION = "1.5.0";
 if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
 }

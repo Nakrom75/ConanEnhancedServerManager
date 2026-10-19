@@ -361,7 +361,7 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.4.0";
+            return "1.5.0";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
@@ -2043,23 +2043,52 @@ namespace ConanServerManager
             return null;
         }
 
-        public string GetActiveGameDbPath()
+        public string GetActiveGameDbPath(string? preferredMapId = null)
         {
             string savedDir = Path.Combine(ServerRootDir, "ConanSandbox", "Saved");
             if (!Directory.Exists(savedDir))
             {
-                return Path.Combine(savedDir, "game_0.db");
+                string altSaved = Path.Combine(ServerRootDir, "Saved");
+                if (Directory.Exists(altSaved)) savedDir = altSaved;
+                else return Path.Combine(savedDir, "game.db");
             }
 
-            // 1. Primary Conan Exiles dedicated database
-            string game0 = Path.Combine(savedDir, "game_0.db");
-            if (File.Exists(game0)) return game0;
+            bool wantSiptah = false;
+            if (!string.IsNullOrWhiteSpace(preferredMapId))
+            {
+                wantSiptah = preferredMapId.Contains("siptah", StringComparison.OrdinalIgnoreCase) ||
+                             preferredMapId.Contains("dlc_ext", StringComparison.OrdinalIgnoreCase);
+            }
+            else if (!string.IsNullOrWhiteSpace(Config.StartupMap))
+            {
+                wantSiptah = Config.StartupMap.Contains("siptah", StringComparison.OrdinalIgnoreCase) ||
+                             Config.StartupMap.Contains("dlc_ext", StringComparison.OrdinalIgnoreCase);
+            }
 
-            // 2. Standard game.db
+            string siptahDb = Path.Combine(savedDir, "dlc_siptah.db");
             string gameDefault = Path.Combine(savedDir, "game.db");
-            if (File.Exists(gameDefault)) return gameDefault;
+            string game0 = Path.Combine(savedDir, "game_0.db");
 
-            // 3. Search for any valid *.db in Saved directory (excluding rolling backups and upgrade tags)
+            if (wantSiptah && File.Exists(siptahDb))
+            {
+                return siptahDb;
+            }
+
+            // If both game.db and game_0.db exist, prefer the non-empty / more recently modified one
+            if (File.Exists(gameDefault) && File.Exists(game0))
+            {
+                var fiDef = new FileInfo(gameDefault);
+                var fi0 = new FileInfo(game0);
+                if (fiDef.Length > 65536 && fi0.Length <= 65536) return gameDefault;
+                if (fi0.Length > 65536 && fiDef.Length <= 65536) return game0;
+                return fiDef.LastWriteTimeUtc >= fi0.LastWriteTimeUtc ? gameDefault : game0;
+            }
+
+            if (File.Exists(gameDefault)) return gameDefault;
+            if (File.Exists(game0)) return game0;
+            if (File.Exists(siptahDb)) return siptahDb;
+
+            // Search for any valid *.db in Saved directory (excluding rolling backups and upgrade tags)
             try
             {
                 var dbFiles = Directory.GetFiles(savedDir, "*.db")
@@ -2085,7 +2114,7 @@ namespace ConanServerManager
                 Log($"[Database Discovery] Warning scanning {savedDir}: {ex.Message}");
             }
 
-            return game0;
+            return wantSiptah ? siptahDb : gameDefault;
         }
 
         public string ConfigJsonPath
