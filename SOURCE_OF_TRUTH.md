@@ -1,6 +1,6 @@
 # SOURCE OF TRUTH: Conan Exiles Dedicated Server & Manager Architecture
 
-> **Document Version:** 1.5.0  
+> **Document Version:** 1.5.1  
 > **Target Application:** Conan Exiles Dedicated Server (AppID `443030`)  
 > **Date:** October 2026  
 > **Purpose:** Complete reverse-engineered architectural blueprint, specifications, protocol details, and engineering roadmap to build a custom, modern, highly reliable Conan Exiles Dedicated Server Manager.
@@ -2044,6 +2044,32 @@ The following items were identified during the v1.3.2 feature audit and schedule
 
 ### 5. Synchronized Dual-Platform Release (`v1.5.0` / `10500`)
 - Synchronized all 7 core version locations to **`1.5.0`** (Version Code `10500` via `1 * 10000 + 5 * 100 + 0`).
+- **Zero Remote Deployment Compliance**: All builds, packages, and APKs remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
+
+---
+
+## 52. Live Map Mobile Pinch-to-Zoom & Dual-Map Database Isolation (v1.5.1 - Build 10501)
+
+### 1. Mobile App Live Map Zoom & Multi-Touch Gestures
+- **Problem**: Mobile users accessing the live world map via the Android app or mobile browsers could not pinch-to-zoom or drag-pan on touch screens because the canvas only listened for desktop mouse events (`mousedown`, `mousemove`, `wheel`).
+- **Resolution**:
+  - **Multi-Touch Gesture Engine**: Implemented `touchstart`, `touchmove`, and `touchend` event handlers with dynamic pinch distance tracking (`Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY)`) calculating zoom scaling relative to pinch midpoint.
+  - **Single-Finger Touch Drag / Pan**: Smoothly tracks camera translation `(camX, camY)` with threshold detection so taps and pans are distinguished cleanly.
+  - **Floating Zoom Overlay Buttons**: Added prominent touch-friendly on-canvas buttons (`➕`, `➖`, `🎯 Reset`) on the bottom-right of `#mapWrap` for instant thumb-reach navigation on phones and tablets.
+  - **CSS Touch Action**: Set `touch-action: none;` on `#mapCanvas` and `#mapWrap` to eliminate mobile browser gesture hijacking and scrolling interference.
+  - **Dedicated In-App Fullscreen WebView Dialog**: Implemented `showLiveMapBrowser(url)` in `MainActivity.java` with hardware acceleration, `setBuiltInZoomControls(true)`, and `setDisplayZoomControls(false)`. Mobile users now view the live map smoothly within the Android app without being forced to switch to an external browser.
+
+### 2. Dual-Map Database Isolation & Ghost Base Elimination
+- **Problem**: When switching the Live Map viewer to "Isle of Siptah", players who had never played on Siptah saw their Exiled Lands bases rendered at the exact same Unreal coordinates on the Siptah map.
+- **Root Cause**: `ServerEngine.GetActiveGameDbPath("isle_of_siptah")` checked if `dlc_siptah.db` existed. Since the user had only played Exiled Lands, `dlc_siptah.db` did not exist; the code then fell back to `game.db` (The Exiled Lands database) and scanned its structures. Furthermore, connected players on Exiled Lands were being rendered at Siptah coordinates on Siptah views.
+- **Resolution**:
+  - **Strict Database Mapping**: `GetActiveGameDbPath` now strictly isolates `dlc_siptah.db` when `isle_of_siptah` is requested and **never** falls back to `game.db`. If `dlc_siptah.db` does not exist on disk, `snapshot.DatabaseFound` is flagged as `false`.
+  - **Ghost Structure Elimination**: When `DatabaseFound == false`, SQLite base and character scans are bypassed. The UI displays an informative status banner: *"No world database found for Isle of Siptah (dlc_siptah.db). Server currently holds world data for The Exiled Lands"*.
+  - **Live Online Player Scoping**: Connected player telemetry is scoped to the server's currently running map via `GetServerRunningMapId()`. Players playing on Exiled Lands no longer appear on Isle of Siptah maps.
+
+### 3. Synchronized Dual-Platform Release (`v1.5.1` / `10501`)
+- Synchronized all 7 core version locations to **`1.5.1`** (Version Code `10501` via `1 * 10000 + 5 * 100 + 1`).
+- Packaged `ConanServerManager_v1.5.1.zip` and `ConanServerManager-v1.5.1.apk`.
 - **Zero Remote Deployment Compliance**: All builds, packages, and APKs remain strictly local in `F:\Projects\Conan Exiles Dedicated Server\`.
 
 ---

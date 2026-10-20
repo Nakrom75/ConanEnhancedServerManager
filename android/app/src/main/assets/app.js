@@ -7,7 +7,7 @@ let savedServers = [];
 let latestApkUrl = "";
 let lastKnownConfig = null;
 let lastCrashCulpritModId = "";
-let APP_VERSION = "1.5.0";
+let APP_VERSION = "1.5.1";
 if (window.Android && typeof Android.getAppVersion === "function") {
     APP_VERSION = Android.getAppVersion();
 }
@@ -17,6 +17,10 @@ let currentModalMod = null;
 function openLiveWorldMapWebpage() {
     try {
         const mapUrl = currentServerUrl.replace(/:\d+\/?$/, ":" + ((lastKnownConfig && lastKnownConfig.LiveMapPort) ? lastKnownConfig.LiveMapPort : 8089));
+        if (window.Android && typeof Android.openLiveWorldMap === "function") {
+            Android.openLiveWorldMap(mapUrl);
+            return;
+        }
         if (window.Android && typeof Android.openExternalUrl === "function") {
             Android.openExternalUrl(mapUrl);
             return;

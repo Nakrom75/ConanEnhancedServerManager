@@ -361,7 +361,7 @@ namespace ConanServerManager
                 if (ver != null) return $"{ver.Major}.{ver.Minor}.{ver.Build}";
             }
             catch { }
-            return "1.5.0";
+            return "1.5.1";
         }
 
         public DateTime ServerStartTime { get; private set; } = DateTime.MinValue;
@@ -2043,6 +2043,17 @@ namespace ConanServerManager
             return null;
         }
 
+        public string GetServerRunningMapId()
+        {
+            if (!string.IsNullOrWhiteSpace(Config.StartupMap) &&
+                (Config.StartupMap.Contains("siptah", StringComparison.OrdinalIgnoreCase) ||
+                 Config.StartupMap.Contains("dlc_ext", StringComparison.OrdinalIgnoreCase)))
+            {
+                return "isle_of_siptah";
+            }
+            return "exiled_lands";
+        }
+
         public string GetActiveGameDbPath(string? preferredMapId = null)
         {
             string savedDir = Path.Combine(ServerRootDir, "ConanSandbox", "Saved");
@@ -2069,12 +2080,14 @@ namespace ConanServerManager
             string gameDefault = Path.Combine(savedDir, "game.db");
             string game0 = Path.Combine(savedDir, "game_0.db");
 
-            if (wantSiptah && File.Exists(siptahDb))
+            // Strict map database isolation:
+            // If Isle of Siptah is requested, strictly target dlc_siptah.db and NEVER fall back to game.db
+            if (wantSiptah)
             {
                 return siptahDb;
             }
 
-            // If both game.db and game_0.db exist, prefer the non-empty / more recently modified one
+            // If The Exiled Lands is requested or default, prefer game.db / game_0.db
             if (File.Exists(gameDefault) && File.Exists(game0))
             {
                 var fiDef = new FileInfo(gameDefault);
@@ -2086,9 +2099,8 @@ namespace ConanServerManager
 
             if (File.Exists(gameDefault)) return gameDefault;
             if (File.Exists(game0)) return game0;
-            if (File.Exists(siptahDb)) return siptahDb;
 
-            // Search for any valid *.db in Saved directory (excluding rolling backups and upgrade tags)
+            // Search for any valid *.db in Saved directory (excluding rolling backups, upgrade tags, and siptah db)
             try
             {
                 var dbFiles = Directory.GetFiles(savedDir, "*.db")
@@ -2097,6 +2109,7 @@ namespace ConanServerManager
                         string name = Path.GetFileName(f);
                         if (name.Contains("_backup_", StringComparison.OrdinalIgnoreCase)) return false;
                         if (name.Contains("_upgrade_tags_", StringComparison.OrdinalIgnoreCase)) return false;
+                        if (name.Contains("dlc_siptah", StringComparison.OrdinalIgnoreCase)) return false;
                         if (name.EndsWith("-wal", StringComparison.OrdinalIgnoreCase) || name.EndsWith("-shm", StringComparison.OrdinalIgnoreCase)) return false;
                         return true;
                     })
@@ -2114,7 +2127,7 @@ namespace ConanServerManager
                 Log($"[Database Discovery] Warning scanning {savedDir}: {ex.Message}");
             }
 
-            return wantSiptah ? siptahDb : gameDefault;
+            return gameDefault;
         }
 
         public string ConfigJsonPath

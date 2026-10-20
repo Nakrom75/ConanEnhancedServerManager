@@ -544,38 +544,47 @@ namespace ConanServerManager
             {
                 ScanSqliteWorldDatabase(dbPath, snapshot, onlineNames);
             }
-
-            // Ensure any currently online players who haven't been flushed to game.db yet are still listed
-            foreach (var onlinePlayer in _engine.ConnectedPlayers)
+            else
             {
-                if (!snapshot.Players.Any(p => p.CharacterName.Equals(onlinePlayer.Name, StringComparison.OrdinalIgnoreCase)))
+                _engine.Log($"[LiveMap] Note: Database not found at '{dbPath}' for map '{mapId}'. Database scan skipped.");
+            }
+
+            // Only show live connected players if this map matches the server's currently active running map
+            bool isCurrentRunningMap = string.Equals(mapId, _engine.GetServerRunningMapId(), StringComparison.OrdinalIgnoreCase);
+            if (isCurrentRunningMap)
+            {
+                // Ensure any currently online players who haven't been flushed to game.db yet are still listed
+                foreach (var onlinePlayer in _engine.ConnectedPlayers)
                 {
-                    double px = mapId == "isle_of_siptah" ? -318000 : -25240;
-                    double py = mapId == "isle_of_siptah" ? 14500 : 261150;
-                    double pz = -20180;
-                    if (_liveModPositions.TryGetValue(onlinePlayer.Name, out var livePos))
+                    if (!snapshot.Players.Any(p => p.CharacterName.Equals(onlinePlayer.Name, StringComparison.OrdinalIgnoreCase)))
                     {
-                        px = livePos.X;
-                        py = livePos.Y;
-                        pz = livePos.Z;
+                        double px = mapId == "isle_of_siptah" ? -318000 : -25240;
+                        double py = mapId == "isle_of_siptah" ? 14500 : 261150;
+                        double pz = -20180;
+                        if (_liveModPositions.TryGetValue(onlinePlayer.Name, out var livePos))
+                        {
+                            px = livePos.X;
+                            py = livePos.Y;
+                            pz = livePos.Z;
+                        }
+                        var profile = GetOrCreateProfile(onlinePlayer.Name);
+                        snapshot.Players.Add(new WorldPlayerMarker
+                        {
+                            CharId = 0,
+                            PlayerId = "",
+                            CharacterName = onlinePlayer.Name,
+                            Level = 60,
+                            ClanName = "Online Exile",
+                            X = px,
+                            Y = py,
+                            Z = pz,
+                            GridSector = WorldToGridSector(px, py, mapId),
+                            IsOnline = true,
+                            LastOnlineText = "ONLINE NOW",
+                            Rank = profile.Rank,
+                            WalletCopper = profile.WalletCopper
+                        });
                     }
-                    var profile = GetOrCreateProfile(onlinePlayer.Name);
-                    snapshot.Players.Add(new WorldPlayerMarker
-                    {
-                        CharId = 0,
-                        PlayerId = "",
-                        CharacterName = onlinePlayer.Name,
-                        Level = 60,
-                        ClanName = "Online Exile",
-                        X = px,
-                        Y = py,
-                        Z = pz,
-                        GridSector = WorldToGridSector(px, py, mapId),
-                        IsOnline = true,
-                        LastOnlineText = "ONLINE NOW",
-                        Rank = profile.Rank,
-                        WalletCopper = profile.WalletCopper
-                    });
                 }
             }
 
@@ -1174,14 +1183,48 @@ namespace ConanServerManager
     background: #050911;
     overflow: hidden;
     user-select: none;
+    touch-action: none;
   }
   canvas {
     width: 100%;
     height: 100%;
     display: block;
     cursor: grab;
+    touch-action: none;
   }
   canvas:active { cursor: grabbing; }
+  .map-floating-controls {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 25;
+  }
+  .map-floating-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.92);
+    border: 1.5px solid var(--accent);
+    color: var(--accent);
+    font-size: 1.25rem;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+    cursor: pointer;
+    touch-action: manipulation;
+    user-select: none;
+    transition: all 0.15s;
+  }
+  .map-floating-btn:active {
+    background: var(--accent);
+    color: #0f172a;
+    transform: scale(0.95);
+  }
   .map-hud-top {
     position: absolute;
     top: 12px;
@@ -1311,13 +1354,18 @@ namespace ConanServerManager
   <div class=""map-container"" id=""mapWrap"">
     <canvas id=""mapCanvas""></canvas>
     <div class=""map-hud-top"">
-      <label><input type=""checkbox"" id=""chkOnline"" checked onchange=""drawMap()""> 🟢 Online Players</label>
-      <label><input type=""checkbox"" id=""chkOffline"" checked onchange=""drawMap()""> 💤 Sleeping Players</label>
-      <label><input type=""checkbox"" id=""chkBases"" checked onchange=""drawMap()""> 🏰 Clan Bases &amp; Heatmap</label>
-      <label><input type=""checkbox"" id=""chkWarps"" checked onchange=""drawMap()""> 📍 Public Warps</label>
-      <label><input type=""checkbox"" id=""chkGrid"" checked onchange=""drawMap()""> #️⃣ A1–P16 Grid</label>
+      <label><input type=""checkbox"" id=""chkOnline"" checked onchange=""drawMap()""> 🟢 Online</label>
+      <label><input type=""checkbox"" id=""chkOffline"" checked onchange=""drawMap()""> 💤 Sleeping</label>
+      <label><input type=""checkbox"" id=""chkBases"" checked onchange=""drawMap()""> 🏰 Bases</label>
+      <label><input type=""checkbox"" id=""chkWarps"" checked onchange=""drawMap()""> 📍 Warps</label>
+      <label><input type=""checkbox"" id=""chkGrid"" checked onchange=""drawMap()""> #️⃣ Grid</label>
     </div>
-    <div class=""map-hud-bottom"" id=""lblCursorCoords"">Grid: G8 | X: 0, Y: 0 | Right-click to copy TeleportPlayer or add Warp</div>
+    <div class=""map-floating-controls"">
+      <button class=""map-floating-btn"" onclick=""zoomIn()"" title=""Zoom In"">➕</button>
+      <button class=""map-floating-btn"" onclick=""zoomOut()"" title=""Zoom Out"">➖</button>
+      <button class=""map-floating-btn"" onclick=""resetView()"" title=""Reset View"">🎯</button>
+    </div>
+    <div class=""map-hud-bottom"" id=""lblCursorCoords"">Grid: G8 | Touch/Drag to Pan • Pinch or Buttons to Zoom • Tap to Inspect</div>
     <div class=""map-tooltip"" id=""mapTooltip""></div>
   </div>
 
@@ -1609,6 +1657,44 @@ function drawMap() {
   }
 }
 
+function checkHitMarker(mx, my, isTouch) {
+  const hitPl = isTouch ? 22 : 11;
+  const hitBld = isTouch ? 26 : 14;
+  const hitWp = isTouch ? 20 : 10;
+  let hit = null;
+  if (mapData.players) {
+    for (const pl of mapData.players) {
+      const sp = worldToScreen(pl.X, pl.Y);
+      if (Math.hypot(sp.x - mx, sp.y - my) < hitPl) {
+        hit = `<b>👤 ${pl.CharacterName}</b> (Lv.${pl.Level})<br>Clan: ${pl.ClanName}<br>Rank: ${pl.Rank} | Wallet: ${pl.WalletFormatted}<br>Status: ${pl.LastOnlineText}<br>Grid: <b>${pl.GridSector}</b> (${pl.CoordinatesText})<br><span style='color:#38bdf8'>Click to copy TeleportPlayer</span>`;
+        selectedMarker = pl.TeleportCommand;
+        break;
+      }
+    }
+  }
+  if (!hit && mapData.bases) {
+    for (const b of mapData.bases) {
+      const sp = worldToScreen(b.X, b.Y);
+      if (Math.hypot(sp.x - mx, sp.y - my) < hitBld) {
+        hit = `<b>🏰 ${b.OwnerName}</b><br>Building Pieces: <b>${b.PieceCount}</b> (${b.StructureCount} structures)<br>Load Impact: ${b.Severity}<br>Grid: <b>${b.GridSector}</b> (${b.CoordinatesText})<br><span style='color:#38bdf8'>Click to copy TeleportPlayer</span>`;
+        selectedMarker = b.TeleportCommand;
+        break;
+      }
+    }
+  }
+  if (!hit && mapData.warps) {
+    for (const wp of mapData.warps) {
+      const sp = worldToScreen(wp.X, wp.Y);
+      if (Math.hypot(sp.x - mx, sp.y - my) < hitWp) {
+        hit = `<b>📍 Warp: ${wp.Name}</b> (/warp ${wp.Id})<br>Grid: <b>${wp.GridSector}</b><br>Command: <code>${wp.TeleportCommand}</code>`;
+        selectedMarker = wp.TeleportCommand;
+        break;
+      }
+    }
+  }
+  return hit;
+}
+
 canvas.addEventListener('mousedown', e => {
   if (e.button === 0) {
     isDragging = true;
@@ -1638,38 +1724,7 @@ canvas.addEventListener('mousemove', e => {
   document.getElementById('lblCursorCoords').textContent =
     `Grid: ${grid} | X: ${Math.round(w.x)}, Y: ${Math.round(w.y)} | Drag to Pan • Wheel to Zoom • Right-click to Add Warp`;
 
-  let hit = null;
-  if (mapData.players) {
-    for (const pl of mapData.players) {
-      const sp = worldToScreen(pl.X, pl.Y);
-      if (Math.hypot(sp.x - mx, sp.y - my) < 11) {
-        hit = `<b>👤 ${pl.CharacterName}</b> (Lv.${pl.Level})<br>Clan: ${pl.ClanName}<br>Rank: ${pl.Rank} | Wallet: ${pl.WalletFormatted}<br>Status: ${pl.LastOnlineText}<br>Grid: <b>${pl.GridSector}</b> (${pl.CoordinatesText})<br><span style='color:#38bdf8'>Click to copy TeleportPlayer</span>`;
-        selectedMarker = pl.TeleportCommand;
-        break;
-      }
-    }
-  }
-  if (!hit && mapData.bases) {
-    for (const b of mapData.bases) {
-      const sp = worldToScreen(b.X, b.Y);
-      if (Math.hypot(sp.x - mx, sp.y - my) < 14) {
-        hit = `<b>🏰 ${b.OwnerName}</b><br>Building Pieces: <b>${b.PieceCount}</b> (${b.StructureCount} structures)<br>Load Impact: ${b.Severity}<br>Grid: <b>${b.GridSector}</b> (${b.CoordinatesText})<br><span style='color:#38bdf8'>Click to copy TeleportPlayer</span>`;
-        selectedMarker = b.TeleportCommand;
-        break;
-      }
-    }
-  }
-  if (!hit && mapData.warps) {
-    for (const wp of mapData.warps) {
-      const sp = worldToScreen(wp.X, wp.Y);
-      if (Math.hypot(sp.x - mx, sp.y - my) < 10) {
-        hit = `<b>📍 Warp: ${wp.Name}</b> (/warp ${wp.Id})<br>Grid: <b>${wp.GridSector}</b><br>Command: <code>${wp.TeleportCommand}</code>`;
-        selectedMarker = wp.TeleportCommand;
-        break;
-      }
-    }
-  }
-
+  const hit = checkHitMarker(mx, my, false);
   if (hit) {
     tooltip.innerHTML = hit;
     tooltip.style.display = 'block';
@@ -1678,6 +1733,94 @@ canvas.addEventListener('mousemove', e => {
   } else {
     tooltip.style.display = 'none';
     selectedMarker = null;
+  }
+});
+
+// Mobile Multi-Touch & Pinch-to-Zoom Gesture Engine
+let touchMode = null;
+let touchStartX = 0, touchStartY = 0;
+let touchStartCamX = 0, touchStartCamY = 0;
+let initialPinchDist = 0;
+let initialPinchZoom = 1;
+let touchDidDrag = false;
+
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) {
+    touchMode = 'drag';
+    touchDidDrag = false;
+    const t = e.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    touchStartX = t.clientX - rect.left;
+    touchStartY = t.clientY - rect.top;
+    touchStartCamX = camX;
+    touchStartCamY = camY;
+  } else if (e.touches.length === 2) {
+    touchMode = 'pinch';
+    touchDidDrag = true;
+    const t1 = e.touches[0];
+    const t2 = e.touches[1];
+    initialPinchDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+    initialPinchZoom = zoom;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  if (touchMode === 'drag' && e.touches.length === 1) {
+    const t = e.touches[0];
+    const curX = t.clientX - rect.left;
+    const curY = t.clientY - rect.top;
+    const dx = curX - touchStartX;
+    const dy = curY - touchStartY;
+    if (Math.hypot(dx, dy) > 5) {
+      touchDidDrag = true;
+    }
+    camX = touchStartCamX + dx;
+    camY = touchStartCamY + dy;
+    drawMap();
+  } else if (touchMode === 'pinch' && e.touches.length === 2) {
+    touchDidDrag = true;
+    const t1 = e.touches[0];
+    const t2 = e.touches[1];
+    const curDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+    if (initialPinchDist > 0 && curDist > 0) {
+      const curCenterX = (t1.clientX + t2.clientX) / 2 - rect.left;
+      const curCenterY = (t1.clientY + t2.clientY) / 2 - rect.top;
+      const factor = curDist / initialPinchDist;
+      const targetZoom = Math.max(0.6, Math.min(8.0, initialPinchZoom * factor));
+      const zoomFactor = targetZoom / zoom;
+      applyZoom(zoomFactor, curCenterX, curCenterY);
+      initialPinchDist = curDist;
+      initialPinchZoom = zoom;
+    }
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  if (e.touches.length === 0) {
+    if (!touchDidDrag && touchMode === 'drag') {
+      const hit = checkHitMarker(touchStartX, touchStartY, true);
+      if (hit) {
+        tooltip.innerHTML = hit;
+        tooltip.style.display = 'block';
+        tooltip.style.left = Math.min(canvas.width - 280, Math.max(10, touchStartX - 80)) + 'px';
+        tooltip.style.top = Math.max(10, touchStartY - 100) + 'px';
+      } else {
+        tooltip.style.display = 'none';
+        selectedMarker = null;
+      }
+    }
+    touchMode = null;
+    initialPinchDist = 0;
+  } else if (e.touches.length === 1) {
+    touchMode = 'drag';
+    const t = e.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    touchStartX = t.clientX - rect.left;
+    touchStartY = t.clientY - rect.top;
+    touchStartCamX = camX;
+    touchStartCamY = camY;
   }
 });
 
@@ -1738,7 +1881,9 @@ function renderSidebars() {
 
   // Players
   const pEl = document.getElementById('panel-players');
-  if (!mapData.players || mapData.players.length === 0) {
+  if (!mapData.DatabaseFound) {
+    pEl.innerHTML = `<div style='color:var(--muted);padding:14px;font-size:0.83rem;background:#1e293b;border-radius:8px;border:1px solid var(--border);'>ℹ️ No character save database found for <b>${mapData.ActiveMapDisplayName}</b>.</div>`;
+  } else if (!mapData.players || mapData.players.length === 0) {
     pEl.innerHTML = `<div style='color:var(--muted);padding:12px;font-size:0.82rem;'>No characters found in database yet. Start the server and create a character to see live player tracking!</div>`;
   } else {
     pEl.innerHTML = mapData.players.map(p => `
@@ -1755,7 +1900,9 @@ function renderSidebars() {
 
   // Bases
   const bEl = document.getElementById('panel-bases');
-  if (!mapData.bases || mapData.bases.length === 0) {
+  if (!mapData.DatabaseFound) {
+    bEl.innerHTML = `<div style='color:#f59e0b;padding:14px;font-size:0.83rem;background:#1e293b;border-radius:8px;border:1px solid #d97706;line-height:1.45;'>⚠️ <b>No world database found for ${mapData.ActiveMapDisplayName}</b>.<br><br>The server has only generated save data for <b>The Exiled Lands</b> (game.db). Any player bases are on The Exiled Lands.</div>`;
+  } else if (!mapData.bases || mapData.bases.length === 0) {
     bEl.innerHTML = `<div style='color:var(--muted);padding:12px;font-size:0.82rem;'>No player bases found in database yet.</div>`;
   } else {
     bEl.innerHTML = mapData.bases.map(b => `

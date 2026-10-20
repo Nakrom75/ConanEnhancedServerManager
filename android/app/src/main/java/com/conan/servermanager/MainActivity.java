@@ -60,6 +60,9 @@ public class MainActivity extends AppCompatActivity {
     private Button btnInstallDetectedMod;
     private String detectedModId = null;
 
+    private Dialog liveMapDialog;
+    private WebView liveMapWebView;
+
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -398,6 +401,128 @@ public class MainActivity extends AppCompatActivity {
         workshopWebView.loadUrl(initialUrl != null && !initialUrl.isEmpty() ? initialUrl : "https://steamcommunity.com/app/440900/workshop/");
     }
 
+    private void showLiveMapBrowser(String initialUrl) {
+        if (isFinishing() || isDestroyed()) return;
+
+        if (liveMapDialog != null && liveMapDialog.isShowing()) {
+            if (liveMapWebView != null && initialUrl != null && !initialUrl.isEmpty()) {
+                liveMapWebView.loadUrl(initialUrl);
+            }
+            return;
+        }
+
+        liveMapDialog = new Dialog(this, android.R.style.Theme_DeviceDefault_NoActionBar_Fullscreen);
+        liveMapDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(0xFF070B14);
+
+        // --- TOP TOOLBAR ---
+        LinearLayout toolbar = new LinearLayout(this);
+        toolbar.setOrientation(LinearLayout.HORIZONTAL);
+        toolbar.setBackgroundColor(0xFF0F172A);
+        toolbar.setGravity(Gravity.CENTER_VERTICAL);
+        int pad = (int) (8 * getResources().getDisplayMetrics().density);
+        toolbar.setPadding(pad, pad, pad, pad);
+
+        Button btnClose = new Button(this);
+        btnClose.setText("✕");
+        btnClose.setTextColor(0xFFF87171);
+        btnClose.setBackgroundColor(0x00000000);
+        btnClose.setTextSize(18);
+        btnClose.setPadding(pad, 0, pad, 0);
+        btnClose.setOnClickListener(v -> {
+            if (liveMapDialog != null) liveMapDialog.dismiss();
+        });
+        toolbar.addView(btnClose);
+
+        TextView txtTitle = new TextView(this);
+        txtTitle.setText("🗺️ Live World Map & Radar");
+        txtTitle.setTextColor(0xFF38BDF8);
+        txtTitle.setTextSize(14);
+        txtTitle.setTypeface(null, android.graphics.Typeface.BOLD);
+        txtTitle.setSingleLine(true);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        titleLp.setMargins(pad, 0, pad, 0);
+        txtTitle.setLayoutParams(titleLp);
+        toolbar.addView(txtTitle);
+
+        Button btnReload = new Button(this);
+        btnReload.setText("🔄");
+        btnReload.setTextColor(0xFFE2E8F0);
+        btnReload.setBackgroundColor(0x00000000);
+        btnReload.setTextSize(14);
+        btnReload.setPadding(pad, 0, pad, 0);
+        btnReload.setOnClickListener(v -> {
+            if (liveMapWebView != null) liveMapWebView.reload();
+        });
+        toolbar.addView(btnReload);
+
+        Button btnExt = new Button(this);
+        btnExt.setText("🌐");
+        btnExt.setTextColor(0xFFA5B4FC);
+        btnExt.setBackgroundColor(0x00000000);
+        btnExt.setTextSize(14);
+        btnExt.setPadding(pad, 0, pad, 0);
+        btnExt.setOnClickListener(v -> {
+            if (liveMapWebView != null) {
+                String u = liveMapWebView.getUrl();
+                if (u != null && !u.isEmpty()) {
+                    try {
+                        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(u));
+                        startActivity(intent);
+                    } catch (Exception ignored) {}
+                }
+            }
+        });
+        toolbar.addView(btnExt);
+
+        root.addView(toolbar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // --- MAP WEBVIEW ---
+        liveMapWebView = new WebView(this);
+        WebSettings ws = liveMapWebView.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);
+        ws.setDatabaseEnabled(true);
+        ws.setSupportZoom(true);
+        ws.setBuiltInZoomControls(true);
+        ws.setDisplayZoomControls(false);
+        ws.setUseWideViewPort(true);
+        ws.setLoadWithOverviewMode(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        }
+
+        liveMapWebView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                return false;
+            }
+        });
+
+        root.addView(liveMapWebView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
+
+        liveMapDialog.setContentView(root);
+        liveMapDialog.setOnKeyListener((dialog, keyCode, event) -> {
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
+                liveMapDialog.dismiss();
+                return true;
+            }
+            return false;
+        });
+
+        liveMapDialog.setOnDismissListener(d -> {
+            if (liveMapWebView != null) {
+                liveMapWebView.loadUrl("about:blank");
+            }
+        });
+
+        liveMapDialog.show();
+        liveMapWebView.loadUrl(initialUrl != null && !initialUrl.isEmpty() ? initialUrl : "http://127.0.0.1:8089");
+    }
+
     private void checkModUrl(String url) {
         if (url == null) return;
         Pattern pattern = Pattern.compile("steamcommunity\\.com/sharedfiles/filedetails/\\?id=(\\d+)");
@@ -501,11 +626,16 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @JavascriptInterface
+        public void openLiveWorldMap(String url) {
+            runOnUiThread(() -> showLiveMapBrowser(url != null && !url.isEmpty() ? url : "http://127.0.0.1:8089"));
+        }
+
+        @JavascriptInterface
         public String getAppVersion() {
             try {
                 return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
             } catch (Exception ignored) {
-                return "1.5.0";
+                return "1.5.1";
             }
         }
 
@@ -518,7 +648,7 @@ public class MainActivity extends AppCompatActivity {
                     return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
                 }
             } catch (Exception ignored) {
-                return 10500;
+                return 10501;
             }
         }
 
