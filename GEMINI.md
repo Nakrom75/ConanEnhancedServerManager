@@ -30,3 +30,10 @@
   and push it to GitHub:
   `git push origin v{MAJOR}.{MINOR}.{PATCH}`
 - This is required so the user can create and upload compiled binaries (Windows ZIP and Android APK) to the GitHub release.
+
+### 5. CLEAN PACKAGING & AUTOMATIC PRUNING OF OBSOLETE BINARIES
+- **Never include APK files inside the Windows desktop zip package.** The Windows package must contain strictly Windows binaries, DLLs, assets, and updaters.
+- **On every compile/build:**
+  - Automatically delete and prune all previous/older version `.zip` and `.apk` files from the workspace directory.
+  - Only the single latest release `.zip` (e.g. `ConanServerManager_v1.5.1.zip`) and latest `.apk` (e.g. `ConanServerManager-v1.5.1.apk`) must remain in the directory.
+

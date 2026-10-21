@@ -105,3 +105,7 @@ git tag -a v{MAJOR}.{MINOR}.{PATCH} -m "Release v{MAJOR}.{MINOR}.{PATCH}: <descr
 git push origin v{MAJOR}.{MINOR}.{PATCH}
 ```
 *Never skip this step: The git tag is required for the user to upload release packages and publish GitHub Releases.*
+
+### Step 7: Obsolete Artifact Pruning & Clean Packaging
+- **Never include APK files inside the Windows ZIP package.** The Windows package must contain strictly Windows binaries, DLLs, assets, and updaters.
+- **On every release build**, automatically delete all older/previous version `.zip` and `.apk` files from the root directory. Only the single latest release `.zip` and latest `.apk` remain.
